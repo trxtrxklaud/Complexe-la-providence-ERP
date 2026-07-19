@@ -1,0 +1,144 @@
+openapi: 3.0.3
+info:
+  title: School La Providence ERP API
+  description: Production API for School La Providence Management System
+  version: 1.0.0
+  contact:
+    name: School La Providence IT Team
+
+servers:
+  - url: http://localhost:8000/api
+    description: Local Development
+  - url: https://erp.laprovidence.ma/api
+    description: Production
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    Student:
+      type: object
+      properties:
+        id:
+          type: integer
+        student_code:
+          type: string
+        first_name:
+          type: string
+        last_name:
+          type: string
+        gender:
+          type: string
+          enum: [male, female]
+
+    Enrollment:
+      type: object
+      properties:
+        id:
+          type: integer
+        student_id:
+          type: integer
+        level:
+          $ref: '#/components/schemas/Level'
+        section:
+          $ref: '#/components/schemas/Section'
+
+security:
+  - bearerAuth: []
+
+paths:
+  /login:
+    post:
+      tags:
+        - Authentication
+      summary: Login and get access token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - email
+                - password
+              properties:
+                email:
+                  type: string
+                  example: admin@laprovidence.ma
+                password:
+                  type: string
+                  example: ChangeMe123!
+      responses:
+        '200':
+          description: Successful login
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  access_token:
+                    type: string
+                  user:
+                    type: object
+
+  /dashboard:
+    get:
+      tags:
+        - Dashboard
+      summary: Get dashboard statistics
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Dashboard data
+
+  /students:
+    get:
+      tags:
+        - Students
+      summary: List students with current enrollment
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: search
+          in: query
+          schema:
+            type: string
+        - name: level_id
+          in: query
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Paginated list of students
+
+  /students/enroll:
+    post:
+      tags:
+        - Students
+      summary: Enroll a new student
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+                - first_name
+                - last_name
+                - dob
+                - gender
+                - guardian_first_name
+                - guardian_last_name
+                - guardian_phone
+                - address
+                - level_id
+      responses:
+        '201':
+          description: Student enrolled successfully

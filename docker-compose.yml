@@ -1,0 +1,64 @@
+version: '3.8'
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: providence-app
+    restart: unless-stopped
+    working_dir: /var/www
+    volumes:
+      - ./:/var/www
+    networks:
+      - providence-network
+    depends_on:
+      - db
+      - redis
+
+  db:
+    image: mysql:8.0
+    container_name: providence-db
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: providence
+      MYSQL_ROOT_PASSWORD: secret
+      MYSQL_PASSWORD: secret
+      MYSQL_USER: providence
+    volumes:
+      - dbdata:/var/lib/mysql
+    networks:
+      - providence-network
+
+  redis:
+    image: redis:7-alpine
+    container_name: providence-redis
+    restart: unless-stopped
+    volumes:
+      - redisdata:/data
+    networks:
+      - providence-network
+
+  nginx:
+    image: nginx:alpine
+    container_name: providence-nginx
+    restart: unless-stopped
+    ports:
+      - "8000:80"
+    volumes:
+      - ./:/var/www
+      - ./docker/nginx/default.conf:/etc/nginx/conf.d/default.conf
+    networks:
+      - providence-network
+    depends_on:
+      - app
+
+volumes:
+  dbdata:
+    driver: local
+  redisdata:
+    driver: local
+
+networks:
+  providence-network:
+    driver: bridge

@@ -1,0 +1,153 @@
+{
+  "info": {
+    "_postman_id": "school-la-providence-erp-2026",
+    "name": "School La Providence ERP - API Collection",
+    "description": "Complete API collection for testing School La Providence ERP backend",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:8000/api",
+      "type": "string"
+    },
+    {
+      "key": "token",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "Authentication",
+      "item": [
+        {
+          "name": "Login",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Accept", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"admin@erp.com\",\n  \"password\": \"123456\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/login",
+              "host": ["{{base_url}}"],
+              "path": ["login"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Current User",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "Accept", "value": "application/json" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/user",
+              "host": ["{{base_url}}"],
+              "path": ["user"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Logout",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "Accept", "value": "application/json" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/logout",
+              "host": ["{{base_url}}"],
+              "path": ["logout"]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Dashboard",
+      "item": [
+        {
+          "name": "Get Dashboard Data",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "Accept", "value": "application/json" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/dashboard",
+              "host": ["{{base_url}}"],
+              "path": ["dashboard"]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Students",
+      "item": [
+        {
+          "name": "List Students (with current enrollment)",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "Accept", "value": "application/json" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/students?search=&level_id=",
+              "host": ["{{base_url}}"],
+              "path": ["students"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Enroll New Student",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "Accept", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                { "key": "first_name", "value": "يوسف", "type": "text" },
+                { "key": "last_name", "value": "الأمين", "type": "text" },
+                { "key": "dob", "value": "2015-05-15", "type": "text" },
+                { "key": "gender", "value": "male", "type": "text" },
+                { "key": "guardian_first_name", "value": "محمد", "type": "text" },
+                { "key": "guardian_last_name", "value": "الأمين", "type": "text" },
+                { "key": "guardian_phone", "value": "0612345678", "type": "text" },
+                { "key": "address", "value": "شارع الحسن الثاني، الرباط", "type": "text" },
+                { "key": "level_id", "value": "1", "type": "text" },
+                { "key": "section_name", "value": "أ", "type": "text" },
+                { "key": "notes", "value": "طالب جديد", "type": "text" }
+              ]
+            },
+            "url": {
+              "raw": "{{base_url}}/students/enroll",
+              "host": ["{{base_url}}"],
+              "path": ["students", "enroll"]
+            }
+          },
+          "response": []
+        }
+      ]
+    }
+  ]
+}
