@@ -148,8 +148,8 @@ export function StudentsDashboard() {
                     <td className="px-6 py-4 font-medium text-slate-900">{student.id}</td>
                     <td className="px-6 py-4">{student.first_name} {student.last_name}</td>
                     <td className="px-6 py-4">{student.gender === 'male' ? 'ذكر' : student.gender === 'female' ? 'أنثى' : '-'}</td>
-                    <td className="px-6 py-4">{student.dob || '-'}</td>
-                    <td className="px-6 py-4" dir="ltr">{student.guardian_phone || '-'}</td>
+                    <td className="px-6 py-4">{student.dob ? new Date(student.dob).toLocaleDateString("ar-TN") : '-'}</td>
+                    <td className="px-6 py-4" dir="ltr">{student.guardians?.[0]?.phone || student.guardian_phone || '-'}</td>
                   </tr>
                 ))
               )}

@@ -7,7 +7,6 @@ use App\Models\Role;
 use App\Http\Requests\StoreUserRequest;
 use App\Http\Requests\UpdateUserRequest;
 use App\Services\UserService;
-use App\Http\Middleware\CheckPermission;
 
 class UserController extends Controller
 {
@@ -16,10 +15,6 @@ class UserController extends Controller
     public function __construct(UserService $userService)
     {
         $this->userService = $userService;
-        $this->middleware(CheckPermission::class.':users.view')->only(['index', 'show', 'roles']);
-        $this->middleware(CheckPermission::class.':users.create')->only('store');
-        $this->middleware(CheckPermission::class.':users.edit')->only('update');
-        $this->middleware(CheckPermission::class.':users.delete')->only('destroy');
     }
 
     public function index()
