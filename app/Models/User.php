@@ -1,7 +1,5 @@
 <?php
-
 namespace App\Models;
-
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Laravel\Sanctum\HasApiTokens;
@@ -13,22 +11,16 @@ class User extends Authenticatable
     use HasApiTokens, Notifiable;
 
     protected $fillable = [
-        'first_name',
-        'last_name',
-        'username',
-        'email',
-        'phone',
-        'password',
-        'role_id',
+        'first_name', 'last_name', 'username',
+        'email', 'phone', 'password',
+        'role_id', 'is_active',
     ];
 
-    protected $hidden = [
-        'password',
-        'remember_token',
-    ];
+    protected $hidden = ['password', 'remember_token'];
 
     protected $casts = [
-        'password' => 'hashed',
+        'password'  => 'hashed',
+        'is_active' => 'boolean',
     ];
 
     public function role(): BelongsTo
@@ -36,20 +28,10 @@ class User extends Authenticatable
         return $this->belongsTo(Role::class);
     }
 
-    /**
-     * Recommended usage in controllers/services:
-     * User::withRoleAndPermissions()->find($id)
-     *
-     * The CheckPermission middleware and frontend rely on $user->role->permissions being loaded.
-     */
     public function scopeWithRoleAndPermissions($query)
     {
         return $query->with(['role.permissions']);
     }
-
-    /**
-     * Scope to eager load role + permissions (recommended usage).
-     */
 
     public function createdPayments(): HasMany
     {
