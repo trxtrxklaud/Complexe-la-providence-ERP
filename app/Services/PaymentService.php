@@ -1,5 +1,4 @@
 <?php
-
 namespace App\Services;
 
 use App\Models\Payment;
@@ -9,9 +8,6 @@ use Illuminate\Support\Facades\DB;
 
 class PaymentService
 {
-    /**
-     * Record a payment and allocate it to specific student fees.
-     */
     public function recordPayment(array $data): Payment
     {
         return DB::transaction(function () use ($data) {
@@ -26,7 +22,6 @@ class PaymentService
                 'created_by'    => $data['created_by'],
             ]);
 
-            // If specific allocations are provided
             if (!empty($data['allocations'])) {
                 foreach ($data['allocations'] as $allocation) {
                     PaymentAllocation::create([
@@ -34,7 +29,6 @@ class PaymentService
                         'student_fee_id'   => $allocation['student_fee_id'],
                         'amount_allocated' => $allocation['amount'],
                     ]);
-
                     $this->updateStudentFeeStatus($allocation['student_fee_id']);
                 }
             }
@@ -50,21 +44,27 @@ class PaymentService
 
         $allocated = $fee->paymentAllocations()->sum('amount_allocated');
 
-        if ($allocated >= $fee->amount_due) {
-            $fee->update(['status' => 'paid']);
-        } elseif ($allocated > 0) {
-            $fee->update(['status' => 'partial']);
-        }
+        $fee->update([
+            'status' => match(true) {
+                $allocated >= $fee->amount_due => 'paid',
+                $allocated > 0                 => 'partial',
+                default                        => 'pending',
+            }
+        ]);
     }
 
     public function getStudentBalance(int $studentId): float
     {
-        return StudentFee::whereHas('enrollment', fn($q) => $q->where('student_id', $studentId))
-            ->whereIn('status', ['pending', 'partial', 'overdue'])
-            ->get()
-            ->sum(function ($fee) {
-                $allocated = $fee->paymentAllocations()->sum('amount_allocated');
-                return $fee->amount_due - $allocated;
-            });
+        // with() يحل N+1 بـ query واحدة ✅
+        $fees = StudentFee::whereHas('enrollment', fn($q) =>
+                    $q->where('student_id', $studentId)
+                  )
+                  ->whereIn('status', ['pending', 'partial', 'overdue'])
+                  ->with('paymentAllocations')
+                  ->get();
+
+        return $fees->sum(fn($fee) =>
+            $fee->amount_due - $fee->paymentAllocations->sum('amount_allocated')
+        );
     }
 }

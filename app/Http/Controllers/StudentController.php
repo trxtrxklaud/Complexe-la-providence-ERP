@@ -1,5 +1,4 @@
 <?php
-
 namespace App\Http\Controllers;
 
 use App\Services\StudentService;
@@ -8,21 +7,17 @@ use Illuminate\Http\Request;
 
 class StudentController extends Controller
 {
-    protected StudentService $studentService;
-    protected EnrollmentService $enrollmentService;
-
-    public function __construct(StudentService $studentService, EnrollmentService $enrollmentService)
-    {
-        $this->studentService    = $studentService;
-        $this->enrollmentService = $enrollmentService;
-    }
+    public function __construct(
+        protected StudentService    $studentService,
+        protected EnrollmentService $enrollmentService,
+    ) {}
 
     public function index(Request $request)
     {
         $students = $this->studentService->getStudentsWithCurrentEnrollment([
             'search'   => $request->get('search'),
             'level_id' => $request->get('level_id'),
-            'per_page' => $request->get('per_page', 25),
+            'per_page' => min((int) $request->get('per_page', 20), 100),
         ]);
 
         return response()->json($students);
@@ -59,13 +54,12 @@ class StudentController extends Controller
             'photo'               => 'nullable|image|max:2048',
         ]);
 
-        $photoPath = null;
-        if ($request->hasFile('photo')) {
-            $photoPath = $request->file('photo')->store('students/photos', 'public');
-        }
-
         try {
-            $enrollment = $this->enrollmentService->enrollStudent($validated, $photoPath);
+            // الصورة تُمرَّر كـ UploadedFile — التخزين داخل الـ Service ✅
+            $enrollment = $this->enrollmentService->enrollStudent(
+                $validated,
+                $request->file('photo')
+            );
 
             return response()->json([
                 'message'    => 'تم تسجيل التلميذ بنجاح',
@@ -74,7 +68,7 @@ class StudentController extends Controller
         } catch (\InvalidArgumentException $e) {
             return response()->json(['message' => $e->getMessage()], 422);
         } catch (\Exception $e) {
-            return response()->json(['message' => 'حدث خطأ أثناء التسجيل', 'error' => $e->getMessage()], 500);
+            return response()->json(['message' => 'حدث خطأ أثناء التسجيل'], 500);
         }
     }
 
@@ -96,7 +90,7 @@ class StudentController extends Controller
         } catch (\InvalidArgumentException $e) {
             return response()->json(['message' => $e->getMessage()], 422);
         } catch (\Exception $e) {
-            return response()->json(['message' => 'حدث خطأ أثناء الترسيم', 'error' => $e->getMessage()], 500);
+            return response()->json(['message' => 'حدث خطأ أثناء الترسيم'], 500);
         }
     }
 }
