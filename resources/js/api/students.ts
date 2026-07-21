@@ -1,72 +1,79 @@
-export const API_BASE = '/api';
+import type { User } from '../types';
 
-export async function getStudents() {
-  const token = localStorage.getItem('token');
-
-  // Enhanced mock for demo mode (works in Google AI Studio)
-  if (token === 'mock-token') {
-    return [
-      {
-        id: 1,
-        first_name: 'أحمد',
-        last_name: 'بن علي',
-        student_code: 'PRV-2026-ABC123',
-        gender: 'male',
-        dob: '2015-03-12',
-        guardians: [{ first_name: 'محمد', last_name: 'بن علي', phone: '0612345678' }],
-        enrollments: [{
-          id: 1,
-          level: { name: 'السنة الأولى' },
-          section: { name: 'أ' },
-          academicYear: { name: '2025-2026' }
-        }]
-      },
-      {
-        id: 2,
-        first_name: 'فاطمة',
-        last_name: 'الزهراء',
-        student_code: 'PRV-2026-DEF456',
-        gender: 'female',
-        dob: '2014-07-22',
-        guardians: [{ first_name: 'خديجة', last_name: 'الزهراء', phone: '0698765432' }],
-        enrollments: [{
-          id: 2,
-          level: { name: 'السنة الثانية' },
-          section: { name: 'ب' },
-          academicYear: { name: '2025-2026' }
-        }]
-      }
-    ];
-  }
-
-  const res = await fetch(`${API_BASE}/students`, {
-    headers: {
-      'Authorization': `Bearer ${token}`,
-      'Accept': 'application/json'
-    }
-  });
-  if (!res.ok) {
-    throw new Error('حدث خطأ أثناء جلب قائمة التلاميذ');
-  }
-  const data = await res.json();
-  return data.data || data;
+export interface Guardian {
+    first_name: string;
+    last_name: string;
+    phone: string;
+    relationship?: string;
 }
 
-export async function enrollStudent(formData: FormData) {
-  const token = localStorage.getItem('token');
-  const res = await fetch(`${API_BASE}/students/enroll`, {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${token}`,
-      'Accept': 'application/json'
-    },
-    body: formData // sending FormData directly for file upload
-  });
+export interface Enrollment {
+    id: number;
+    level: { name: string };
+    section: { name: string };
+    academicYear: { name: string };
+}
 
-  if (!res.ok) {
-    const error = await res.json();
-    throw new Error(error.message || 'حدث خطأ أثناء التسجيل');
-  }
+export interface Student {
+    id: number;
+    student_code: string;
+    first_name: string;
+    last_name: string;
+    gender: 'male' | 'female';
+    dob: string;
+    guardians: Guardian[];
+    enrollments: Enrollment[];
+}
 
-  return res.json();
+const API_BASE = '/api';
+
+function getHeaders(): Record<string, string> {
+    const token = localStorage.getItem('token');
+    return {
+        'Accept': 'application/json',
+        ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+    };
+}
+
+export async function getStudents(): Promise<Student[]> {
+    const res = await fetch(`${API_BASE}/students`, { headers: getHeaders() });
+    if (!res.ok) throw new Error('حدث خطأ أثناء جلب قائمة التلاميذ');
+    const data = await res.json();
+    return data.data ?? data;
+}
+
+export async function getStudent(id: number): Promise<Student> {
+    const res = await fetch(`${API_BASE}/students/${id}`, { headers: getHeaders() });
+    if (!res.ok) throw new Error('حدث خطأ أثناء جلب بيانات التلميذ');
+    return res.json();
+}
+
+export async function enrollStudent(formData: FormData): Promise<Student> {
+    const res = await fetch(`${API_BASE}/students/enroll`, {
+        method: 'POST',
+        headers: getHeaders(), // بدون Content-Type — browser يضبطه تلقائياً مع FormData
+        body: formData,
+    });
+    if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.message || 'حدث خطأ أثناء التسجيل');
+    }
+    return res.json();
+}
+
+export async function reenrollStudent(studentId: number, data: {
+    level_id: number;
+    section_id: number;
+    academic_year_id: number;
+}): Promise<Student> {
+    const res = await fetch(`${API_BASE}/students/${studentId}/reenroll`, {
+        method: 'POST',
+        headers: { ...getHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+    });
+    if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.message || 'حدث خطأ أثناء إعادة التسجيل');
+    }
+    return res.json();
 }
