@@ -36,3 +36,8 @@ Homestead.yaml
 auth.json
 Alarms/
 *.zip
+.env
+vendor/
+node_modules/
+*.zip
+storage/*.key
