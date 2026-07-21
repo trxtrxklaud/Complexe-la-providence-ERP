@@ -20,7 +20,7 @@ class Payment extends Model
     ];
 
     protected $casts = [
-        'amount' => 'decimal:2',
+        'amount'       => 'decimal:2',
         'payment_date' => 'date',
     ];
 
@@ -39,7 +39,8 @@ class Payment extends Model
         return $this->belongsTo(User::class, 'created_by');
     }
 
-    public function allocations(): HasMany
+    // FIX: was allocations() — renamed to match all controllers & services
+    public function paymentAllocations(): HasMany
     {
         return $this->hasMany(PaymentAllocation::class);
     }

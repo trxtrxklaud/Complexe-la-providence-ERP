@@ -1,4 +1,5 @@
 <?php
+
 namespace App\Services;
 
 use App\Models\Payment;
@@ -8,9 +9,10 @@ use Illuminate\Support\Facades\DB;
 
 class PaymentService
 {
-    public function recordPayment(array $data): Payment
+    // FIX: added $createdBy param — PaymentController passes auth()->id() as 2nd arg
+    public function recordPayment(array $data, ?int $createdBy = null): Payment
     {
-        return DB::transaction(function () use ($data) {
+        return DB::transaction(function () use ($data, $createdBy) {
             $payment = Payment::create([
                 'student_id'    => $data['student_id'],
                 'enrollment_id' => $data['enrollment_id'] ?? null,
@@ -19,7 +21,7 @@ class PaymentService
                 'method'        => $data['method'],
                 'reference'     => $data['reference'] ?? null,
                 'notes'         => $data['notes'] ?? null,
-                'created_by'    => $data['created_by'],
+                'created_by'    => $createdBy,
             ]);
 
             if (!empty($data['allocations'])) {
@@ -55,7 +57,6 @@ class PaymentService
 
     public function getStudentBalance(int $studentId): float
     {
-        // with() يحل N+1 بـ query واحدة ✅
         $fees = StudentFee::whereHas('enrollment', fn($q) =>
                     $q->where('student_id', $studentId)
                   )
@@ -63,8 +64,9 @@ class PaymentService
                   ->with('paymentAllocations')
                   ->get();
 
-        return $fees->sum(fn($fee) =>
-            $fee->amount_due - $fee->paymentAllocations->sum('amount_allocated')
+        // FIX: max(0, ...) — prevents negative balance if over-payment
+        return (float) $fees->sum(fn($fee) =>
+            max(0, $fee->amount_due - $fee->paymentAllocations->sum('amount_allocated'))
         );
     }
 }
