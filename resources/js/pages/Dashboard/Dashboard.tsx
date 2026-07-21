@@ -15,15 +15,10 @@ const C = {
 
 function AnalogClock({ size = 150 }: { size?: number }) {
   const [now, setNow] = useState(new Date());
-  const raf = useRef(0);
-
+  
   useEffect(() => {
-    const tick = () => {
-      setNow(new Date());
-      raf.current = requestAnimationFrame(tick);
-    };
-    raf.current = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(raf.current);
+    const id = setInterval(() => setNow(new Date()), 1000);
+    return () => clearInterval(id);
   }, []);
 
   const ms = now.getMilliseconds();
