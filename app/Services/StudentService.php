@@ -46,4 +46,14 @@ class StudentService
         $paymentService = app(PaymentService::class);
         return $paymentService->getStudentBalance($student->id);
     }
+
+    public function getStudentById(int $id): ?Student
+    {
+        return Student::with([
+            'enrollments.level',
+            'enrollments.section',
+            'enrollments.academicYear',
+            'guardians',
+        ])->find($id);
+    }
 }

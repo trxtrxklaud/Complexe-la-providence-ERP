@@ -13,26 +13,20 @@ use Illuminate\Support\Str;
 
 class EnrollmentService
 {
-    /**
-     * Enroll a new student with guardian and create initial enrollment record.
-     * This replaces the flat data approach in the old StudentController.
-     */
     public function enrollStudent(array $data, $photoPath = null): Enrollment
     {
         return DB::transaction(function () use ($data, $photoPath) {
-            // 1. Create or find student
             $student = Student::create([
-                'student_code'   => $this->generateStudentCode(),
-                'first_name'     => $data['first_name'],
-                'last_name'      => $data['last_name'],
-                'dob'            => $data['dob'],
-                'gender'         => $data['gender'],
-                'photo'          => $photoPath,
-                'notes'          => $data['notes'] ?? null,
-                'status'         => 'active',
+                'student_code' => $this->generateStudentCode(),
+                'first_name'   => $data['first_name'],
+                'last_name'    => $data['last_name'],
+                'dob'          => $data['dob'],
+                'gender'       => $data['gender'],
+                'photo'        => $photoPath,
+                'notes'        => $data['notes'] ?? null,
+                'status'       => 'active',
             ]);
 
-            // 2. Create guardian(s)
             $guardian = Guardian::create([
                 'first_name'   => $data['guardian_first_name'],
                 'last_name'    => $data['guardian_last_name'],
@@ -43,42 +37,79 @@ class EnrollmentService
                 'mother_email' => $data['mother_email'] ?? null,
             ]);
 
-            // Link guardian as primary
             $student->guardians()->attach($guardian->id, [
                 'relationship'       => 'primary',
                 'is_primary_contact' => true,
             ]);
 
-            // 3. Get active academic year
             $academicYear = AcademicYear::where('is_active', true)->firstOrFail();
+            $level        = Level::findOrFail($data['level_id']);
 
-            // 4. Get level and section
-            $level = Level::findOrFail($data['level_id']);
             $section = Section::where('level_id', $level->id)
                               ->where('name', $data['section_name'] ?? 'أ')
-                              ->firstOrFail();
+                              ->first();
 
-            // 5. Create enrollment
-            $enrollment = Enrollment::create([
-                'student_id'           => $student->id,
-                'academic_year_id'     => $academicYear->id,
-                'level_id'             => $level->id,
-                'section_id'           => $section->id,
-                'enrollment_date'      => now(),
-                'status'               => 'active',
-                'notes'                => $data['notes'] ?? null,
+            if (!$section) {
+                throw new \InvalidArgumentException(
+                    'القسم "' . ($data['section_name'] ?? 'أ') . '" غير موجود في هذا المستوى'
+                );
+            }
+
+            return Enrollment::create([
+                'student_id'       => $student->id,
+                'academic_year_id' => $academicYear->id,
+                'level_id'         => $level->id,
+                'section_id'       => $section->id,
+                'enrollment_date'  => now(),
+                'status'           => 'active',
+                'notes'            => $data['notes'] ?? null,
             ]);
+        });
+    }
 
-            // TODO in Phase 3: Generate initial student_fees based on fee_plans
+    public function reenrollStudent(int $studentId, array $data): Enrollment
+    {
+        return DB::transaction(function () use ($studentId, $data) {
+            $student            = Student::findOrFail($studentId);
+            $previousEnrollment = Enrollment::where('student_id', $studentId)->latest()->firstOrFail();
+            $academicYear       = AcademicYear::where('is_active', true)->firstOrFail();
 
-            return $enrollment;
+            $exists = Enrollment::where('student_id', $studentId)
+                                ->where('academic_year_id', $academicYear->id)
+                                ->exists();
+
+            if ($exists) {
+                throw new \InvalidArgumentException('الطالب مُرسَّم بالفعل في السنة الدراسية الحالية');
+            }
+
+            $level   = Level::findOrFail($data['level_id']);
+            $section = Section::where('level_id', $level->id)
+                              ->where('name', $data['section_name'] ?? 'أ')
+                              ->first();
+
+            if (!$section) {
+                throw new \InvalidArgumentException('القسم غير موجود في هذا المستوى');
+            }
+
+            return Enrollment::create([
+                'student_id'             => $student->id,
+                'academic_year_id'       => $academicYear->id,
+                'level_id'               => $level->id,
+                'section_id'             => $section->id,
+                'enrollment_date'        => now(),
+                'status'                 => 'active',
+                'previous_enrollment_id' => $previousEnrollment->id,
+                'notes'                  => $data['notes'] ?? null,
+            ]);
         });
     }
 
     private function generateStudentCode(): string
     {
-        $year = now()->year;
-        $random = strtoupper(Str::random(6));
-        return "PRV-{$year}-{$random}";
+        do {
+            $code = 'PRV-' . now()->year . '-' . strtoupper(Str::random(6));
+        } while (Student::where('student_code', $code)->exists());
+
+        return $code;
     }
 }
