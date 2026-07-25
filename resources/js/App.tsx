@@ -14,6 +14,7 @@ import Dashboard from './pages/Dashboard/Dashboard';
 import { FeeTypesPage } from './pages/FeeTypes/FeeTypesPage';
 import { EmployeesPage } from './pages/Employees/EmployeesPage';
 import { CollectionPage } from './pages/Payments/CollectionPage';
+import { ClassroomsPage } from './pages/Classrooms/ClassroomsPage';
 
 function Layout({ children }: { children: React.ReactNode }) {
     return (
@@ -73,6 +74,13 @@ export default function App() {
                     <Route path="/users/edit/:id" element={
                         <ProtectedRoute permission="manage_users">
                             <Layout><UserForm /></Layout>
+                        </ProtectedRoute>
+                    } />
+
+                    {/* المستويات والأقسام */}
+                    <Route path="/classrooms" element={
+                        <ProtectedRoute permission="manage_users">
+                            <Layout><ClassroomsPage /></Layout>
                         </ProtectedRoute>
                     } />
 
