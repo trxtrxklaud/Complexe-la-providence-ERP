@@ -6,10 +6,19 @@ use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\UserController;
 use App\Http\Controllers\StudentController;
 use App\Http\Controllers\PaymentController;
+use App\Http\Controllers\FeeTypeController;
+use App\Http\Controllers\CollectionController;
+use App\Http\Controllers\EmployeeController;
+use App\Http\Controllers\SalaryController;
+use App\Http\Controllers\AcademicYearController;
 
 Route::middleware('throttle:5,1')->post('/login', [AuthController::class, 'login']);
 
 Route::middleware('auth:sanctum')->group(function () {
+    Route::apiResource('/employees', EmployeeController::class);
+    Route::apiResource('/salaries', SalaryController::class);
+    Route::get('/academic-years', [AcademicYearController::class, 'index']);
+
 
     Route::post('/logout', [AuthController::class, 'logout']);
     Route::get('/user',    [AuthController::class, 'user']);
@@ -23,6 +32,8 @@ Route::middleware('auth:sanctum')->group(function () {
 
     // Students
     Route::middleware('permission:manage_students')->group(function () {
+        // Compatibility route for New Student wizard (frontend posts here)
+        Route::post('/students/enroll', [StudentController::class, 'store']);
         Route::apiResource('/students', StudentController::class);
         Route::post('/students/{student}/enroll',   [StudentController::class, 'enroll']);
         Route::post('/students/{student}/reenroll', [StudentController::class, 'reenroll']);
@@ -33,5 +44,15 @@ Route::middleware('auth:sanctum')->group(function () {
     // Payments
     Route::middleware('permission:manage_payments')->group(function () {
         Route::apiResource('/payments', PaymentController::class)->except(['update']);
+        Route::apiResource('/fee-types', FeeTypeController::class);
+
+
+
+        Route::get('/collection/years', [CollectionController::class, 'years']);
+        Route::get('/collection/years/{year}/sections', [CollectionController::class, 'sectionsByYear']);
+        Route::get('/collection/sections/{section}/students', [CollectionController::class, 'studentsBySection']);
+        Route::post('/payments/collect', [CollectionController::class, 'collect']);
+        Route::get('/enrollments/{enrollment}/ledger', [CollectionController::class, 'ledger']);
+
     });
 });

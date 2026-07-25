@@ -75,8 +75,14 @@ class PaymentController extends Controller
     public function destroy(Payment $payment): JsonResponse
     {
         DB::transaction(function () use ($payment) {
+            $feeIds = $payment->paymentAllocations()->pluck('student_fee_id')->unique()->all();
+
             $payment->paymentAllocations()->delete();
             $payment->delete();
+
+            foreach ($feeIds as $feeId) {
+                $this->paymentService->recalculateStudentFeeStatus((int) $feeId);
+            }
         });
 
         return response()->json(null, 204);

@@ -9,10 +9,37 @@ use Illuminate\Support\Facades\DB;
 
 class PaymentService
 {
-    // FIX: added $createdBy param — PaymentController passes auth()->id() as 2nd arg
     public function recordPayment(array $data, ?int $createdBy = null): Payment
     {
         return DB::transaction(function () use ($data, $createdBy) {
+            if (!empty($data['allocations'])) {
+                $allocationsTotal = array_sum(array_column($data['allocations'], 'amount'));
+                if ($allocationsTotal > $data['amount']) {
+                    throw new \InvalidArgumentException(
+                        'مجموع التوزيعات (' . $allocationsTotal . ') يتجاوز مبلغ الدفعة (' . $data['amount'] . ')'
+                    );
+                }
+
+                foreach ($data['allocations'] as $allocation) {
+                    $fee = StudentFee::find($allocation['student_fee_id']);
+                    if (!$fee) {
+                        throw new \InvalidArgumentException(
+                            'رسم التلميذ رقم ' . $allocation['student_fee_id'] . ' غير موجود'
+                        );
+                    }
+
+                    $alreadyAllocated = $fee->paymentAllocations()->sum('amount_allocated');
+                    $remaining = $fee->amount_due - $alreadyAllocated;
+
+                    if ($allocation['amount'] > $remaining) {
+                        throw new \InvalidArgumentException(
+                            'مبلغ التوزيع (' . $allocation['amount'] . ') يتجاوز المبلغ المتبقي'
+                            . ' (' . $remaining . ') للرسم: ' . $fee->description
+                        );
+                    }
+                }
+            }
+
             $payment = Payment::create([
                 'student_id'    => $data['student_id'],
                 'enrollment_id' => $data['enrollment_id'] ?? null,
@@ -39,6 +66,11 @@ class PaymentService
         });
     }
 
+    public function recalculateStudentFeeStatus(int $studentFeeId): void
+    {
+        $this->updateStudentFeeStatus($studentFeeId);
+    }
+
     private function updateStudentFeeStatus(int $studentFeeId): void
     {
         $fee = StudentFee::find($studentFeeId);
@@ -47,7 +79,7 @@ class PaymentService
         $allocated = $fee->paymentAllocations()->sum('amount_allocated');
 
         $fee->update([
-            'status' => match(true) {
+            'status' => match (true) {
                 $allocated >= $fee->amount_due => 'paid',
                 $allocated > 0                 => 'partial',
                 default                        => 'pending',
@@ -57,15 +89,14 @@ class PaymentService
 
     public function getStudentBalance(int $studentId): float
     {
-        $fees = StudentFee::whereHas('enrollment', fn($q) =>
-                    $q->where('student_id', $studentId)
-                  )
-                  ->whereIn('status', ['pending', 'partial', 'overdue'])
-                  ->with('paymentAllocations')
-                  ->get();
+        $fees = StudentFee::whereHas('enrollment', fn ($q) =>
+            $q->where('student_id', $studentId)
+        )
+            ->whereIn('status', ['pending', 'partial', 'overdue'])
+            ->with('paymentAllocations')
+            ->get();
 
-        // FIX: max(0, ...) — prevents negative balance if over-payment
-        return (float) $fees->sum(fn($fee) =>
+        return (float) $fees->sum(fn ($fee) =>
             max(0, $fee->amount_due - $fee->paymentAllocations->sum('amount_allocated'))
         );
     }

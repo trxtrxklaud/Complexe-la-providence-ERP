@@ -11,6 +11,7 @@ class Payment extends Model
     protected $fillable = [
         'student_id',
         'enrollment_id',
+        'months',
         'amount',
         'payment_date',
         'method',
@@ -22,6 +23,7 @@ class Payment extends Model
     protected $casts = [
         'amount'       => 'decimal:2',
         'payment_date' => 'date',
+        'months'       => 'array',
     ];
 
     public function student(): BelongsTo
@@ -39,7 +41,6 @@ class Payment extends Model
         return $this->belongsTo(User::class, 'created_by');
     }
 
-    // FIX: was allocations() — renamed to match all controllers & services
     public function paymentAllocations(): HasMany
     {
         return $this->hasMany(PaymentAllocation::class);

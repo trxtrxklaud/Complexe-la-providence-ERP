@@ -1,4 +1,3 @@
-import axios from 'axios';
 import type {
   Payment,
   StorePaymentPayload,
@@ -6,42 +5,135 @@ import type {
   PaginatedResponse,
 } from '../types';
 
+const API_BASE = '/api';
+
+function getHeaders() {
+  const token = localStorage.getItem('token');
+  return {
+    'Content-Type': 'application/json',
+    Accept: 'application/json',
+    ...(token ? { Authorization: 'Bearer ' + token } : {}),
+  };
+}
+
 export interface PaymentFilters {
-  student_id?:    number;
+  student_id?: number;
   enrollment_id?: number;
-  method?:        string;
-  date_from?:     string;
-  date_to?:       string;
-  per_page?:      number;
-  page?:          number;
+  method?: string;
+  date_from?: string;
+  date_to?: string;
+  per_page?: number;
+  page?: number;
 }
 
 export const paymentsApi = {
-  index: (filters?: PaymentFilters) =>
-    axios
-      .get<PaginatedResponse<Payment>>('/api/payments', { params: filters })
-      .then((r) => r.data),
+  async index(filters?: PaymentFilters): Promise<PaginatedResponse<Payment>> {
+    const params = new URLSearchParams();
+    if (filters) {
+      Object.entries(filters).forEach(([k, v]) => {
+        if (v !== undefined && v !== null && v !== '') params.append(k, String(v));
+      });
+    }
+    const q = params.toString();
+    const url = API_BASE + '/payments' + (q ? '?' + q : '');
+    const res = await fetch(url, { headers: getHeaders() });
+    if (!res.ok) throw new Error('فشل جلب المدفوعات');
+    return res.json();
+  },
 
-  store: (data: StorePaymentPayload) =>
-    axios.post<Payment>('/api/payments', data).then((r) => r.data),
+  async store(data: StorePaymentPayload): Promise<Payment> {
+    const res = await fetch(API_BASE + '/payments', {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify(data),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.message || 'فشل تسجيل الدفعة');
+    }
+    return res.json();
+  },
 
-  show: (id: number) =>
-    axios.get<Payment>(`/api/payments/${id}`).then((r) => r.data),
+  async show(id: number): Promise<Payment> {
+    const res = await fetch(API_BASE + '/payments/' + id, { headers: getHeaders() });
+    if (!res.ok) throw new Error('فشل جلب الدفعة');
+    return res.json();
+  },
 
-  destroy: (id: number) =>
-    axios.delete(`/api/payments/${id}`).then((r) => r.data),
+  async destroy(id: number): Promise<void> {
+    const res = await fetch(API_BASE + '/payments/' + id, {
+      method: 'DELETE',
+      headers: getHeaders(),
+    });
+    if (!res.ok) throw new Error('فشل حذف الدفعة');
+  },
 };
 
 export const studentFeesApi = {
-  balance: (studentId: number) =>
-    axios
-      .get<{ student_id: number; balance: number }>(`/api/students/${studentId}/balance`)
-      .then((r) => r.data),
+  async balance(studentId: number): Promise<{ student_id: number; balance: number }> {
+    const res = await fetch(API_BASE + '/students/' + studentId + '/balance', {
+      headers: getHeaders(),
+    });
+    if (!res.ok) throw new Error('فشل جلب الرصيد');
+    return res.json();
+  },
 
-  fees: (studentId: number, enrollmentId?: number) =>
-    axios
-      .get<StudentFeesEnrollment[]>(`/api/students/${studentId}/fees`, {
-        params: enrollmentId ? { enrollment_id: enrollmentId } : undefined,
-      })
-      .then((r) => r.data),
+  async fees(studentId: number, enrollmentId?: number): Promise<StudentFeesEnrollment[]> {
+    const q = enrollmentId ? '?enrollment_id=' + enrollmentId : '';
+    const res = await fetch(API_BASE + '/students/' + studentId + '/fees' + q, {
+      headers: getHeaders(),
+    });
+    if (!res.ok) throw new Error('فشل جلب رسوم التلميذ');
+    return res.json();
+  },
 };
+
+
+export async function collectPayment(data: {
+  student_id: number;
+  enrollment_id: number;
+  months: string[];
+  payment_date: string;
+  method: 'cash' | 'bank_transfer' | 'check' | 'card';
+  reference?: string | null;
+  notes?: string | null;
+  items: { fee_type_id: number; amount: number }[];
+}) {
+  const res = await fetch(API_BASE + '/payments/collect', {
+    method: 'POST',
+    headers: getHeaders(),
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.message || 'فشل الاستخلاص');
+  }
+  return res.json();
+}
+
+export async function getEnrollmentLedger(enrollmentId: number) {
+  const res = await fetch(API_BASE + '/enrollments/' + enrollmentId + '/ledger', {
+    headers: getHeaders(),
+  });
+  if (!res.ok) throw new Error('فشل جلب سجل الأشهر');
+  return res.json();
+}
+
+
+export async function getCollectionYears() {
+  const res = await fetch(API_BASE + '/collection/years', { headers: getHeaders() });
+  if (!res.ok) throw new Error('فشل جلب السنوات');
+  return res.json();
+}
+
+export async function getSectionsByYear(yearId: number) {
+  const res = await fetch(API_BASE + '/collection/years/' + yearId + '/sections', { headers: getHeaders() });
+  if (!res.ok) throw new Error('فشل جلب الأقسام');
+  return res.json();
+}
+
+export async function getStudentsBySection(sectionId: number, yearId: number) {
+  const res = await fetch(API_BASE + '/collection/sections/' + sectionId + '/students?year_id=' + yearId, { headers: getHeaders() });
+  if (!res.ok) throw new Error('فشل جلب التلاميذ');
+  return res.json();
+}

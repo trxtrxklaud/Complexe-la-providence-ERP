@@ -10,6 +10,7 @@
         "laravel/horizon": "^5.0"
     },
     "require-dev": {
+        "doctrine/dbal": "^4.4",
         "fakerphp/faker": "^1.23",
         "laravel/pint": "^1.13",
         "laravel/tinker": "^2.9",

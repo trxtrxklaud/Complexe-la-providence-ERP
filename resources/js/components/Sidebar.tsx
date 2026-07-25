@@ -1,5 +1,6 @@
-import { NavLink, useNavigate, useLocation } from 'react-router-dom';
-import { LayoutDashboard, Users, LogOut, GraduationCap } from 'lucide-react';
+import {
+  Users, NavLink, useNavigate, useLocation } from 'react-router-dom';
+import { LayoutDashboard, Users, LogOut, GraduationCap, Tags, CreditCard } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 
 export function Sidebar() {
@@ -8,8 +9,16 @@ export function Sidebar() {
     const location = useLocation();
 
     const handleLogout = async () => {
-        await logout();
-        navigate('/login');
+        try {
+            // Don't block UI if logout API is slow on mobile/Termux
+            await Promise.race([
+                logout(),
+                new Promise((resolve) => setTimeout(resolve, 1500)),
+            ]);
+        } finally {
+            localStorage.removeItem('token');
+            navigate('/login');
+        }
     };
 
     const linkClass = (active: boolean) =>
@@ -76,6 +85,43 @@ export function Sidebar() {
                         <span>إدارة المستخدمين</span>
                     </NavLink>
                 )}
+
+                {hasPermission('manage_users') && (
+                    <NavLink
+                        to="/fee-types"
+                        className={({ isActive }) =>
+                            linkClass(isActive || location.pathname.startsWith('/fee-types'))
+                        }
+                    >
+                        <Tags size={20} />
+                        <span>أنواع المعاليم</span>
+                    </NavLink>
+                )}
+
+                <NavLink
+                    to="/collection"
+                    className={({ isActive }) =>
+                        linkClass(isActive || location.pathname.startsWith('/collection'))
+                    }
+                >
+                    <CreditCard size={20} />
+                    <span>استخلاص</span>
+                </NavLink>
+
+                    <NavLink
+                        to="/employees"
+                        className={({ isActive }) =>
+                            `flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm transition ${
+                                isActive ? 'bg-white/15 text-white font-semibold' : 'text-white/80 hover:bg-white/10'
+                            }`
+                        }
+                    >
+                        <Users size={18} />
+                        <span>الإطارات</span>
+                    </NavLink>
+
+
+
             </nav>
 
             {/* Logout */}

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { Search, ArrowRight, User, GraduationCap, CreditCard } from 'lucide-react';
-import { getStudents } from '../../api/students';
+import { getStudents, reenrollStudent } from '../../api/students';
 
 const C = {
   forest: '#3B4A36',
@@ -48,16 +48,21 @@ export function OldStudentReenroll() {
 
 
   async function handleSave() {
-    if (!levelId || !paymentMethod || !amount || !paymentDate) {
-      alert('الرجاء إكمال جميع الحقول');
+    if (!selectedStudent || !levelId) {
+      alert('الرجاء اختيار المستوى');
       return;
     }
     setSaving(true);
     try {
-      // TODO: call real re-enroll API when ready
-      await new Promise(r => setTimeout(r, 800));
+      await reenrollStudent(selectedStudent.id, {
+        level_id: parseInt(levelId, 10),
+      });
       alert('تم تجديد الترسيم بنجاح');
       setSelectedStudent(null);
+      setLevelId('');
+      setPaymentMethod('');
+      setAmount('');
+      setPaymentDate('');
     } catch (err: any) {
       alert(err.message || 'حدث خطأ');
     } finally {

@@ -11,6 +11,9 @@ import { EnrollWizard } from './pages/Students/EnrollWizard';
 import { NewStudentWizard } from './pages/Students/NewStudentWizard';
 import { OldStudentReenroll } from './pages/Students/OldStudentReenroll';
 import Dashboard from './pages/Dashboard/Dashboard';
+import { FeeTypesPage } from './pages/FeeTypes/FeeTypesPage';
+import { EmployeesPage } from './pages/Employees/EmployeesPage';
+import { CollectionPage } from './pages/Payments/CollectionPage';
 
 function Layout({ children }: { children: React.ReactNode }) {
     return (
@@ -74,7 +77,27 @@ export default function App() {
                     } />
 
                     {/* Fallback */}
-                    <Route path="*" element={<Navigate to="/" replace />} />
+
+                    <Route path="/fee-types" element={
+                        <ProtectedRoute permission="manage_users">
+                            <Layout><FeeTypesPage /></Layout>
+                        </ProtectedRoute>
+                    } />
+
+
+                    <Route path="/collection" element={
+                        <ProtectedRoute>
+                            <Layout><CollectionPage /></Layout>
+                        </ProtectedRoute>
+                    } />
+
+                    
+                        <Route path="/employees" element={
+                            <ProtectedRoute>
+                                <Layout><EmployeesPage /></Layout>
+                            </ProtectedRoute>
+                        } />
+<Route path="*" element={<Navigate to="/" replace />} />
                 </Routes>
             </BrowserRouter>
         </AuthProvider>

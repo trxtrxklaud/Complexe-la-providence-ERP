@@ -63,8 +63,8 @@ export async function enrollStudent(formData: FormData): Promise<Student> {
 
 export async function reenrollStudent(studentId: number, data: {
     level_id: number;
-    section_id: number;
-    academic_year_id: number;
+    section_name?: string;
+    notes?: string;
 }): Promise<Student> {
     const res = await fetch(`${API_BASE}/students/${studentId}/reenroll`, {
         method: 'POST',

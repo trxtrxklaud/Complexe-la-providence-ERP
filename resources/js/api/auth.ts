@@ -8,7 +8,7 @@ export interface AuthResponse {
     token_type: string;
     user: User;
 }
-export async function login(credentials: { username: string; password: string }): Promise<AuthResponse> {
+export async function login(credentials: { email: string; password: string }): Promise<AuthResponse> {
     const res = await fetch(`${API_BASE}/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
