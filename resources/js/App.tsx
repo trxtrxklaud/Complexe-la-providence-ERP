@@ -14,6 +14,8 @@ import Dashboard from './pages/Dashboard/Dashboard';
 import { FeeTypesPage } from './pages/FeeTypes/FeeTypesPage';
 import { EmployeesPage } from './pages/Employees/EmployeesPage';
 import { CollectionPage } from './pages/Payments/CollectionPage';
+import { ClassroomsPage } from './pages/Classrooms/ClassroomsPage';
+import { RosterPage } from './pages/Classrooms/RosterPage';
 
 function Layout({ children }: { children: React.ReactNode }) {
     return (
@@ -56,6 +58,18 @@ export default function App() {
                     <Route path="/students/enroll/old" element={
                         <ProtectedRoute permission="enroll_student">
                             <Layout><OldStudentReenroll /></Layout>
+                        </ProtectedRoute>
+                    } />
+
+                    {/* بنية المدرسة وقوائم الأقسام */}
+                    <Route path="/classrooms" element={
+                        <ProtectedRoute permission="manage_users">
+                            <Layout><ClassroomsPage /></Layout>
+                        </ProtectedRoute>
+                    } />
+                    <Route path="/rosters" element={
+                        <ProtectedRoute permission="manage_users">
+                            <Layout><RosterPage /></Layout>
                         </ProtectedRoute>
                     } />
 

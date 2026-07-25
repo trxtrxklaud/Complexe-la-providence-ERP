@@ -1,5 +1,5 @@
 import { NavLink, useNavigate, useLocation } from 'react-router-dom';
-import { LayoutDashboard, Users, LogOut, GraduationCap, Tags, CreditCard } from 'lucide-react';
+import { LayoutDashboard, Users, LogOut, GraduationCap, Tags, CreditCard, Layers, ClipboardList } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { setToken } from '../api/http';
 
@@ -53,7 +53,7 @@ export function Sidebar() {
             )}
 
             {/* Nav */}
-            <nav className="flex-1 p-4 space-y-2">
+            <nav className="flex-1 p-4 space-y-2 overflow-y-auto">
                 <NavLink
                     to="/"
                     end
@@ -72,6 +72,30 @@ export function Sidebar() {
                     <GraduationCap size={20} />
                     <span>التلاميذ</span>
                 </NavLink>
+
+                {hasPermission('manage_users') && (
+                    <NavLink
+                        to="/classrooms"
+                        className={({ isActive }) =>
+                            linkClass(isActive || location.pathname.startsWith('/classrooms'))
+                        }
+                    >
+                        <Layers size={20} />
+                        <span>المستويات والأقسام</span>
+                    </NavLink>
+                )}
+
+                {hasPermission('manage_users') && (
+                    <NavLink
+                        to="/rosters"
+                        className={({ isActive }) =>
+                            linkClass(isActive || location.pathname.startsWith('/rosters'))
+                        }
+                    >
+                        <ClipboardList size={20} />
+                        <span>قوائم الأقسام</span>
+                    </NavLink>
+                )}
 
                 {/* يظهر فقط إذا كان للمستخدم صلاحية manage_users */}
                 {hasPermission('manage_users') && (
