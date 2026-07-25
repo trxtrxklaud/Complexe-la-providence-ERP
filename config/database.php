@@ -2,6 +2,12 @@
 
 use Illuminate\Support\Str;
 
+// PHP 8.4 أهمل ثوابت PDO::MYSQL_ATTR_* لصالح Pdo\Mysql::ATTR_*.
+// نختار الثابت المناسب دون ذكر المهجور على الإصدارات الحديثة.
+$mysqlSslCaAttribute = PHP_VERSION_ID >= 80400 && class_exists(\Pdo\Mysql::class)
+    ? \Pdo\Mysql::ATTR_SSL_CA
+    : (defined('PDO::MYSQL_ATTR_SSL_CA') ? constant('PDO::MYSQL_ATTR_SSL_CA') : null);
+
 return [
 
     'default' => env('DB_CONNECTION', 'mysql'),
@@ -31,9 +37,11 @@ return [
             'prefix_indexes' => true,
             'strict' => true,
             'engine' => null,
-            'options' => extension_loaded('pdo_mysql') ? array_filter([
-                PDO::MYSQL_ATTR_SSL_CA => env('MYSQL_ATTR_SSL_CA'),
-            ]) : [],
+            'options' => extension_loaded('pdo_mysql') && $mysqlSslCaAttribute !== null
+                ? array_filter([
+                    $mysqlSslCaAttribute => env('MYSQL_ATTR_SSL_CA'),
+                ])
+                : [],
         ],
 
         'pgsql' => [
