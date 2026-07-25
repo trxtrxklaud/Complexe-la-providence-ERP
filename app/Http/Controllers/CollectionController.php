@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Requests\CollectPaymentRequest;
 use App\Models\AcademicYear;
 use App\Models\Enrollment;
 use App\Models\Section;
@@ -72,25 +73,17 @@ class CollectionController extends Controller
         return response()->json($result);
     }
 
-    public function collect(Request $request): JsonResponse
+    /**
+     * قواعد التحقق موحّدة الآن في CollectPaymentRequest بدل تكرارها هنا،
+     * وهي تتضمّن التحقق من أن التسجيل يخصّ التلميذ المحدَّد.
+     */
+    public function collect(CollectPaymentRequest $request): JsonResponse
     {
-        $validated = $request->validate([
-            'student_id'           => ['required', 'integer', 'exists:students,id'],
-            'enrollment_id'        => ['required', 'integer', 'exists:enrollments,id'],
-            'months'               => ['required', 'array', 'min:1'],
-            'months.*'             => ['required', 'string', 'regex:/^\d{4}-\d{2}$/'],
-            'payment_date'         => ['required', 'date', 'before_or_equal:today'],
-            'method'               => ['required', 'in:cash,bank_transfer,check,card'],
-            'reference'            => ['nullable', 'string', 'max:100'],
-            'notes'                => ['nullable', 'string', 'max:500'],
-            'discount'             => ['nullable', 'numeric', 'min:0'],
-            'items'                => ['required', 'array', 'min:1'],
-            'items.*.fee_type_id'  => ['required', 'integer', 'exists:fee_types,id'],
-            'items.*.amount'       => ['required', 'numeric', 'min:0.01'],
-        ]);
-
         try {
-            $receipt = $this->collectionService->collect($validated, (int) auth()->id());
+            $receipt = $this->collectionService->collect(
+                $request->validated(),
+                (int) auth()->id()
+            );
 
             return response()->json([
                 'message' => 'تم تسجيل الاستخلاص بنجاح',
