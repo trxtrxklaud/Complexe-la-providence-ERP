@@ -11,6 +11,8 @@ use App\Http\Controllers\CollectionController;
 use App\Http\Controllers\EmployeeController;
 use App\Http\Controllers\SalaryController;
 use App\Http\Controllers\AcademicYearController;
+use App\Http\Controllers\LevelController;
+use App\Http\Controllers\SectionController;
 
 Route::middleware('throttle:5,1')->post('/login', [AuthController::class, 'login']);
 
@@ -28,6 +30,19 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::middleware('permission:manage_users')->group(function () {
         Route::get('/roles', [UserController::class, 'roles']);
         Route::apiResource('/users', UserController::class);
+    });
+
+    // School structure — المستويات والأقسام
+    Route::middleware('permission:manage_users')->group(function () {
+        Route::get('/levels', [LevelController::class, 'index']);
+        Route::post('/levels', [LevelController::class, 'store']);
+        Route::put('/levels/{level}', [LevelController::class, 'update']);
+        Route::delete('/levels/{level}', [LevelController::class, 'destroy']);
+
+        Route::get('/sections', [SectionController::class, 'index']);
+        Route::post('/sections', [SectionController::class, 'store']);
+        Route::put('/sections/{section}', [SectionController::class, 'update']);
+        Route::delete('/sections/{section}', [SectionController::class, 'destroy']);
     });
 
     // Students
