@@ -1,4 +1,5 @@
 import type { User } from '../types';
+import { API_BASE, getToken } from './http';
 
 export interface Guardian {
     first_name: string;
@@ -25,10 +26,9 @@ export interface Student {
     enrollments: Enrollment[];
 }
 
-const API_BASE = '/api';
-
-function getHeaders(): Record<string, string> {
-    const token = localStorage.getItem('token');
+/** رؤوس بدون Content-Type: مطلوبة لطلبات FormData. */
+function authHeaders(): Record<string, string> {
+    const token = getToken();
     return {
         'Accept': 'application/json',
         ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
@@ -36,14 +36,14 @@ function getHeaders(): Record<string, string> {
 }
 
 export async function getStudents(): Promise<Student[]> {
-    const res = await fetch(`${API_BASE}/students`, { headers: getHeaders() });
+    const res = await fetch(`${API_BASE}/students`, { headers: authHeaders() });
     if (!res.ok) throw new Error('حدث خطأ أثناء جلب قائمة التلاميذ');
     const data = await res.json();
     return data.data ?? data;
 }
 
 export async function getStudent(id: number): Promise<Student> {
-    const res = await fetch(`${API_BASE}/students/${id}`, { headers: getHeaders() });
+    const res = await fetch(`${API_BASE}/students/${id}`, { headers: authHeaders() });
     if (!res.ok) throw new Error('حدث خطأ أثناء جلب بيانات التلميذ');
     return res.json();
 }
@@ -51,7 +51,7 @@ export async function getStudent(id: number): Promise<Student> {
 export async function enrollStudent(formData: FormData): Promise<Student> {
     const res = await fetch(`${API_BASE}/students/enroll`, {
         method: 'POST',
-        headers: getHeaders(), // بدون Content-Type — browser يضبطه تلقائياً مع FormData
+        headers: authHeaders(), // بدون Content-Type — browser يضبطه تلقائياً مع FormData
         body: formData,
     });
     if (!res.ok) {
@@ -68,7 +68,7 @@ export async function reenrollStudent(studentId: number, data: {
 }): Promise<Student> {
     const res = await fetch(`${API_BASE}/students/${studentId}/reenroll`, {
         method: 'POST',
-        headers: { ...getHeaders(), 'Content-Type': 'application/json' },
+        headers: { ...authHeaders(), 'Content-Type': 'application/json' },
         body: JSON.stringify(data),
     });
     if (!res.ok) {

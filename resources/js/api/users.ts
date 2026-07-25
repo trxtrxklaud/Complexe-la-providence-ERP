@@ -1,16 +1,7 @@
 import type { User, Role } from '../types';
+import { API_BASE, getHeaders } from './http';
 export type { User, Role };
 
-const API_BASE = '/api';
-
-function getHeaders() {
-    const token = localStorage.getItem('token');
-    return {
-        'Content-Type': 'application/json',
-        'Accept': 'application/json',
-        ...(token ? { 'Authorization': `Bearer ${token}` } : {})
-    };
-}
 export async function fetchUsers(): Promise<User[]> {
     const res = await fetch(`${API_BASE}/users`, { headers: getHeaders() });
     if (!res.ok) throw new Error('Failed to fetch users');

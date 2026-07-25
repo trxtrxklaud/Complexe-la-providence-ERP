@@ -21,6 +21,8 @@ class CollectionService
         '10' => 'أكتوبر', '11' => 'نوفمبر', '12' => 'ديسمبر',
     ];
 
+    public function __construct(private readonly PaymentService $paymentService) {}
+
     public function collect(array $data, int $createdBy): array
     {
         return DB::transaction(function () use ($data, $createdBy) {
@@ -31,6 +33,13 @@ class CollectionService
                 'section',
             ])->findOrFail($data['enrollment_id']);
 
+            // حارس سلامة مالية: التسجيل يجب أن يخصّ التلميذ المحدَّد نفسه.
+            if ((int) $enrollment->student_id !== (int) $data['student_id']) {
+                throw new \InvalidArgumentException(
+                    'التسجيل المحدَّد لا يخصّ هذا التلميذ'
+                );
+            }
+
             $months = $data['months'];
             sort($months);
             $this->validateMonths($months, $enrollment);
@@ -40,9 +49,16 @@ class CollectionService
                 $months
             ));
 
-            $itemsTotal = array_sum(array_column($data['items'], 'amount'));
+            $itemsTotal = round((float) array_sum(array_column($data['items'], 'amount')), 2);
             $discount = max(0, (float) ($data['discount'] ?? 0));
-            $total = max(0, $itemsTotal - $discount);
+
+            if ($discount > $itemsTotal) {
+                throw new \InvalidArgumentException(
+                    'التخفيض (' . $discount . ') يتجاوز مجموع البنود (' . $itemsTotal . ')'
+                );
+            }
+
+            $total = round($itemsTotal - $discount, 2);
 
             $payment = Payment::create([
                 'student_id'    => $data['student_id'],
@@ -56,25 +72,33 @@ class CollectionService
                 'created_by'    => $createdBy,
             ]);
 
-            $receiptItems = [];
+            // توزيع التخفيض تناسبياً على البنود حتى يبقى:
+            //   مجموع amount_due = مجموع التوزيعات = مبلغ الدفعة
+            $netShares = $this->distribute($data['items'], $itemsTotal, $total);
 
-            foreach ($data['items'] as $item) {
+            $receiptItems = [];
+            $feeIds = [];
+
+            foreach ($data['items'] as $index => $item) {
                 $feeType = FeeType::findOrFail($item['fee_type_id']);
+                $net = $netShares[$index];
 
                 $studentFee = StudentFee::create([
                     'enrollment_id' => $enrollment->id,
                     'fee_plan_id'   => null,
                     'description'   => $feeType->name_ar . ' — ' . $monthsLabel,
-                    'amount_due'    => $item['amount'],
+                    'amount_due'    => $net,
                     'due_date'      => $data['payment_date'],
-                    'status'        => 'paid',
+                    'status'        => 'pending',
                 ]);
 
                 PaymentAllocation::create([
                     'payment_id'       => $payment->id,
                     'student_fee_id'   => $studentFee->id,
-                    'amount_allocated' => $item['amount'],
+                    'amount_allocated' => $net,
                 ]);
+
+                $feeIds[] = $studentFee->id;
 
                 $receiptItems[] = [
                     'fee_type_id'   => $feeType->id,
@@ -83,9 +107,16 @@ class CollectionService
                 ];
             }
 
+            // مصدر حقيقة واحد لحالة الرسم: تُحسب من التوزيعات لا تُكتب يدوياً.
+            foreach ($feeIds as $feeId) {
+                $this->paymentService->recalculateStudentFeeStatus($feeId);
+            }
+
             $guardian = $enrollment->student->guardians
                 ->sortByDesc(fn ($g) => $g->pivot->is_primary_contact ?? 0)
                 ->first();
+
+            $actor = auth()->user();
 
             return [
                 'payment_id'   => $payment->id,
@@ -119,11 +150,44 @@ class CollectionService
                 ] : null,
                 'created_by'   => [
                     'id'   => $createdBy,
-                    'code' => auth()->user()?->username ?? (string) $createdBy,
-                    'name' => trim((auth()->user()?->first_name ?? '') . ' ' . (auth()->user()?->last_name ?? '')),
+                    'code' => $actor?->code ?? $actor?->username ?? (string) $createdBy,
+                    'name' => trim(($actor?->first_name ?? '') . ' ' . ($actor?->last_name ?? '')),
                 ],
             ];
         });
+    }
+
+    /**
+     * يوزّع المبلغ الصافي على البنود تناسبياً، ويضع فرق التقريب في البند الأخير
+     * حتى يساوي المجموع المبلغ الصافي بالضبط (بلا انحراف مليمات).
+     *
+     * @return array<int, float>
+     */
+    private function distribute(array $items, float $itemsTotal, float $total): array
+    {
+        $count = count($items);
+        $shares = [];
+
+        if ($itemsTotal <= 0) {
+            return array_fill(0, $count, 0.0);
+        }
+
+        // يُحتفظ بالمتبقّي بدل المجموع الجاري حتى لا ينتج نصيب سالب
+        // عند تراكم التقريب على مبالغ صغيرة جداً.
+        $remaining = $total;
+        foreach (array_values($items) as $i => $item) {
+            if ($i === $count - 1) {
+                $shares[$i] = max(0.0, round($remaining, 2));
+                break;
+            }
+            $share = round(((float) $item['amount'] / $itemsTotal) * $total, 2);
+            $share = min($share, $remaining);
+            $share = max(0.0, $share);
+            $shares[$i] = $share;
+            $remaining = round($remaining - $share, 2);
+        }
+
+        return $shares;
     }
 
     public function monthLedger(int $enrollmentId): array
@@ -170,20 +234,29 @@ class CollectionService
     public function getPaidMonths(int $enrollmentId): array
     {
         $paid = [];
-        Payment::where('enrollment_id', $enrollmentId)
+
+        Payment::query()
+            ->where('enrollment_id', $enrollmentId)
             ->whereNotNull('months')
-            ->pluck('months')
-            ->each(function ($months) use (&$paid) {
-                foreach ($months as $m) {
-                    $paid[] = $m;
+            ->select('months')
+            ->cursor()
+            ->each(function ($payment) use (&$paid) {
+                foreach ((array) $payment->months as $m) {
+                    $paid[$m] = true;
                 }
             });
-        return array_values(array_unique($paid));
+
+        return array_keys($paid);
     }
 
     private function validateMonths(array $months, Enrollment $enrollment): void
     {
         $academicYear = $enrollment->academicYear;
+
+        if (! $academicYear) {
+            throw new \InvalidArgumentException('التسجيل غير مرتبط بسنة دراسية');
+        }
+
         $allMonths = $this->getAcademicYearMonths($academicYear);
         $paidMonths = $this->getPaidMonths($enrollment->id);
 
@@ -193,6 +266,10 @@ class CollectionService
                     'الشهر ' . $m . ' لا ينتمي إلى السنة الدراسية ' . $academicYear->name
                 );
             }
+        }
+
+        if (count(array_unique($months)) !== count($months)) {
+            throw new \InvalidArgumentException('لا يمكن تكرار نفس الشهر في دفعة واحدة');
         }
 
         foreach ($months as $m) {

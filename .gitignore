@@ -1,16 +1,19 @@
-# Environment
+# ── Environment ───────────────────────────────────────────
 .env
 .env.local
 .env.*.local
+auth.json
 
-# Dependencies
+# ── Dependencies ─────────────────────────────────────────
 /node_modules
 /vendor
 
-# Build
+# ── Build output ─────────────────────────────────────────
 /public/build
 /public/hot
 /public/storage
+
+# ── Storage / runtime ────────────────────────────────────
 /storage/*.key
 /storage/framework/cache/*
 /storage/framework/sessions/*
@@ -21,23 +24,27 @@
 !/storage/framework/views/.gitignore
 !/storage/logs/.gitignore
 
-# IDE / OS
+# ── Local databases (never commit real data) ──────────────────
+*.sqlite
+*.sqlite3
+/database/database.sqlite
+/providence
+
+# ── Archives ───────────────────────────────────────────
+*.zip
+*.tar.gz
+
+# ── IDE / OS ───────────────────────────────────────────
 .idea
 .vscode
 *.swp
 .DS_Store
 Thumbs.db
 
-# Misc
+# ── Logs / misc ────────────────────────────────────────
 npm-debug.log
 yarn-error.log
+*.log
 Homestead.json
 Homestead.yaml
-auth.json
 Alarms/
-*.zip
-.env
-vendor/
-node_modules/
-*.zip
-storage/*.key
