@@ -13,6 +13,7 @@ use App\Http\Controllers\SalaryController;
 use App\Http\Controllers\AcademicYearController;
 use App\Http\Controllers\LevelController;
 use App\Http\Controllers\SectionController;
+use App\Http\Controllers\RosterController;
 
 Route::middleware('throttle:5,1')->post('/login', [AuthController::class, 'login']);
 
@@ -43,6 +44,13 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/sections', [SectionController::class, 'store']);
         Route::put('/sections/{section}', [SectionController::class, 'update']);
         Route::delete('/sections/{section}', [SectionController::class, 'destroy']);
+    });
+
+    // قوائم الأقسام — إدخال دفعي وطباعة
+    Route::middleware('permission:manage_users')->group(function () {
+        Route::get('/rosters', [RosterController::class, 'index']);
+        Route::post('/rosters/bulk', [RosterController::class, 'bulkStore']);
+        Route::delete('/rosters/{roster}', [RosterController::class, 'destroy']);
     });
 
     // Students
