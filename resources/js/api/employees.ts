@@ -1,13 +1,4 @@
-const API_BASE = '/api';
-
-function getHeaders() {
-  const token = localStorage.getItem('token');
-  return {
-    'Content-Type': 'application/json',
-    Accept: 'application/json',
-    ...(token ? { Authorization: `Bearer ${token}` } : {}),
-  };
-}
+import { API_BASE, getHeaders } from './http';
 
 export interface Employee {
   id: number;
@@ -55,13 +46,13 @@ export async function createEmployee(data: Partial<Employee>): Promise<Employee>
 }
 
 export async function updateEmployee(id: number, data: Partial<Employee>): Promise<Employee> {
-  return parse(await fetch(`\( {API_BASE}/employees/ \){id}`, {
+  return parse(await fetch(`${API_BASE}/employees/${id}`, {
     method: 'PUT', headers: getHeaders(), body: JSON.stringify(data),
   }));
 }
 
 export async function deleteEmployee(id: number): Promise<void> {
-  await parse(await fetch(`\( {API_BASE}/employees/ \){id}`, {
+  await parse(await fetch(`${API_BASE}/employees/${id}`, {
     method: 'DELETE', headers: getHeaders(),
   }));
 }
@@ -75,7 +66,7 @@ export async function getSalaries(params?: {
   if (params?.academic_year_id) q.set('academic_year_id', String(params.academic_year_id));
   if (params?.employee_id) q.set('employee_id', String(params.employee_id));
   if (params?.page) q.set('page', String(params.page));
-  const url = `\( {API_BASE}/salaries` + (q.toString() ? `? \){q}` : '');
+  const url = `${API_BASE}/salaries` + (q.toString() ? `?${q}` : '');
   return parse(await fetch(url, { headers: getHeaders() }));
 }
 
@@ -95,7 +86,7 @@ export async function createSalary(data: {
 }
 
 export async function deleteSalary(id: number): Promise<void> {
-  await parse(await fetch(`\( {API_BASE}/salaries/ \){id}`, {
+  await parse(await fetch(`${API_BASE}/salaries/${id}`, {
     method: 'DELETE', headers: getHeaders(),
   }));
 }

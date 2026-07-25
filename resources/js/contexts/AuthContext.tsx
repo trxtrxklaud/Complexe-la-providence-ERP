@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { fetchCurrentUser, logout as apiLogout } from '../api/auth';
 import { User } from '../types';
+import { getToken, setToken } from '../api/http';
 
 interface AuthContextType {
     user: User | null;
@@ -18,13 +19,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     useEffect(() => {
         const initAuth = async () => {
-            const token = localStorage.getItem('token');
+            const token = getToken();
             if (token) {
                 try {
                     const userData = await fetchCurrentUser();
                     setUser(userData);
                 } catch (err) {
-                    localStorage.removeItem('token');
+                    setToken(null);
                 }
             }
             setLoading(false);
@@ -33,7 +34,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }, []);
 
     const login = (token: string, userData: User) => {
-        localStorage.setItem('token', token);
+        setToken(token);
         setUser(userData);
     };
 
@@ -43,7 +44,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         } catch (err) {
             console.error(err);
         } finally {
-            localStorage.removeItem('token');
+            setToken(null);
             setUser(null);
         }
     };

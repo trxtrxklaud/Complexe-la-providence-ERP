@@ -1,3 +1,4 @@
+import { API_BASE, getHeaders } from './http';
 export interface FeeType {
     id: number;
     name_ar: string;
@@ -13,17 +14,6 @@ export interface FeeTypePayload {
     name_fr?: string | null;
     price: number;
     is_active?: boolean;
-}
-
-const API_BASE = '/api';
-
-function getHeaders(): Record<string, string> {
-    const token = localStorage.getItem('token');
-    return {
-        'Content-Type': 'application/json',
-        'Accept': 'application/json',
-        ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
-    };
 }
 
 export async function getFeeTypes(): Promise<FeeType[]> {

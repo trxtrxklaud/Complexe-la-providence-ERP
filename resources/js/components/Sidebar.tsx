@@ -1,7 +1,7 @@
-import {
-  Users, NavLink, useNavigate, useLocation } from 'react-router-dom';
+import { NavLink, useNavigate, useLocation } from 'react-router-dom';
 import { LayoutDashboard, Users, LogOut, GraduationCap, Tags, CreditCard } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
+import { setToken } from '../api/http';
 
 export function Sidebar() {
     const { logout, user, hasPermission } = useAuth();
@@ -16,7 +16,7 @@ export function Sidebar() {
                 new Promise((resolve) => setTimeout(resolve, 1500)),
             ]);
         } finally {
-            localStorage.removeItem('token');
+            setToken(null);
             navigate('/login');
         }
     };

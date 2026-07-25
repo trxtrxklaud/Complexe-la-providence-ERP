@@ -1,7 +1,6 @@
 import type { User, Role, Permission } from '../types';
+import { API_BASE, getHeaders, getToken } from './http';
 export type { User, Role, Permission };
-
-const API_BASE = '/api';
 
 export interface AuthResponse {
     access_token: string;
@@ -21,7 +20,7 @@ export async function login(credentials: { email: string; password: string }): P
     return res.json();
 }
 export async function logout(): Promise<void> {
-    const token = localStorage.getItem('token');
+    const token = getToken();
     if (!token) return;
     await fetch(`${API_BASE}/logout`, {
         method: 'POST',
@@ -29,7 +28,7 @@ export async function logout(): Promise<void> {
     });
 }
 export async function fetchCurrentUser(): Promise<User> {
-    const token = localStorage.getItem('token');
+    const token = getToken();
     const res = await fetch(`${API_BASE}/user`, {
         headers: { 'Authorization': `Bearer ${token}`, 'Accept': 'application/json' },
     });

@@ -4,17 +4,7 @@ import type {
   StudentFeesEnrollment,
   PaginatedResponse,
 } from '../types';
-
-const API_BASE = '/api';
-
-function getHeaders() {
-  const token = localStorage.getItem('token');
-  return {
-    'Content-Type': 'application/json',
-    Accept: 'application/json',
-    ...(token ? { Authorization: 'Bearer ' + token } : {}),
-  };
-}
+import { API_BASE, getHeaders } from './http';
 
 export interface PaymentFilters {
   student_id?: number;
@@ -88,7 +78,6 @@ export const studentFeesApi = {
   },
 };
 
-
 export async function collectPayment(data: {
   student_id: number;
   enrollment_id: number;
@@ -118,7 +107,6 @@ export async function getEnrollmentLedger(enrollmentId: number) {
   if (!res.ok) throw new Error('فشل جلب سجل الأشهر');
   return res.json();
 }
-
 
 export async function getCollectionYears() {
   const res = await fetch(API_BASE + '/collection/years', { headers: getHeaders() });
