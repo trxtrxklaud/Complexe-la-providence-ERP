@@ -46,10 +46,11 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::delete('/sections/{section}', [SectionController::class, 'destroy']);
     });
 
-    // قوائم الأقسام — إدخال دفعي وطباعة
+    // قوائم الأقسام — إدخال دفعي، تعديل، حذف، طباعة
     Route::middleware('permission:manage_users')->group(function () {
         Route::get('/rosters', [RosterController::class, 'index']);
         Route::post('/rosters/bulk', [RosterController::class, 'bulkStore']);
+        Route::put('/rosters/{roster}', [RosterController::class, 'updateStudent']);
         Route::delete('/rosters/{roster}', [RosterController::class, 'destroy']);
     });
 

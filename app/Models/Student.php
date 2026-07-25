@@ -17,6 +17,11 @@ class Student extends Model
         'photo',
         'notes',
         'status',
+        'guardian_first_name',
+        'guardian_last_name',
+        'mother_name',
+        'guardian_phone',
+        'mother_phone',
     ];
 
     protected $casts = [
