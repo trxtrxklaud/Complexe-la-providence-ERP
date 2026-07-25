@@ -12,7 +12,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
 /**
- * قوائم الأقسام: عرض وإدخال دفعي بالاسم واللقب ثم طباعة.
+ * قوائم الأقسام: عرض، إدخال دفعي، تعديل، حذف، طباعة.
  */
 class RosterController extends Controller
 {
@@ -86,35 +86,35 @@ class RosterController extends Controller
         $skipped = [];
 
         DB::transaction(function () use ($data, $section, $year, &$created, &$skipped, &$existing, $capacity, $current) {
-            foreach ($data['names'] as $rawName) {
-                $name = trim(preg_replace('/\s+/u', ' ', (string) $rawName));
+            foreach ($data['students'] as $entry) {
+                $firstName = trim(preg_replace('/\s+/u', ' ', (string) $entry['first_name']));
+                $lastName = trim(preg_replace('/\s+/u', ' ', (string) $entry['last_name']));
 
-                if ($name === '') {
+                if ($firstName === '' || $lastName === '') {
                     continue;
                 }
 
-                $key = $this->normalize($name);
+                $fullName = $firstName . ' ' . $lastName;
+                $key = $this->normalize($fullName);
 
                 if (isset($existing[$key])) {
-                    $skipped[] = $name;
-
+                    $skipped[] = $fullName;
                     continue;
                 }
 
                 if ($capacity > 0 && ($current + $created) >= $capacity) {
-                    $skipped[] = $name;
-
+                    $skipped[] = $fullName;
                     continue;
                 }
-
-                $parts = explode(' ', $name);
-                $firstName = array_shift($parts);
-                $lastName = trim(implode(' ', $parts));
 
                 $student = Student::create([
                     'student_code' => $this->nextStudentCode($year->name),
                     'first_name' => $firstName,
-                    'last_name' => $lastName !== '' ? $lastName : '—',
+                    'last_name' => $lastName,
+                    'guardian_first_name' => $entry['father_name'] ?? null,
+                    'mother_name' => $entry['mother_name'] ?? null,
+                    'guardian_phone' => $entry['father_phone'] ?? null,
+                    'mother_phone' => $entry['mother_phone'] ?? null,
                     'status' => 'active',
                 ]);
 
@@ -141,6 +141,48 @@ class RosterController extends Controller
             'skipped' => $skipped,
             'message' => $message,
         ], 201);
+    }
+
+    public function updateStudent(Request $request, Enrollment $roster): JsonResponse
+    {
+        $validated = $request->validate([
+            'first_name' => ['required', 'string', 'min:2', 'max:120'],
+            'last_name' => ['required', 'string', 'min:2', 'max:120'],
+            'father_name' => ['nullable', 'string', 'max:120'],
+            'mother_name' => ['nullable', 'string', 'max:120'],
+            'father_phone' => ['nullable', 'string', 'max:20'],
+            'mother_phone' => ['nullable', 'string', 'max:20'],
+        ]);
+
+        $roster->load('student');
+
+        if (!$roster->student) {
+            return response()->json(['message' => 'التلميذ غير موجود.'], 404);
+        }
+
+        $roster->student->update([
+            'first_name' => $validated['first_name'],
+            'last_name' => $validated['last_name'],
+            'guardian_first_name' => $validated['father_name'] ?? null,
+            'mother_name' => $validated['mother_name'] ?? null,
+            'guardian_phone' => $validated['father_phone'] ?? null,
+            'mother_phone' => $validated['mother_phone'] ?? null,
+        ]);
+
+        return response()->json([
+            'message' => 'تم تحديث بيانات التلميذ.',
+            'student' => [
+                'enrollment_id' => $roster->id,
+                'student_id' => $roster->student->id,
+                'student_code' => $roster->student->student_code,
+                'first_name' => $roster->student->first_name,
+                'last_name' => $roster->student->last_name,
+                'father_name' => $roster->student->guardian_first_name,
+                'mother_name' => $roster->student->mother_name,
+                'father_phone' => $roster->student->guardian_phone,
+                'mother_phone' => $roster->student->mother_phone,
+            ],
+        ]);
     }
 
     public function destroy(Enrollment $roster): JsonResponse

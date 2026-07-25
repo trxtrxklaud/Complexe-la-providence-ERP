@@ -26,6 +26,15 @@ export type RosterResponse = {
   students: RosterStudent[];
 };
 
+export type StudentEntry = {
+  first_name: string;
+  last_name: string;
+  father_name?: string | null;
+  mother_name?: string | null;
+  father_phone?: string | null;
+  mother_phone?: string | null;
+};
+
 export type BulkResult = {
   created: number;
   skipped: string[];
@@ -46,11 +55,22 @@ export const fetchRoster = (academicYearId: number, sectionId: number) =>
     fallbackMessage: 'تعذّر تحميل قائمة القسم',
   });
 
-export const bulkEnroll = (payload: { academic_year_id: number; section_id: number; names: string[] }) =>
+export const bulkEnroll = (payload: {
+  academic_year_id: number;
+  section_id: number;
+  students: StudentEntry[];
+}) =>
   apiFetch<BulkResult>('/rosters/bulk', {
     method: 'POST',
     body: payload,
     fallbackMessage: 'تعذّر تسجيل التلاميذ',
+  });
+
+export const updateStudent = (enrollmentId: number, data: StudentEntry) =>
+  apiFetch<{ message: string; student: RosterStudent }>('/rosters/' + enrollmentId, {
+    method: 'PUT',
+    body: data,
+    fallbackMessage: 'تعذّر تحديث بيانات التلميذ',
   });
 
 export const removeFromRoster = (enrollmentId: number) =>
