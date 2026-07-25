@@ -10,6 +10,7 @@ class FeeTypeSeeder extends Seeder
     public function run(): void
     {
         $fees = [
+            ['name_ar' => 'القسط الشهري',   'name_fr' => 'Frais mensuels',  'price' => 0],
             ['name_ar' => 'ميدعة',          'name_fr' => 'Inscription',     'price' => 30],
             ['name_ar' => 'التجهيزات',       'name_fr' => 'Équipements',     'price' => 40],
             ['name_ar' => 'ERP vie scolaire','name_fr' => 'ERP vie scolaire','price' => 20],
