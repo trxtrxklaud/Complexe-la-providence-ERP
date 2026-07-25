@@ -25,7 +25,8 @@ const C = {
   errorBg: '#FDECEC',
 };
 
-const SCHOOL_NAME = 'مجمّع لا بروفيدنس التربوي';
+const SCHOOL_NAME = 'مركب العناية للتعليم الخاص';
+const SCHOOL_PHONE = '95 420 350';
 
 type NewRow = StudentEntry & { _key: number };
 
@@ -286,7 +287,8 @@ export function RosterPage() {
           #print-area, #print-area * { visibility: visible; }
           #print-area { display: block !important; position: absolute; top: 0; left: 0; right: 0; width: 100%; padding: 0; }
           .no-print { display: none !important; }
-          @page { size: A4 portrait; margin: 10mm; }
+          #print-area > div { page-break-inside: avoid; }
+          @page { size: A4 portrait; margin: 8mm; }
         }
       `}</style>
 
@@ -297,6 +299,7 @@ export function RosterPage() {
             <div style={{ textAlign: 'center', marginBottom: 24 }}>
               <h1 style={{ fontSize: 22, fontWeight: 'bold', margin: 0 }}>{SCHOOL_NAME}</h1>
               <p style={{ fontSize: 13, color: '#555', marginTop: 6 }}>{printDate}</p>
+              <p style={{ fontSize: 13, color: '#555', marginTop: 2 }}>هاتف: <span style={{ direction: 'ltr', display: 'inline-block' }}>{SCHOOL_PHONE}</span></p>
               <hr style={{ margin: '14px 0', border: 'none', borderTop: '1px solid #ccc' }} />
               <h2 style={{ fontSize: 18, margin: 0 }}>بطاقة تلميذ</h2>
             </div>
@@ -314,7 +317,8 @@ export function RosterPage() {
         ) : roster ? (
           <div style={{ fontFamily: 'sans-serif', color: '#222' }}>
             <h1 style={{ textAlign: 'center', fontSize: 20, fontWeight: 'bold', margin: 0 }}>{SCHOOL_NAME}</h1>
-            <p style={{ textAlign: 'center', fontSize: 12, color: '#555', margin: '4px 0' }}>{printDate}</p>
+            <p style={{ textAlign: 'center', fontSize: 12, color: '#555', margin: '2px 0' }}>{printDate}</p>
+            <p style={{ textAlign: 'center', fontSize: 12, color: '#555', margin: '2px 0' }}>هاتف: <span style={{ direction: 'ltr', display: 'inline-block' }}>{SCHOOL_PHONE}</span></p>
             <h2 style={{ textAlign: 'center', fontSize: 18, marginBottom: 4, marginTop: 12 }}>
               {roster.level} — {roster.section}
             </h2>
