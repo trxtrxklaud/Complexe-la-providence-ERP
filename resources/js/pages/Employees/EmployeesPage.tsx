@@ -5,6 +5,7 @@ import {
   getSalaries, createSalary, deleteSalary,
   type Employee, type Salary,
 } from '../../api/employees';
+import { getToken } from '../../api/http';
 
 
 const C = {
@@ -15,7 +16,7 @@ const C = {
 type Tab = 'salaries' | 'staff';
 
 async function fetchYears() {
-  const token = localStorage.getItem('token');
+  const token = getToken();
   const res = await fetch('/api/academic-years', {
     headers: {
       Accept: 'application/json',
