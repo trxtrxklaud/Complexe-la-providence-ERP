@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
-import { CreditCard, Loader2, AlertCircle, Printer, X, Trash2 } from 'lucide-react';
+import { CreditCard, Loader2, AlertCircle } from 'lucide-react';
 import { getFeeTypes } from '../../api/feeTypes';
 import {
   collectPayment,
@@ -10,6 +10,8 @@ import {
   getStudentsBySection,
   paymentsApi,
 } from '../../api/payments';
+import { ReceiptModal } from './ReceiptModal';
+import { getToken } from '../../api/http';
 
 const C = {
   forest: '#3B4A36',
@@ -331,7 +333,7 @@ export function CollectionPage() {
           </div>
           <div>
             <h1 className="text-2xl font-bold" style={{ color: C.ink }}>استخلاص الرسوم</h1>
-            <p className="text-sm" style={{ color: C.muted }}>سنة → قسم → تلميذ → أشهر → معاليم → تخفيض → حفظ</p>
+            <p className="text-sm" style={{ color: C.muted }}>سنة ← قسم ← تلميذ ← أشهر ← معاليم ← تخفيض ← حفظ</p>
           </div>
         </div>
 
@@ -488,7 +490,7 @@ export function CollectionPage() {
                               onClick={async () => {
                                 if (!confirm('حذف هذه الدفعة نهائيًا من المداخيل والنظام؟')) return;
                                 try {
-                                  const token = localStorage.getItem('token') || '';
+                                  const token = getToken() || '';
                                   const res = await fetch('/api/payments/' + r.payment_id, {
                                     method: 'DELETE',
                                     headers: { Accept: 'application/json', Authorization: 'Bearer ' + token },
@@ -544,98 +546,14 @@ export function CollectionPage() {
       </div>
 
       {receipt && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-3 no-print-parent">
-          <div className="bg-white rounded-2xl w-full max-w-3xl max-h-[95vh] overflow-auto shadow-xl">
-            <div className="no-print flex items-center justify-between gap-2 p-3 border-b" style={{ borderColor: '#EDF1E8' }}>
-              <div className="font-bold">بيانات العملية</div>
-              <div className="flex gap-2">
-                <button type="button" onClick={() => window.print()} className="px-3 py-2 rounded-xl text-white text-sm font-bold" style={{ background: '#3B4A36' }}>طباعة</button>
-                <button type="button" onClick={() => setReceipt(null)} className="px-3 py-2 rounded-xl border text-sm" style={{ borderColor: '#EDF1E8' }}>×</button>
-              </div>
-            </div>
-
-            <div id="receipt-print" style={{ direction: 'rtl', color: '#111', fontFamily: 'Tahoma, Arial, sans-serif' }}>
-              <div style={{ height: '135mm', border: '1px solid #bbb', padding: '8px 12px', boxSizing: 'border-box', overflow: 'hidden' }}>
-                <div style={{ textAlign: 'center', fontWeight: 800, fontSize: 15 }}>Complexe La Providence</div>
-                <div style={{ textAlign: 'center', color: '#DC2626', fontWeight: 900, fontSize: 16 }}>خلاص</div>
-                <div style={{ textAlign: 'center', fontSize: 12, marginBottom: 6 }}>نسخة الولي</div>
-                <div style={{ fontSize: 12, lineHeight: 1.6 }}>
-                  <div>التلميذ: <b>{receipt.student_name}</b></div>
-                  <div>القسم: {receipt.section_name}</div>
-                  <div>الولي: {receipt.guardian_name}</div>
-                  <div>الأشهر: {Array.isArray(receipt.months_label) ? receipt.months_label.join(' / ') : (receipt.months_label || (receipt.months || []).toString())}</div>
-                  <div>التاريخ: {receipt.payment_date}</div>
-                </div>
-                <table style={{ width: '100%', fontSize: 12, marginTop: 6, borderCollapse: 'collapse' }}>
-                  <tbody>
-                    {(receipt.items || []).map((it: any, i: number) => (
-                      <tr key={i}>
-                        <td style={{ padding: '2px 0' }}>{it.description || it.name || it.fee_type_name || it.name_ar || "بند"}</td>
-                        <td style={{ textAlign: 'left' }}>{Number(it.amount).toFixed(2)}</td>
-                      </tr>
-                    ))}
-                    {Number(receipt.discount || 0) > 0 && (
-                      <tr>
-                        <td>تخفيض</td>
-                        <td style={{ textAlign: 'left' }}>-{Number(receipt.discount).toFixed(2)}</td>
-                      </tr>
-                    )}
-                    <tr>
-                      <td style={{ fontWeight: 800, paddingTop: 4 }}>المبلغ المدفوع</td>
-                      <td style={{ textAlign: 'left', fontWeight: 800 }}>{Number(receipt.total || receipt.amount).toFixed(2)} د.ت</td>
-                    </tr>
-                  </tbody>
-                </table>
-                <div style={{ fontSize: 11, marginTop: 6 }}>
-                  الطريقة: {receipt.method_label || receipt.method} | رقم الدفعة: {receipt.payment_id}
-                  <br />
-                  المستخدم: {receipt.user_name || [user?.first_name, user?.last_name].filter(Boolean).join(' ') || '—'}
-                </div>
-              </div>
-
-              <div style={{ textAlign: 'center', fontSize: 10, color: '#888', margin: '2mm 0' }}>✂ - - - - - - - - - - - - - - - - - - - -</div>
-
-              <div style={{ height: '135mm', border: '1px solid #bbb', padding: '8px 12px', boxSizing: 'border-box', overflow: 'hidden' }}>
-                <div style={{ textAlign: 'center', fontWeight: 800, fontSize: 15 }}>Complexe La Providence</div>
-                <div style={{ textAlign: 'center', color: '#DC2626', fontWeight: 900, fontSize: 16 }}>خلاص</div>
-                <div style={{ textAlign: 'center', fontSize: 12, marginBottom: 6 }}>نسخة الإدارة</div>
-                <div style={{ fontSize: 12, lineHeight: 1.6 }}>
-                  <div>التلميذ: <b>{receipt.student_name}</b></div>
-                  <div>القسم: {receipt.section_name}</div>
-                  <div>الولي: {receipt.guardian_name}</div>
-                  <div>الأشهر: {Array.isArray(receipt.months_label) ? receipt.months_label.join(' / ') : (receipt.months_label || (receipt.months || []).toString())}</div>
-                  <div>التاريخ: {receipt.payment_date}</div>
-                </div>
-                <table style={{ width: '100%', fontSize: 12, marginTop: 6, borderCollapse: 'collapse' }}>
-                  <tbody>
-                    {(receipt.items || []).map((it: any, i: number) => (
-                      <tr key={i}>
-                        <td style={{ padding: '2px 0' }}>{it.description || it.name || it.fee_type_name || it.name_ar || "بند"}</td>
-                        <td style={{ textAlign: 'left' }}>{Number(it.amount).toFixed(2)}</td>
-                      </tr>
-                    ))}
-                    {Number(receipt.discount || 0) > 0 && (
-                      <tr>
-                        <td>تخفيض</td>
-                        <td style={{ textAlign: 'left' }}>-{Number(receipt.discount).toFixed(2)}</td>
-                      </tr>
-                    )}
-                    <tr>
-                      <td style={{ fontWeight: 800, paddingTop: 4 }}>المبلغ المدفوع</td>
-                      <td style={{ textAlign: 'left', fontWeight: 800 }}>{Number(receipt.total || receipt.amount).toFixed(2)} د.ت</td>
-                    </tr>
-                  </tbody>
-                </table>
-                <div style={{ fontSize: 11, marginTop: 6 }}>
-                  الطريقة: {receipt.method_label || receipt.method} | رقم الدفعة: {receipt.payment_id}
-                  <br />
-                  المستخدم: {receipt.user_name || [user?.first_name, user?.last_name].filter(Boolean).join(' ') || '—'}
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
+        <ReceiptModal
+          receipt={receipt}
+          cashierName={[user?.first_name, user?.last_name].filter(Boolean).join(' ')}
+          onClose={() => setReceipt(null)}
+          onDelete={handleDelete}
+        />
       )}
+
     </div>
   );
 }
