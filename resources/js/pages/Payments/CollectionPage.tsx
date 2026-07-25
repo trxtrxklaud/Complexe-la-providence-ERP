@@ -28,6 +28,8 @@ const METHOD_LABELS: Record<string, string> = {
   card: 'بطاقة',
 };
 
+const TUITION_AR = 'القسط الشهري';
+
 const MONTH_AR: Record<string, string> = {
   '01': 'جانفي', '02': 'فيفري', '03': 'مارس', '04': 'أفريل',
   '05': 'ماي', '06': 'جوان', '07': 'جويلية', '08': 'أوت',
@@ -55,6 +57,7 @@ export function CollectionPage() {
   const [sections, setSections] = useState<any[]>([]);
   const [students, setStudents] = useState<any[]>([]);
   const [feeTypes, setFeeTypes] = useState<any[]>([]);
+  const [tuitionFee, setTuitionFee] = useState<any>(null);
 
   const [yearId, setYearId] = useState('');
   const [sectionId, setSectionId] = useState('');
@@ -84,7 +87,10 @@ export function CollectionPage() {
       .then(([y, f]) => {
         setYears(Array.isArray(y) ? y : []);
         const fees = Array.isArray(f) ? f : [];
-        setFeeTypes(fees.filter((x: any) => x.is_active !== false));
+        const active = fees.filter((x: any) => x.is_active !== false);
+        const tuition = active.find((x: any) => x.name_ar === TUITION_AR) || null;
+        setTuitionFee(tuition);
+        setFeeTypes(active.filter((x: any) => !tuition || x.id !== tuition.id));
         const am: Record<number, string> = {};
         fees.forEach((x: any) => { am[x.id] = String(x.price ?? 0); });
         setFeeAmounts(am);
@@ -202,11 +208,19 @@ export function CollectionPage() {
       .filter((x) => x.amount > 0);
     const mp = parseFloat(monthlyPrice || '0') || 0;
     if (mp > 0) {
-      const tuition = feeTypes.find((f: any) => f.name_ar === 'القسط الشهري') || feeTypes[0];
-      if (!tuition) { setError('لا يوجد نوع معلوم للقسط الشهري'); return; }
-      items.unshift({ fee_type_id: Number(tuition.id), amount: mp * selectedMonths.length });
+      if (!tuitionFee) { setError('لا يوجد نوع معلوم باسم «القسط الشهري». شغّل بذرة المعاليم أو أضفه من صفحة أنواع المعاليم.'); return; }
+      items.unshift({ fee_type_id: Number(tuitionFee.id), amount: mp * selectedMonths.length });
     }
-    if (!items.length) { setError('أدخل معلوم الشهر أو اختر معلوماً'); return; }
+    const mergedItems = Object.values(
+      items.reduce((acc: Record<number, { fee_type_id: number; amount: number }>, it) => {
+        const key = Number(it.fee_type_id);
+        acc[key] = acc[key]
+          ? { fee_type_id: key, amount: acc[key].amount + it.amount }
+          : { fee_type_id: key, amount: it.amount };
+        return acc;
+      }, {})
+    );
+    if (!mergedItems.length) { setError('أدخل معلوم الشهر أو اختر معلوماً'); return; }
 
     setSaving(true);
     setError('');
@@ -220,7 +234,7 @@ export function CollectionPage() {
         reference: reference || null,
         notes: notes || null,
         discount: parseFloat(discount || '0') || 0,
-        items,
+        items: mergedItems,
       } as any);
       const raw = res.receipt || res;
       const student = raw.student || {};
