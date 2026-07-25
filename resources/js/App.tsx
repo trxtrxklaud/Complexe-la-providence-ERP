@@ -15,6 +15,7 @@ import { FeeTypesPage } from './pages/FeeTypes/FeeTypesPage';
 import { EmployeesPage } from './pages/Employees/EmployeesPage';
 import { CollectionPage } from './pages/Payments/CollectionPage';
 import { ClassroomsPage } from './pages/Classrooms/ClassroomsPage';
+import { RosterPage } from './pages/Classrooms/RosterPage';
 
 function Layout({ children }: { children: React.ReactNode }) {
     return (
@@ -60,6 +61,18 @@ export default function App() {
                         </ProtectedRoute>
                     } />
 
+                    {/* بنية المدرسة وقوائم الأقسام */}
+                    <Route path="/classrooms" element={
+                        <ProtectedRoute permission="manage_users">
+                            <Layout><ClassroomsPage /></Layout>
+                        </ProtectedRoute>
+                    } />
+                    <Route path="/rosters" element={
+                        <ProtectedRoute permission="manage_users">
+                            <Layout><RosterPage /></Layout>
+                        </ProtectedRoute>
+                    } />
+
                     {/* Users — كلها تحت manage_users مطابقةً للـ backend */}
                     <Route path="/users" element={
                         <ProtectedRoute permission="manage_users">
@@ -74,13 +87,6 @@ export default function App() {
                     <Route path="/users/edit/:id" element={
                         <ProtectedRoute permission="manage_users">
                             <Layout><UserForm /></Layout>
-                        </ProtectedRoute>
-                    } />
-
-                    {/* المستويات والأقسام */}
-                    <Route path="/classrooms" element={
-                        <ProtectedRoute permission="manage_users">
-                            <Layout><ClassroomsPage /></Layout>
                         </ProtectedRoute>
                     } />
 
