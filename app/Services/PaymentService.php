@@ -44,7 +44,9 @@ class PaymentService
                             );
                         }
 
-                        $alreadyAllocated = $fee->paymentAllocations()->sum('amount_allocated');
+                        $alreadyAllocated = $fee->paymentAllocations()
+                            ->whereHas('payment', fn ($q) => $q->whereNull('cancelled_at'))
+                            ->sum('amount_allocated');
                         $remaining = $fee->amount_due - $alreadyAllocated;
 
                         if ($allocation['amount'] > $remaining) {
@@ -111,7 +113,11 @@ class PaymentService
         $fee = StudentFee::find($studentFeeId);
         if (!$fee) return;
 
-        $allocated = $fee->paymentAllocations()->sum('amount_allocated');
+        // تُحتسب المخصّصات من الدفعات غير الملغاة فقط، حتى يعود الرسم
+        // غير مدفوع تلقائياً عند إلغاء دفعته.
+        $allocated = $fee->paymentAllocations()
+            ->whereHas('payment', fn ($q) => $q->whereNull('cancelled_at'))
+            ->sum('amount_allocated');
 
         $fee->update([
             'status' => match (true) {
@@ -128,7 +134,9 @@ class PaymentService
             $q->where('student_id', $studentId)
         )
             ->whereIn('status', ['pending', 'partial', 'overdue'])
-            ->with('paymentAllocations')
+            ->with(['paymentAllocations' => fn ($q) =>
+                $q->whereHas('payment', fn ($p) => $p->whereNull('cancelled_at'))
+            ])
             ->get();
 
         return (float) $fees->sum(fn ($fee) =>

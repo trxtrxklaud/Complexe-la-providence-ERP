@@ -22,6 +22,7 @@ class PaymentController extends Controller
             'student:id,first_name,last_name,student_code',
             'enrollment:id,academic_year_id,level_id,status',
             'createdBy:id,first_name,last_name',
+            'cancelledBy:id,first_name,last_name',
             'paymentAllocations.studentFee:id,description,amount_due,due_date,status',
         ])
             ->when($request->student_id,    fn ($q) => $q->where('student_id',    $request->integer('student_id')))
@@ -29,6 +30,7 @@ class PaymentController extends Controller
             ->when($request->method,        fn ($q) => $q->where('method',        $request->input('method')))
             ->when($request->date_from,     fn ($q) => $q->whereDate('payment_date', '>=', $request->input('date_from')))
             ->when($request->date_to,       fn ($q) => $q->whereDate('payment_date', '<=', $request->input('date_to')))
+            ->when($request->boolean('exclude_cancelled'), fn ($q) => $q->whereNull('cancelled_at'))
             ->latest('payment_date')
             ->paginate($perPage);
 
@@ -72,25 +74,47 @@ class PaymentController extends Controller
                 'enrollment.academicYear:id,name',
                 'enrollment.level:id,name',
                 'createdBy:id,first_name,last_name',
+                'cancelledBy:id,first_name,last_name',
                 'paymentAllocations.studentFee',
             ])
         );
     }
 
-    public function destroy(Payment $payment): JsonResponse
+    /**
+     * إلغاء موثّق بدل الحذف النهائي: يبقى سجل الدفعة وتوزيعاته للمراجعة،
+     * مع تسجيل سبب الإلغاء والمنفّذ وتاريخه، وتعود الرسوم غير مدفوعة تلقائياً.
+     */
+    public function cancel(Request $request, Payment $payment): JsonResponse
     {
-        DB::transaction(function () use ($payment) {
+        $data = $request->validate([
+            'reason' => ['required', 'string', 'min:3', 'max:500'],
+        ]);
+
+        if ($payment->cancelled_at) {
+            return response()->json(['message' => 'هذه الدفعة ملغاة مسبقاً'], 422);
+        }
+
+        DB::transaction(function () use ($payment, $data, $request) {
             $feeIds = $payment->paymentAllocations()->pluck('student_fee_id')->unique()->all();
 
-            $payment->paymentAllocations()->delete();
-            $payment->delete();
+            $payment->update([
+                'cancelled_at'        => now(),
+                'cancelled_by'        => $request->user()?->id,
+                'cancellation_reason' => $data['reason'],
+            ]);
 
             foreach ($feeIds as $feeId) {
                 $this->paymentService->recalculateStudentFeeStatus((int) $feeId);
             }
         });
 
-        return response()->json(null, 204);
+        return response()->json(
+            $payment->fresh()->load([
+                'createdBy:id,first_name,last_name',
+                'cancelledBy:id,first_name,last_name',
+                'paymentAllocations.studentFee',
+            ])
+        );
     }
 
     public function studentBalance(Student $student): JsonResponse
@@ -107,7 +131,9 @@ class PaymentController extends Controller
     {
         $enrollments = $student->enrollments()
             ->with([
-                'studentFees.paymentAllocations',
+                // التوزيعات من الدفعات غير الملغاة فقط حتى تكون المبالغ المخصّصة دقيقة.
+                'studentFees.paymentAllocations' => fn ($q) =>
+                    $q->whereHas('payment', fn ($p) => $p->whereNull('cancelled_at')),
                 'academicYear:id,name',
                 'level:id,name',
             ])

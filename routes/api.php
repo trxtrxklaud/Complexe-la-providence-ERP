@@ -31,9 +31,10 @@ Route::middleware(['auth:sanctum', 'active'])->group(function () {
         Route::apiResource('/employees', EmployeeController::class);
     });
 
-    // الرواتب — صلاحية منفصلة
+    // الرواتب — صلاحية منفصلة (الحذف النهائي ممنوع، يُستبدل بإلغاء موثّق)
     Route::middleware('permission:manage_salaries')->group(function () {
-        Route::apiResource('/salaries', SalaryController::class);
+        Route::apiResource('/salaries', SalaryController::class)->except(['destroy']);
+        Route::post('/salaries/{salary}/cancel', [SalaryController::class, 'cancel']);
     });
 
     // User Management
@@ -76,7 +77,8 @@ Route::middleware(['auth:sanctum', 'active'])->group(function () {
 
     // Payments
     Route::middleware('permission:manage_payments')->group(function () {
-        Route::apiResource('/payments', PaymentController::class)->except(['update']);
+        Route::apiResource('/payments', PaymentController::class)->except(['update', 'destroy']);
+        Route::post('/payments/{payment}/cancel', [PaymentController::class, 'cancel']);
         Route::apiResource('/fee-types', FeeTypeController::class);
 
         Route::get('/collection/years', [CollectionController::class, 'years']);
