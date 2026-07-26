@@ -16,7 +16,9 @@ class Payment extends Model
         'payment_date',
         'method',
         'reference',
+        'idempotency_key',
         'notes',
+        'meta',
         'created_by',
     ];
 
@@ -24,6 +26,7 @@ class Payment extends Model
         'amount'       => 'decimal:2',
         'payment_date' => 'date',
         'months'       => 'array',
+        'meta'         => 'array',
     ];
 
     public function student(): BelongsTo

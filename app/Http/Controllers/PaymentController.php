@@ -38,8 +38,13 @@ class PaymentController extends Controller
     public function store(StorePaymentRequest $request): JsonResponse
     {
         try {
+            $data = $request->validated();
+            // مفتاح منع التكرار: يُفضَّل ترويسة Idempotency-Key ثم حقل الطلب.
+            $data['idempotency_key'] = $request->header('Idempotency-Key')
+                ?: ($data['idempotency_key'] ?? null);
+
             $payment = $this->paymentService->recordPayment(
-                $request->validated(),
+                $data,
                 auth()->id()
             );
 
