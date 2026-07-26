@@ -25,6 +25,9 @@ const C = {
   errorBg: '#FDECEC',
 };
 
+const SCHOOL_NAME = 'مركب العناية للتعليم الخاص';
+const SCHOOL_PHONE = '95 420 350';
+
 type NewRow = StudentEntry & { _key: number };
 
 function errorMessage(err: unknown): string {
@@ -269,6 +272,8 @@ export function RosterPage() {
     window.setTimeout(() => window.print(), 100);
   };
 
+  const printDate = new Date().toLocaleDateString('ar-TN', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+
   const selectStyle = { border: '1px solid ' + C.line, backgroundColor: '#fff', color: C.ink };
   const inputCls = 'w-full px-2 py-1.5 rounded-lg text-sm';
   const inputStyle = { border: '1px solid ' + C.line, backgroundColor: '#fff', color: C.ink };
@@ -276,50 +281,45 @@ export function RosterPage() {
   return (
     <div className="p-6" dir="rtl" style={{ backgroundColor: C.bg, minHeight: '100vh' }}>
       <style>{`
+        .print-only { display: none; }
         @media print {
           body * { visibility: hidden; }
           #print-area, #print-area * { visibility: visible; }
-          #print-area { position: absolute; inset: 0; width: 100%; padding: 12mm; }
+          #print-area { display: block !important; position: absolute; top: 0; left: 0; right: 0; width: 100%; padding: 0; }
           .no-print { display: none !important; }
-          @page { size: A4 portrait; margin: 0; }
+          #print-area > div { page-break-inside: avoid; }
+          @page { size: A4 portrait; margin: 8mm; }
         }
       `}</style>
 
       {/* ===== Print area (hidden on screen) ===== */}
-      <div id="print-area" style={{ display: 'none' }}>
+      <div id="print-area" className="print-only" dir="rtl">
         {printStudent ? (
-          <div style={{ padding: '20mm 15mm', fontFamily: 'sans-serif', color: '#222' }}>
-            <h2 style={{ textAlign: 'center', fontSize: 18, marginBottom: 20 }}>بطاقة تلميذ</h2>
-            <table style={{ width: '100%', fontSize: 14, borderCollapse: 'collapse' }}>
-              <tbody>
-                <tr><td style={{ padding: '8px 12px', border: '1px solid #ccc', fontWeight: 'bold' }}>الاسم واللقب</td><td style={{ padding: '8px 12px', border: '1px solid #ccc' }}>{printStudent.first_name} {printStudent.last_name}</td></tr>
-              {printStudent.student_code && (
-                <tr><td style={{ padding: '8px 12px', border: '1px solid #ccc', fontWeight: 'bold' }}>الرقم المدرسي</td><td style={{ padding: '8px 12px', border: '1px solid #ccc' }}>{printStudent.student_code}</td></tr>
-              )}
-              {roster && (
-                <tr><td style={{ padding: '8px 12px', border: '1px solid #ccc', fontWeight: 'bold' }}>القسم</td><td style={{ padding: '8px 12px', border: '1px solid #ccc' }}>{roster.level} — {roster.section}</td></tr>
-              )}
-              {roster && (
-                <tr><td style={{ padding: '8px 12px', border: '1px solid #ccc', fontWeight: 'bold' }}>السنة الدراسية</td><td style={{ padding: '8px 12px', border: '1px solid #ccc' }}>{roster.year}</td></tr>
-              )}
-              {printStudent.father_name && (
-                <tr><td style={{ padding: '8px 12px', border: '1px solid #ccc', fontWeight: 'bold' }}>اسم الأب</td><td style={{ padding: '8px 12px', border: '1px solid #ccc' }}>{printStudent.father_name}</td></tr>
-              )}
-              {printStudent.mother_name && (
-                <tr><td style={{ padding: '8px 12px', border: '1px solid #ccc', fontWeight: 'bold' }}>اسم الأم</td><td style={{ padding: '8px 12px', border: '1px solid #ccc' }}>{printStudent.mother_name}</td></tr>
-              )}
-              {printStudent.father_phone && (
-                <tr><td style={{ padding: '8px 12px', border: '1px solid #ccc', fontWeight: 'bold' }}>هاتف الأب</td><td style={{ padding: '8px 12px', border: '1px solid #ccc', direction: 'ltr', textAlign: 'right' }}>{printStudent.father_phone}</td></tr>
-              )}
-              {printStudent.mother_phone && (
-                <tr><td style={{ padding: '8px 12px', border: '1px solid #ccc', fontWeight: 'bold' }}>هاتف الأم</td><td style={{ padding: '8px 12px', border: '1px solid #ccc', direction: 'ltr', textAlign: 'right' }}>{printStudent.mother_phone}</td></tr>
-              )}
-              </tbody>
-            </table>
+          <div style={{ fontFamily: 'sans-serif', color: '#222' }}>
+            <div style={{ textAlign: 'center', marginBottom: 24 }}>
+              <h1 style={{ fontSize: 22, fontWeight: 'bold', margin: 0 }}>{SCHOOL_NAME}</h1>
+              <p style={{ fontSize: 13, color: '#555', marginTop: 6 }}>{printDate}</p>
+              <p style={{ fontSize: 13, color: '#555', marginTop: 2 }}>هاتف: <span style={{ direction: 'ltr', display: 'inline-block' }}>{SCHOOL_PHONE}</span></p>
+              <hr style={{ margin: '14px 0', border: 'none', borderTop: '1px solid #ccc' }} />
+              <h2 style={{ fontSize: 18, margin: 0 }}>بطاقة تلميذ</h2>
+            </div>
+            <div style={{ fontSize: 15, lineHeight: 2.2 }}>
+              <p style={{ margin: '6px 0' }}><strong>الاسم واللقب: </strong>{printStudent.first_name} {printStudent.last_name}</p>
+              {printStudent.student_code && <p style={{ margin: '6px 0' }}><strong>الرقم المدرسي: </strong>{printStudent.student_code}</p>}
+              {roster && <p style={{ margin: '6px 0' }}><strong>القسم: </strong>{roster.level} — {roster.section}</p>}
+              {roster && <p style={{ margin: '6px 0' }}><strong>السنة الدراسية: </strong>{roster.year}</p>}
+              <p style={{ margin: '6px 0' }}><strong>اسم الأب: </strong>{printStudent.father_name || '—'}</p>
+              <p style={{ margin: '6px 0' }}><strong>اسم الأم: </strong>{printStudent.mother_name || '—'}</p>
+              <p style={{ margin: '6px 0' }}><strong>هاتف الأب: </strong><span style={{ direction: 'ltr', display: 'inline-block' }}>{printStudent.father_phone || '—'}</span></p>
+              <p style={{ margin: '6px 0' }}><strong>هاتف الأم: </strong><span style={{ direction: 'ltr', display: 'inline-block' }}>{printStudent.mother_phone || '—'}</span></p>
+            </div>
           </div>
         ) : roster ? (
-          <div style={{ padding: '12mm', fontFamily: 'sans-serif', color: '#222' }}>
-            <h2 style={{ textAlign: 'center', fontSize: 18, marginBottom: 4 }}>
+          <div style={{ fontFamily: 'sans-serif', color: '#222' }}>
+            <h1 style={{ textAlign: 'center', fontSize: 20, fontWeight: 'bold', margin: 0 }}>{SCHOOL_NAME}</h1>
+            <p style={{ textAlign: 'center', fontSize: 12, color: '#555', margin: '2px 0' }}>{printDate}</p>
+            <p style={{ textAlign: 'center', fontSize: 12, color: '#555', margin: '2px 0' }}>هاتف: <span style={{ direction: 'ltr', display: 'inline-block' }}>{SCHOOL_PHONE}</span></p>
+            <h2 style={{ textAlign: 'center', fontSize: 18, marginBottom: 4, marginTop: 12 }}>
               {roster.level} — {roster.section}
             </h2>
             <p style={{ textAlign: 'center', fontSize: 13, color: '#666', marginBottom: 16 }}>
