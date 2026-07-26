@@ -14,6 +14,10 @@ export interface PaymentFilters {
   date_to?: string;
   per_page?: number;
   page?: number;
+  // إرجاع الوصولات الملغاة فقط (صفحة Historique)
+  cancelled?: boolean;
+  // استبعاد الملغاة من النتائج
+  exclude_cancelled?: boolean;
 }
 
 export const paymentsApi = {

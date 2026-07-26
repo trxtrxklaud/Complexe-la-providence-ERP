@@ -31,7 +31,14 @@ class PaymentController extends Controller
             ->when($request->date_from,     fn ($q) => $q->whereDate('payment_date', '>=', $request->input('date_from')))
             ->when($request->date_to,       fn ($q) => $q->whereDate('payment_date', '<=', $request->input('date_to')))
             ->when($request->boolean('exclude_cancelled'), fn ($q) => $q->whereNull('cancelled_at'))
-            ->latest('payment_date')
+            // صفحة Historique: إرجاع الوصولات الملغاة فقط عند ?cancelled=1
+            ->when($request->boolean('cancelled'), fn ($q) => $q->whereNotNull('cancelled_at'))
+            // الملغاة تُرتَّب بتاريخ الإلغاء الأحدث؛ غيرها بتاريخ الدفع.
+            ->when(
+                $request->boolean('cancelled'),
+                fn ($q) => $q->orderByDesc('cancelled_at'),
+                fn ($q) => $q->latest('payment_date')
+            )
             ->paginate($perPage);
 
         return response()->json($payments);

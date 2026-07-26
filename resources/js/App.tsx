@@ -14,6 +14,7 @@ import Dashboard from './pages/Dashboard/Dashboard';
 import { FeeTypesPage } from './pages/FeeTypes/FeeTypesPage';
 import { EmployeesPage } from './pages/Employees/EmployeesPage';
 import { CollectionPage } from './pages/Payments/CollectionPage';
+import { HistoriquePage } from './pages/Payments/HistoriquePage';
 import { ClassroomsPage } from './pages/Classrooms/ClassroomsPage';
 import { RosterPage } from './pages/Classrooms/RosterPage';
 
@@ -102,6 +103,13 @@ export default function App() {
                     <Route path="/collection" element={
                         <ProtectedRoute>
                             <Layout><CollectionPage /></Layout>
+                        </ProtectedRoute>
+                    } />
+
+                    {/* Historique — سجل الوصولات الملغاة */}
+                    <Route path="/historique" element={
+                        <ProtectedRoute>
+                            <Layout><HistoriquePage /></Layout>
                         </ProtectedRoute>
                     } />
 

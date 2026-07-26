@@ -1,5 +1,5 @@
 import { NavLink, useNavigate, useLocation } from 'react-router-dom';
-import { LayoutDashboard, Users, LogOut, GraduationCap, Tags, CreditCard, Layers, ClipboardList } from 'lucide-react';
+import { LayoutDashboard, Users, LogOut, GraduationCap, Tags, CreditCard, Layers, ClipboardList, History } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { setToken } from '../api/http';
 
@@ -130,6 +130,16 @@ export function Sidebar() {
                 >
                     <CreditCard size={20} />
                     <span>استخلاص</span>
+                </NavLink>
+
+                <NavLink
+                    to="/historique"
+                    className={({ isActive }) =>
+                        linkClass(isActive || location.pathname.startsWith('/historique'))
+                    }
+                >
+                    <History size={20} />
+                    <span>الوصولات الملغاة</span>
                 </NavLink>
 
                     <NavLink
