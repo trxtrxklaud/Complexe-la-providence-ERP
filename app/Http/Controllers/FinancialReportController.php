@@ -3,7 +3,10 @@
 namespace App\Http\Controllers;
 
 use App\Models\CashTransaction;
+use App\Models\Enrollment;
 use App\Models\Payment;
+use App\Models\Section;
+use App\Models\Student;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -231,6 +234,190 @@ class FinancialReportController extends Controller
         ]);
     }
 
+    /**
+     * صفحة قسم واحد: بنود مداخيله، وتلاميذه الدافعون مرتّبين تنازلياً،
+     * وعدد المسجّلين فيه مقابل عدد من دفع.
+     *
+     * فارق العددين هو معلومة الإدارة الحقيقية: مجموع ما دخل لا يقول شيئاً
+     * عن عدد من لم يدفع بعد، وهو ما تُتابع من أجله الأقسام أصلاً.
+     */
+    public function classroomDetail(Request $request, Section $section): JsonResponse
+    {
+        $data = $request->validate([
+            'date_from'        => ['nullable', 'date'],
+            'date_to'          => ['nullable', 'date', 'after_or_equal:date_from'],
+            'academic_year_id' => ['nullable', 'integer', 'exists:academic_years,id'],
+        ]);
+
+        $students = $this->paymentDimensionQuery($data)
+            ->where('e.section_id', $section->id)
+            ->select([
+                's.id as student_id',
+                's.student_code',
+                's.first_name',
+                's.last_name',
+            ])
+            ->selectRaw('SUM(ct.amount) as total')
+            ->selectRaw('COUNT(DISTINCT p.id) as payments_count')
+            ->groupBy('s.id', 's.student_code', 's.first_name', 's.last_name')
+            ->orderByDesc('total')
+            ->get()
+            ->map(fn ($row) => [
+                'student_id'     => (int) $row->student_id,
+                'student_code'   => $row->student_code,
+                'name'           => trim($row->first_name . ' ' . $row->last_name),
+                'payments_count' => (int) $row->payments_count,
+                'total'          => round((float) $row->total, 2),
+            ])
+            ->values();
+
+        $totals = $this->categoryTotals(
+            $this->paymentDimensionQuery($data)->where('e.section_id', $section->id)
+        );
+
+        // عدد المسجّلين يُقرأ من التسجيلات لا من الدفعات، فيظهر من لم يدفع أيضاً.
+        $enrolled = Enrollment::where('section_id', $section->id)
+            ->when(
+                ! empty($data['academic_year_id']),
+                fn ($q) => $q->where('academic_year_id', $data['academic_year_id'])
+            )
+            ->count();
+
+        $total = round($students->sum('total'), 2);
+
+        return response()->json([
+            'filters' => $data,
+            'section' => [
+                'id'    => $section->id,
+                'name'  => $section->name,
+                'level' => $this->levelNameForSection($section->id),
+            ],
+            'by_category' => $this->linesFor(CashTransaction::INCOME_CATEGORIES, $totals),
+            'students'    => $students,
+            'summary'     => [
+                'enrolled_count' => $enrolled,
+                'payers_count'   => $students->count(),
+                'unpaid_count'   => max($enrolled - $students->count(), 0),
+                'payments_count' => (int) $students->sum('payments_count'),
+                'total'          => $total,
+            ],
+        ]);
+    }
+
+    /**
+     * صفحة تلميذ واحد: وصولاته مرتّبة من الأحدث، وكل وصل مفصّل إلى بنوده.
+     *
+     * الوصولات الملغاة تُعرض مع سببها ولا تدخل في المجموع: حجبها يجعل الولي
+     * يسأل عن وصل يحمله ولا أثر له في الشاشة، وعدّها يفسد المحاسبة.
+     */
+    public function studentDetail(Request $request, Student $student): JsonResponse
+    {
+        $data = $request->validate([
+            'date_from'        => ['nullable', 'date'],
+            'date_to'          => ['nullable', 'date', 'after_or_equal:date_from'],
+            'academic_year_id' => ['nullable', 'integer', 'exists:academic_years,id'],
+        ]);
+
+        $rows = DB::table('cash_transactions as ct')
+            ->join('payments as p', 'p.id', '=', 'ct.source_id')
+            ->where('ct.source_type', (new Payment)->getMorphClass())
+            ->where('p.student_id', $student->id)
+            ->whereIn('ct.category', CashTransaction::INCOME_CATEGORIES)
+            ->when(
+                ! empty($data['date_from']),
+                fn ($q) => $q->whereDate('ct.transaction_date', '>=', $data['date_from'])
+            )
+            ->when(
+                ! empty($data['date_to']),
+                fn ($q) => $q->whereDate('ct.transaction_date', '<=', $data['date_to'])
+            )
+            ->when(
+                ! empty($data['academic_year_id']),
+                fn ($q) => $q->where('ct.academic_year_id', $data['academic_year_id'])
+            )
+            ->select([
+                'ct.id as line_id',
+                'ct.category',
+                'ct.amount',
+                'ct.transaction_date',
+                'ct.cancelled_at',
+                'ct.cancellation_reason',
+                'p.id as payment_id',
+                'p.method',
+                'p.reference',
+            ])
+            ->orderByDesc('ct.transaction_date')
+            ->orderByDesc('p.id')
+            ->get();
+
+        $payments = [];
+        $totals   = [];
+        $total    = 0.0;
+
+        foreach ($rows as $row) {
+            $amount    = round((float) $row->amount, 2);
+            $cancelled = $row->cancelled_at !== null;
+            $key       = (int) $row->payment_id;
+
+            if (! isset($payments[$key])) {
+                $payments[$key] = [
+                    'payment_id'          => $key,
+                    'transaction_date'    => $row->transaction_date,
+                    'method'              => $row->method,
+                    'reference'           => $row->reference,
+                    'cancelled'           => $cancelled,
+                    'cancellation_reason' => $row->cancellation_reason,
+                    'lines'               => [],
+                    'total'               => 0.0,
+                ];
+            }
+
+            $payments[$key]['lines'][] = [
+                'category' => $row->category,
+                'label'    => CashTransaction::CATEGORY_LABELS[$row->category] ?? $row->category,
+                'amount'   => $amount,
+            ];
+            $payments[$key]['total'] = round($payments[$key]['total'] + $amount, 2);
+
+            if (! $cancelled) {
+                $totals[$row->category] = round(($totals[$row->category] ?? 0.0) + $amount, 2);
+                $total                  = round($total + $amount, 2);
+            }
+        }
+
+        $enrollment = DB::table('enrollments as e')
+            ->leftJoin('sections as sec', 'sec.id', '=', 'e.section_id')
+            ->leftJoin('levels as l', 'l.id', '=', 'e.level_id')
+            ->leftJoin('academic_years as ay', 'ay.id', '=', 'e.academic_year_id')
+            ->where('e.student_id', $student->id)
+            ->whereNull('e.deleted_at')
+            ->select(['sec.name as section', 'l.name as level', 'ay.name as academic_year'])
+            ->orderByDesc('e.id')
+            ->first();
+
+        $payments = array_values($payments);
+
+        return response()->json([
+            'filters' => $data,
+            'student' => [
+                'id'             => $student->id,
+                'student_code'   => $student->student_code,
+                'name'           => trim($student->first_name . ' ' . $student->last_name),
+                'level'          => $enrollment->level ?? null,
+                'section'        => $enrollment->section ?? null,
+                'academic_year'  => $enrollment->academic_year ?? null,
+                'guardian_phone' => $student->guardian_phone,
+            ],
+            'by_category' => $this->linesFor(CashTransaction::INCOME_CATEGORIES, $totals),
+            'payments'    => $payments,
+            'summary'     => [
+                'payments_count'  => count(array_filter($payments, fn ($p) => ! $p['cancelled'])),
+                'cancelled_count' => count(array_filter($payments, fn ($p) => $p['cancelled'])),
+                'total'           => $total,
+            ],
+        ]);
+    }
+
     // ==================== الدوال المساعدة ====================
 
     private function validatePeriod(Request $request): array
@@ -241,6 +428,41 @@ class FinancialReportController extends Controller
             'date_to'          => ['nullable', 'date', 'after_or_equal:date_from'],
             'academic_year_id' => ['nullable', 'integer', 'exists:academic_years,id'],
         ]);
+    }
+
+    /**
+     * مجاميع البنود لاستعلام أبعاد جاهز.
+     *
+     * @return array<string,float>
+     */
+    private function categoryTotals($query): array
+    {
+        $totals = [];
+
+        $rows = $query
+            ->selectRaw('ct.category as category, SUM(ct.amount) as total')
+            ->groupBy('ct.category')
+            ->get();
+
+        foreach ($rows as $row) {
+            $totals[$row->category] = round((float) $row->total, 2);
+        }
+
+        return $totals;
+    }
+
+    /**
+     * اسم مستوى القسم يُستنتج من تسجيلاته لا من عمود في sections،
+     * فيبقى سليماً مهما كانت علاقة القسم بالمستوى في المخطّط.
+     */
+    private function levelNameForSection(int $sectionId): ?string
+    {
+        return DB::table('enrollments as e')
+            ->join('levels as l', 'l.id', '=', 'e.level_id')
+            ->where('e.section_id', $sectionId)
+            ->whereNull('e.deleted_at')
+            ->orderByDesc('e.id')
+            ->value('l.name');
     }
 
     private function base(?string $from, ?string $to, ?int $yearId = null)

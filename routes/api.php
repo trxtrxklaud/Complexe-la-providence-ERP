@@ -74,6 +74,10 @@ Route::middleware(['auth:sanctum', 'active'])->group(function () {
         Route::get('/reports/revenue/students',   [FinancialReportController::class, 'revenueByStudent']);
         Route::get('/reports/revenue/classrooms', [FinancialReportController::class, 'revenueByClassroom']);
         Route::get('/reports/revenue/years',      [FinancialReportController::class, 'revenueByYear']);
+
+        // صفحات التفصيل: قسم واحد أو تلميذ واحد
+        Route::get('/reports/revenue/classrooms/{section}', [FinancialReportController::class, 'classroomDetail']);
+        Route::get('/reports/revenue/students/{student}',   [FinancialReportController::class, 'studentDetail']);
     });
 
     // User Management
