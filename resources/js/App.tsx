@@ -17,7 +17,7 @@ import { CollectionPage } from './pages/Payments/CollectionPage';
 import { HistoriquePage } from './pages/Payments/HistoriquePage';
 import { ClassroomsPage } from './pages/Classrooms/ClassroomsPage';
 import { RosterPage } from './pages/Classrooms/RosterPage';
-// ─── الأقسام المالية (المرحلة 1: هيكل) ───
+// ─── الأقسام المالية ───
 import { IncomeLayout } from './pages/Income/IncomeLayout';
 import { IncomeByDatePage } from './pages/Income/IncomeByDatePage';
 import { StudentRevenuePage } from './pages/Income/StudentRevenuePage';
@@ -31,6 +31,7 @@ import { ExpenseYearlyReportPage } from './pages/Expenses/ExpenseYearlyReportPag
 import { TreasuryLayout } from './pages/Treasury/TreasuryLayout';
 import { TreasuryHistoryPage } from './pages/Treasury/TreasuryHistoryPage';
 import { TreasuryWithdrawalsPage } from './pages/Treasury/TreasuryWithdrawalsPage';
+import { NetIncomeReportPage } from './pages/Treasury/NetIncomeReportPage';
 
 function Layout({ children }: { children: React.ReactNode }) {
     return (
@@ -147,6 +148,7 @@ export default function App() {
                         <Route index element={<Navigate to="history" replace />} />
                         <Route path="history" element={<TreasuryHistoryPage />} />
                         <Route path="withdrawals" element={<TreasuryWithdrawalsPage />} />
+                        <Route path="net-income" element={<NetIncomeReportPage />} />
                     </Route>
 
                     {/* استخلاص مستقل (توافق خلفي): يُحوّل إلى تبويب الفوترة داخل المداخيل */}
