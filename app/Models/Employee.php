@@ -22,6 +22,12 @@ class Employee extends Model
         return $this->hasMany(Salary::class);
     }
 
+    /** سلف الإطار (تسبقة الرواتب). */
+    public function advances(): HasMany
+    {
+        return $this->hasMany(EmployeeAdvance::class);
+    }
+
     public function getFullNameAttribute(): string
     {
         return trim($this->first_name . ' ' . $this->last_name);
