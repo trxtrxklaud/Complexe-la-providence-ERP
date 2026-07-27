@@ -14,6 +14,11 @@ use App\Http\Controllers\AcademicYearController;
 use App\Http\Controllers\LevelController;
 use App\Http\Controllers\SectionController;
 use App\Http\Controllers\RosterController;
+use App\Http\Controllers\ExpenseCategoryController;
+use App\Http\Controllers\ExpenseController;
+use App\Http\Controllers\EmployeeAdvanceController;
+use App\Http\Controllers\TreasuryController;
+use App\Http\Controllers\TreasuryWithdrawalController;
 
 Route::middleware('throttle:5,1')->post('/login', [AuthController::class, 'login']);
 
@@ -35,6 +40,29 @@ Route::middleware(['auth:sanctum', 'active'])->group(function () {
     Route::middleware('permission:manage_salaries')->group(function () {
         Route::apiResource('/salaries', SalaryController::class)->except(['destroy']);
         Route::post('/salaries/{salary}/cancel', [SalaryController::class, 'cancel']);
+
+        // سلف الإطارات — التزام تجاه الإطار، فتتبع صلاحية الرواتب
+        Route::apiResource('/employee-advances', EmployeeAdvanceController::class)
+            ->except(['destroy'])
+            ->parameters(['employee-advances' => 'advance']);
+        Route::post('/employee-advances/{advance}/settle', [EmployeeAdvanceController::class, 'settle']);
+        Route::post('/employee-advances/{advance}/cancel', [EmployeeAdvanceController::class, 'cancel']);
+    });
+
+    // المصاريف وأصنافها — صلاحية مستقلة
+    Route::middleware('permission:manage_expenses')->group(function () {
+        Route::apiResource('/expense-categories', ExpenseCategoryController::class);
+        Route::apiResource('/expenses', ExpenseController::class)->except(['destroy']);
+        Route::post('/expenses/{expense}/cancel', [ExpenseController::class, 'cancel']);
+    });
+
+    // الخزينة — السجلّ والرصيد والسحوبات
+    Route::middleware('permission:manage_treasury')->group(function () {
+        Route::get('/treasury/history', [TreasuryController::class, 'history']);
+        Route::get('/treasury/balance', [TreasuryController::class, 'balance']);
+
+        Route::apiResource('/treasury/withdrawals', TreasuryWithdrawalController::class)->except(['destroy']);
+        Route::post('/treasury/withdrawals/{withdrawal}/cancel', [TreasuryWithdrawalController::class, 'cancel']);
     });
 
     // User Management

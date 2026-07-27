@@ -14,6 +14,8 @@ class PermissionsSeeder extends Seeder
             ['name' => 'view_students',    'display_name' => 'عرض الطلاب',       'group' => 'Students'],
             ['name' => 'manage_students',  'display_name' => 'إدارة الطلاب',      'group' => 'Students'],
             ['name' => 'manage_payments',  'display_name' => 'إدارة المدفوعات',  'group' => 'Finance'],
+            ['name' => 'manage_expenses',  'display_name' => 'إدارة المصاريف',   'group' => 'Finance'],
+            ['name' => 'manage_treasury',  'display_name' => 'إدارة الخزينة',    'group' => 'Finance'],
             ['name' => 'manage_employees', 'display_name' => 'إدارة الموظفين',   'group' => 'HR'],
             ['name' => 'manage_salaries',  'display_name' => 'إدارة الرواتب',    'group' => 'HR'],
             ['name' => 'view_reports',     'display_name' => 'عرض التقارير',      'group' => 'Finance'],
