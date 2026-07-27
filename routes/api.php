@@ -17,18 +17,19 @@ use App\Http\Controllers\RosterController;
 use App\Http\Controllers\ExpenseCategoryController;
 use App\Http\Controllers\ExpenseController;
 use App\Http\Controllers\EmployeeAdvanceController;
+use App\Http\Controllers\FinancialReportController;
 use App\Http\Controllers\TreasuryController;
 use App\Http\Controllers\TreasuryWithdrawalController;
 
 Route::middleware('throttle:5,1')->post('/login', [AuthController::class, 'login']);
 
-// كل المسارات المصادَق عليها تمرّ بـ active فيمنع أي حساب معطَّل من الوصول.
+// كل المسارات المصادَق عليها تمرّ بـ active فيمنع أي حساب معطَل من الوصول.
 Route::middleware(['auth:sanctum', 'active'])->group(function () {
     Route::post('/logout', [AuthController::class, 'logout']);
     Route::get('/user',    [AuthController::class, 'user']);
     Route::get('/dashboard', [DashboardController::class, 'index']);
 
-    // قائمة السنوات الدراسية — قراءة فقط تُستعمل في عدة شاشات، متاحة لأي مستخدِم مُفعَّل.
+    // قائمة السنوات الدراسية — قراءة فقط تُستعمل في عدة شاشات، متاحة لأي مستخدِم مُفعّل.
     Route::get('/academic-years', [AcademicYearController::class, 'index']);
 
     // الموظفون — صلاحية منفصلة
@@ -63,6 +64,16 @@ Route::middleware(['auth:sanctum', 'active'])->group(function () {
 
         Route::apiResource('/treasury/withdrawals', TreasuryWithdrawalController::class)->except(['destroy']);
         Route::post('/treasury/withdrawals/{withdrawal}/cancel', [TreasuryWithdrawalController::class, 'cancel']);
+    });
+
+    // التقارير المالية — قراءة فقط، وكلها تُبنى على الدفتر النقدي المركزي
+    Route::middleware('permission:view_reports')->group(function () {
+        Route::get('/reports/net-income',         [FinancialReportController::class, 'netIncome']);
+        Route::get('/reports/income-by-date',     [FinancialReportController::class, 'incomeByDate']);
+        Route::get('/reports/expenses',           [FinancialReportController::class, 'expenses']);
+        Route::get('/reports/revenue/students',   [FinancialReportController::class, 'revenueByStudent']);
+        Route::get('/reports/revenue/classrooms', [FinancialReportController::class, 'revenueByClassroom']);
+        Route::get('/reports/revenue/years',      [FinancialReportController::class, 'revenueByYear']);
     });
 
     // User Management
