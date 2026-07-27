@@ -22,7 +22,10 @@ class CollectionService
         '10' => 'أكتوبر', '11' => 'نوفمبر', '12' => 'ديسمبر',
     ];
 
-    public function __construct(private readonly PaymentService $paymentService) {}
+    public function __construct(
+        private readonly PaymentService $paymentService,
+        private readonly LedgerService $ledgerService,
+    ) {}
 
     public function collect(array $data, int $createdBy): array
     {
@@ -105,6 +108,9 @@ class CollectionService
                     $studentFee = StudentFee::create([
                         'enrollment_id' => $enrollment->id,
                         'fee_plan_id'   => null,
+                        // الرابط البنيوي بنوع الرسم: عليه يعتمد الدفتر في تصنيف بند المداخيل
+                        // بدل استخراج النوع من نصّ الوصف.
+                        'fee_type_id'   => $feeType->id,
                         'description'   => $feeType->name_ar . ' — ' . $monthsLabel,
                         'amount_due'    => $net,
                         'due_date'      => $data['payment_date'],
@@ -130,6 +136,11 @@ class CollectionService
                 foreach ($feeIds as $feeId) {
                     $this->paymentService->recalculateStudentFeeStatus($feeId);
                 }
+
+                // إسقاط الدفعة في الدفتر النقدي المركزي داخل نفس المعاملة:
+                // إما تُسجَّل الدفعة وأثرها النقدي معاً، أو لا شيء منهما.
+                // بدون هذا السطر كان الاستخلاص لا يظهر في الخزينة ولا في التقارير.
+                $this->ledgerService->recordPayment($payment);
 
                 $guardian = $enrollment->student->guardians
                     ->sortByDesc(fn ($g) => $g->pivot->is_primary_contact ?? 0)

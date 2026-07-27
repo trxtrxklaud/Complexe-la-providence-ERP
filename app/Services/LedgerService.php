@@ -94,11 +94,8 @@ class LedgerService
     }
 
     /**
-     * دفعة تلميذ → مداخيل، مفصّلة حسب نوع الرسم المُخصّص له.
+     * دفعة تلميذ → مداخيل، مفصّلة حسب بند كل رسم مُخصّص لها.
      *
-     * التصنيف يعتمد على frequency في fee_plans وليس على مطابقة نصوص، ضماناً للدقة:
-     * - yearly  → معاليم التسجيل
-     * - monthly → معاليم الأشهر
      * وما لم يُوزّع من الدفعة يُسجّل كمداخيل أخرى، فلا يضيع أي مليم من الصندوق.
      */
     public function recordPayment(Payment $payment): void
@@ -109,7 +106,11 @@ class LedgerService
             return;
         }
 
-        $payment->loadMissing(['paymentAllocations.studentFee.feePlan', 'enrollment']);
+        $payment->loadMissing([
+            'paymentAllocations.studentFee.feePlan',
+            'paymentAllocations.studentFee.feeType',
+            'enrollment',
+        ]);
 
         $buckets   = [];
         $allocated = 0.0;
@@ -254,13 +255,23 @@ class LedgerService
     }
 
     /**
-     * تصنيف رسم التلميذ إلى بند مداخيل.
+     * تصنيف رسم التلميذ إلى بند مداخيل، بأولوية بنيوية لا نصّية:
+     *   1) خطة الرسوم (fee_plans.frequency) للرسوم المُولَّدة تلقائياً
+     *   2) نوع الرسم (fee_types.ledger_category) للرسوم المُستخلَصة يدوياً
+     *   3) معاليم الأشهر كقيمة افتراضية للرسوم القديمة بلا رابط
      */
     private function categoryForFee(?StudentFee $fee): string
     {
-        return match ($fee?->feePlan?->frequency) {
-            'yearly' => CashTransaction::CATEGORY_REGISTRATION_FEE,
-            default  => CashTransaction::CATEGORY_MONTHLY_FEE,
-        };
+        if ($fee?->feePlan) {
+            return $fee->feePlan->frequency === 'yearly'
+                ? CashTransaction::CATEGORY_REGISTRATION_FEE
+                : CashTransaction::CATEGORY_MONTHLY_FEE;
+        }
+
+        if ($fee?->feeType) {
+            return $fee->feeType->resolveLedgerCategory();
+        }
+
+        return CashTransaction::CATEGORY_MONTHLY_FEE;
     }
 }
