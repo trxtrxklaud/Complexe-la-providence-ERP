@@ -4,43 +4,31 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\MorphMany;
 
-class Payment extends Model
+class TreasuryWithdrawal extends Model
 {
     protected $fillable = [
-        'student_id',
-        'enrollment_id',
-        'months',
         'amount',
-        'payment_date',
-        'method',
-        'reference',
-        'idempotency_key',
-        'notes',
-        'meta',
+        'withdrawn_at',
+        'type',
+        'note',
+        'academic_year_id',
+        'created_by',
         'cancelled_at',
         'cancelled_by',
         'cancellation_reason',
-        'created_by',
     ];
 
     protected $casts = [
         'amount'       => 'decimal:2',
-        'payment_date' => 'date',
-        'months'       => 'array',
-        'meta'         => 'array',
+        'withdrawn_at' => 'date',
         'cancelled_at' => 'datetime',
     ];
 
-    public function student(): BelongsTo
+    public function academicYear(): BelongsTo
     {
-        return $this->belongsTo(Student::class);
-    }
-
-    public function enrollment(): BelongsTo
-    {
-        return $this->belongsTo(Enrollment::class);
+        return $this->belongsTo(AcademicYear::class);
     }
 
     public function createdBy(): BelongsTo
@@ -53,13 +41,18 @@ class Payment extends Model
         return $this->belongsTo(User::class, 'cancelled_by');
     }
 
-    public function paymentAllocations(): HasMany
+    public function cashTransactions(): MorphMany
     {
-        return $this->hasMany(PaymentAllocation::class);
+        return $this->morphMany(CashTransaction::class, 'source');
     }
 
     public function isCancelled(): bool
     {
         return $this->cancelled_at !== null;
+    }
+
+    public function scopeActive($query)
+    {
+        return $query->whereNull('cancelled_at');
     }
 }

@@ -11,6 +11,7 @@ class Salary extends Model
         'employee_id', 'academic_year_id', 'amount',
         'period_from', 'period_to', 'paid_at',
         'method', 'reference', 'notes', 'created_by',
+        'cancelled_at', 'cancelled_by', 'cancellation_reason',
     ];
 
     protected $casts = [
@@ -18,6 +19,7 @@ class Salary extends Model
         'period_from' => 'date',
         'period_to' => 'date',
         'paid_at' => 'date',
+        'cancelled_at' => 'datetime',
     ];
 
     public function employee(): BelongsTo
@@ -33,5 +35,15 @@ class Salary extends Model
     public function createdBy(): BelongsTo
     {
         return $this->belongsTo(User::class, 'created_by');
+    }
+
+    public function cancelledBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'cancelled_by');
+    }
+
+    public function isCancelled(): bool
+    {
+        return $this->cancelled_at !== null;
     }
 }

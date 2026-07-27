@@ -17,15 +17,25 @@ use App\Http\Controllers\RosterController;
 
 Route::middleware('throttle:5,1')->post('/login', [AuthController::class, 'login']);
 
-Route::middleware('auth:sanctum')->group(function () {
-    Route::apiResource('/employees', EmployeeController::class);
-    Route::apiResource('/salaries', SalaryController::class);
-    Route::get('/academic-years', [AcademicYearController::class, 'index']);
-
-
+// كل المسارات المصادَق عليها تمرّ بـ active فيمنع أي حساب معطَّل من الوصول.
+Route::middleware(['auth:sanctum', 'active'])->group(function () {
     Route::post('/logout', [AuthController::class, 'logout']);
     Route::get('/user',    [AuthController::class, 'user']);
     Route::get('/dashboard', [DashboardController::class, 'index']);
+
+    // قائمة السنوات الدراسية — قراءة فقط تُستعمل في عدة شاشات، متاحة لأي مستخدِم مُفعَّل.
+    Route::get('/academic-years', [AcademicYearController::class, 'index']);
+
+    // الموظفون — صلاحية منفصلة
+    Route::middleware('permission:manage_employees')->group(function () {
+        Route::apiResource('/employees', EmployeeController::class);
+    });
+
+    // الرواتب — صلاحية منفصلة (الحذف النهائي ممنوع، يُستبدل بإلغاء موثّق)
+    Route::middleware('permission:manage_salaries')->group(function () {
+        Route::apiResource('/salaries', SalaryController::class)->except(['destroy']);
+        Route::post('/salaries/{salary}/cancel', [SalaryController::class, 'cancel']);
+    });
 
     // User Management
     Route::middleware('permission:manage_users')->group(function () {
@@ -67,16 +77,14 @@ Route::middleware('auth:sanctum')->group(function () {
 
     // Payments
     Route::middleware('permission:manage_payments')->group(function () {
-        Route::apiResource('/payments', PaymentController::class)->except(['update']);
+        Route::apiResource('/payments', PaymentController::class)->except(['update', 'destroy']);
+        Route::post('/payments/{payment}/cancel', [PaymentController::class, 'cancel']);
         Route::apiResource('/fee-types', FeeTypeController::class);
-
-
 
         Route::get('/collection/years', [CollectionController::class, 'years']);
         Route::get('/collection/years/{year}/sections', [CollectionController::class, 'sectionsByYear']);
         Route::get('/collection/sections/{section}/students', [CollectionController::class, 'studentsBySection']);
         Route::post('/payments/collect', [CollectionController::class, 'collect']);
         Route::get('/enrollments/{enrollment}/ledger', [CollectionController::class, 'ledger']);
-
     });
 });

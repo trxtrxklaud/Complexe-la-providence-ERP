@@ -8,6 +8,7 @@ use App\Models\FeeType;
 use App\Models\Payment;
 use App\Models\PaymentAllocation;
 use App\Models\StudentFee;
+use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 
 class CollectionService
@@ -25,136 +26,176 @@ class CollectionService
 
     public function collect(array $data, int $createdBy): array
     {
-        return DB::transaction(function () use ($data, $createdBy) {
-            $enrollment = Enrollment::with([
-                'student.guardians',
-                'academicYear',
-                'level',
-                'section',
-            ])->findOrFail($data['enrollment_id']);
+        $key = $data['idempotency_key'] ?? null;
 
-            // حارس سلامة مالية: التسجيل يجب أن يخصّ التلميذ المحدَّد نفسه.
-            if ((int) $enrollment->student_id !== (int) $data['student_id']) {
-                throw new \InvalidArgumentException(
-                    'التسجيل المحدَّد لا يخصّ هذا التلميذ'
-                );
+        // إعادة الإرسال: إن وُجد إيصال مخزّن بنفس المفتاح نُعيده كما هو بلا تكرار.
+        if ($key) {
+            $existing = Payment::where('idempotency_key', $key)->first();
+            if ($existing && is_array($existing->meta)) {
+                return $existing->meta;
             }
+        }
 
-            $months = $data['months'];
-            sort($months);
-            $this->validateMonths($months, $enrollment);
+        try {
+            return DB::transaction(function () use ($data, $createdBy, $key) {
+                // قفل صف التسجيل يُسلسِل كل عمليات الاستخلاص لنفس التسجيل،
+                // فيمنع دفع نفس الشهر مرتين عند الطلبات المتزامنة.
+                $enrollment = Enrollment::whereKey($data['enrollment_id'])
+                    ->lockForUpdate()
+                    ->firstOrFail();
 
-            $monthsLabel = implode(' / ', array_map(
-                fn ($m) => (self::MONTH_NAMES_AR[substr($m, 5)] ?? $m) . ' ' . substr($m, 0, 4),
-                $months
-            ));
-
-            $itemsTotal = round((float) array_sum(array_column($data['items'], 'amount')), 2);
-            $discount = max(0, (float) ($data['discount'] ?? 0));
-
-            if ($discount > $itemsTotal) {
-                throw new \InvalidArgumentException(
-                    'التخفيض (' . $discount . ') يتجاوز مجموع البنود (' . $itemsTotal . ')'
-                );
-            }
-
-            $total = round($itemsTotal - $discount, 2);
-
-            $payment = Payment::create([
-                'student_id'    => $data['student_id'],
-                'enrollment_id' => $data['enrollment_id'],
-                'months'        => $months,
-                'amount'        => $total,
-                'payment_date'  => $data['payment_date'],
-                'method'        => $data['method'],
-                'reference'     => $data['reference'] ?? null,
-                'notes'         => $data['notes'] ?? null,
-                'created_by'    => $createdBy,
-            ]);
-
-            // توزيع التخفيض تناسبياً على البنود حتى يبقى:
-            //   مجموع amount_due = مجموع التوزيعات = مبلغ الدفعة
-            $netShares = $this->distribute($data['items'], $itemsTotal, $total);
-
-            $receiptItems = [];
-            $feeIds = [];
-
-            foreach ($data['items'] as $index => $item) {
-                $feeType = FeeType::findOrFail($item['fee_type_id']);
-                $net = $netShares[$index];
-
-                $studentFee = StudentFee::create([
-                    'enrollment_id' => $enrollment->id,
-                    'fee_plan_id'   => null,
-                    'description'   => $feeType->name_ar . ' — ' . $monthsLabel,
-                    'amount_due'    => $net,
-                    'due_date'      => $data['payment_date'],
-                    'status'        => 'pending',
+                $enrollment->load([
+                    'student.guardians',
+                    'academicYear',
+                    'level',
+                    'section',
                 ]);
 
-                PaymentAllocation::create([
-                    'payment_id'       => $payment->id,
-                    'student_fee_id'   => $studentFee->id,
-                    'amount_allocated' => $net,
+                // حارس سلامة مالية: التسجيل يجب أن يخصّ التلميذ المحدَّد نفسه.
+                if ((int) $enrollment->student_id !== (int) $data['student_id']) {
+                    throw new \InvalidArgumentException(
+                        'التسجيل المحدَّد لا يخصّ هذا التلميذ'
+                    );
+                }
+
+                $months = $data['months'];
+                sort($months);
+                $this->validateMonths($months, $enrollment);
+
+                $monthsLabel = implode(' / ', array_map(
+                    fn ($m) => (self::MONTH_NAMES_AR[substr($m, 5)] ?? $m) . ' ' . substr($m, 0, 4),
+                    $months
+                ));
+
+                $itemsTotal = round((float) array_sum(array_column($data['items'], 'amount')), 2);
+                $discount = max(0, (float) ($data['discount'] ?? 0));
+
+                if ($discount > $itemsTotal) {
+                    throw new \InvalidArgumentException(
+                        'التخفيض (' . $discount . ') يتجاوز مجموع البنود (' . $itemsTotal . ')'
+                    );
+                }
+
+                $total = round($itemsTotal - $discount, 2);
+
+                $payment = Payment::create([
+                    'student_id'      => $data['student_id'],
+                    'enrollment_id'   => $data['enrollment_id'],
+                    'months'          => $months,
+                    'amount'          => $total,
+                    'payment_date'    => $data['payment_date'],
+                    'method'          => $data['method'],
+                    'reference'       => $data['reference'] ?? null,
+                    'notes'           => $data['notes'] ?? null,
+                    'idempotency_key' => $key,
+                    'created_by'      => $createdBy,
                 ]);
 
-                $feeIds[] = $studentFee->id;
+                // توزيع التخفيض تناسبياً على البنود حتى يبقى:
+                //   مجموع amount_due = مجموع التوزيعات = مبلغ الدفعة
+                $netShares = $this->distribute($data['items'], $itemsTotal, $total);
 
-                $receiptItems[] = [
-                    'fee_type_id'   => $feeType->id,
-                    'fee_type_name' => $feeType->name_ar,
-                    'amount'        => (float) $item['amount'],
+                $receiptItems = [];
+                $feeIds = [];
+
+                foreach ($data['items'] as $index => $item) {
+                    $feeType = FeeType::findOrFail($item['fee_type_id']);
+                    $net = $netShares[$index];
+
+                    $studentFee = StudentFee::create([
+                        'enrollment_id' => $enrollment->id,
+                        'fee_plan_id'   => null,
+                        'description'   => $feeType->name_ar . ' — ' . $monthsLabel,
+                        'amount_due'    => $net,
+                        'due_date'      => $data['payment_date'],
+                        'status'        => 'pending',
+                    ]);
+
+                    PaymentAllocation::create([
+                        'payment_id'       => $payment->id,
+                        'student_fee_id'   => $studentFee->id,
+                        'amount_allocated' => $net,
+                    ]);
+
+                    $feeIds[] = $studentFee->id;
+
+                    $receiptItems[] = [
+                        'fee_type_id'   => $feeType->id,
+                        'fee_type_name' => $feeType->name_ar,
+                        'amount'        => (float) $item['amount'],
+                    ];
+                }
+
+                // مصدر حقيقة واحد لحالة الرسم: تُحسب من التوزيعات لا تُكتب يدوياً.
+                foreach ($feeIds as $feeId) {
+                    $this->paymentService->recalculateStudentFeeStatus($feeId);
+                }
+
+                $guardian = $enrollment->student->guardians
+                    ->sortByDesc(fn ($g) => $g->pivot->is_primary_contact ?? 0)
+                    ->first();
+
+                $actor = auth()->user();
+
+                $receipt = [
+                    'payment_id'   => $payment->id,
+                    'payment_date' => $data['payment_date'],
+                    'created_at'   => $payment->created_at->toIso8601String(),
+                    'method'       => $data['method'],
+                    'reference'    => $payment->reference,
+                    'notes'        => $payment->notes,
+                    'months'       => $months,
+                    'months_label' => $monthsLabel,
+                    'items_total'  => $itemsTotal,
+                    'discount'     => $discount,
+                    'total'        => $total,
+                    'items'        => $receiptItems,
+                    'student'      => [
+                        'id'           => $enrollment->student->id,
+                        'first_name'   => $enrollment->student->first_name,
+                        'last_name'    => $enrollment->student->last_name,
+                        'student_code' => $enrollment->student->student_code,
+                    ],
+                    'enrollment'   => [
+                        'id'            => $enrollment->id,
+                        'level'         => $enrollment->level?->name,
+                        'section'       => $enrollment->section?->name,
+                        'academic_year' => $enrollment->academicYear?->name,
+                    ],
+                    'guardian'     => $guardian ? [
+                        'first_name' => $guardian->first_name,
+                        'last_name'  => $guardian->last_name,
+                        'phone'      => $guardian->phone,
+                    ] : null,
+                    'created_by'   => [
+                        'id'   => $createdBy,
+                        'code' => $actor?->code ?? $actor?->username ?? (string) $createdBy,
+                        'name' => trim(($actor?->first_name ?? '') . ' ' . ($actor?->last_name ?? '')),
+                    ],
                 ];
+
+                // لقطة إيصال ثابتة تُعاد حرفياً عند إعادة إرسال نفس الطلب.
+                $payment->update(['meta' => $receipt]);
+
+                return $receipt;
+            });
+        } catch (QueryException $e) {
+            if ($key && $this->isDuplicateKey($e)) {
+                $existing = Payment::where('idempotency_key', $key)->firstOrFail();
+                if (is_array($existing->meta)) {
+                    return $existing->meta;
+                }
             }
+            throw $e;
+        }
+    }
 
-            // مصدر حقيقة واحد لحالة الرسم: تُحسب من التوزيعات لا تُكتب يدوياً.
-            foreach ($feeIds as $feeId) {
-                $this->paymentService->recalculateStudentFeeStatus($feeId);
-            }
-
-            $guardian = $enrollment->student->guardians
-                ->sortByDesc(fn ($g) => $g->pivot->is_primary_contact ?? 0)
-                ->first();
-
-            $actor = auth()->user();
-
-            return [
-                'payment_id'   => $payment->id,
-                'payment_date' => $data['payment_date'],
-                'created_at'   => $payment->created_at->toIso8601String(),
-                'method'       => $data['method'],
-                'reference'    => $payment->reference,
-                'notes'        => $payment->notes,
-                'months'       => $months,
-                'months_label' => $monthsLabel,
-                'items_total'  => $itemsTotal,
-                'discount'     => $discount,
-                'total'        => $total,
-                'items'        => $receiptItems,
-                'student'      => [
-                    'id'           => $enrollment->student->id,
-                    'first_name'   => $enrollment->student->first_name,
-                    'last_name'    => $enrollment->student->last_name,
-                    'student_code' => $enrollment->student->student_code,
-                ],
-                'enrollment'   => [
-                    'id'            => $enrollment->id,
-                    'level'         => $enrollment->level?->name,
-                    'section'       => $enrollment->section?->name,
-                    'academic_year' => $enrollment->academicYear?->name,
-                ],
-                'guardian'     => $guardian ? [
-                    'first_name' => $guardian->first_name,
-                    'last_name'  => $guardian->last_name,
-                    'phone'      => $guardian->phone,
-                ] : null,
-                'created_by'   => [
-                    'id'   => $createdBy,
-                    'code' => $actor?->code ?? $actor?->username ?? (string) $createdBy,
-                    'name' => trim(($actor?->first_name ?? '') . ' ' . ($actor?->last_name ?? '')),
-                ],
-            ];
-        });
+    private function isDuplicateKey(QueryException $e): bool
+    {
+        $code = (string) $e->getCode();
+        return in_array($code, ['23000', '23505'], true)
+            || str_contains($e->getMessage(), 'idempotency_key')
+            || str_contains(strtolower($e->getMessage()), 'unique');
     }
 
     /**
@@ -193,6 +234,7 @@ class CollectionService
     public function monthLedger(int $enrollmentId): array
     {
         $payments = Payment::where('enrollment_id', $enrollmentId)
+            ->whereNull('cancelled_at')
             ->whereNotNull('months')
             ->with(['paymentAllocations.studentFee', 'createdBy:id,first_name,last_name'])
             ->orderBy('payment_date')
@@ -237,6 +279,7 @@ class CollectionService
 
         Payment::query()
             ->where('enrollment_id', $enrollmentId)
+            ->whereNull('cancelled_at')
             ->whereNotNull('months')
             ->select('months')
             ->cursor()

@@ -1,5 +1,5 @@
 import React from 'react';
-import { Printer, X, Trash2 } from 'lucide-react';
+import { Printer, X, Ban } from 'lucide-react';
 
 const METHOD_LABELS: Record<string, string> = {
   cash: 'نقداً',
@@ -96,7 +96,7 @@ export function ReceiptModal({ receipt, cashierName, onClose, onDelete }: Props)
                 className="flex items-center gap-2 px-3 py-2 rounded-xl border text-sm"
                 style={{ borderColor: '#FCA5A5', color: '#DC2626' }}
               >
-                <Trash2 size={16} /> حذف
+                <Ban size={16} /> إلغاء الدفعة
               </button>
             )}
             <button

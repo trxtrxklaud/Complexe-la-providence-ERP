@@ -4,43 +4,39 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\MorphMany;
 
-class Payment extends Model
+class Expense extends Model
 {
     protected $fillable = [
-        'student_id',
-        'enrollment_id',
-        'months',
+        'expense_category_id',
+        'academic_year_id',
+        'label',
         'amount',
-        'payment_date',
+        'expense_date',
         'method',
         'reference',
-        'idempotency_key',
         'notes',
-        'meta',
+        'created_by',
         'cancelled_at',
         'cancelled_by',
         'cancellation_reason',
-        'created_by',
     ];
 
     protected $casts = [
         'amount'       => 'decimal:2',
-        'payment_date' => 'date',
-        'months'       => 'array',
-        'meta'         => 'array',
+        'expense_date' => 'date',
         'cancelled_at' => 'datetime',
     ];
 
-    public function student(): BelongsTo
+    public function category(): BelongsTo
     {
-        return $this->belongsTo(Student::class);
+        return $this->belongsTo(ExpenseCategory::class, 'expense_category_id');
     }
 
-    public function enrollment(): BelongsTo
+    public function academicYear(): BelongsTo
     {
-        return $this->belongsTo(Enrollment::class);
+        return $this->belongsTo(AcademicYear::class);
     }
 
     public function createdBy(): BelongsTo
@@ -53,13 +49,19 @@ class Payment extends Model
         return $this->belongsTo(User::class, 'cancelled_by');
     }
 
-    public function paymentAllocations(): HasMany
+    /** أسطر الدفتر المركزي المتولّدة عن هذا المصروف. */
+    public function cashTransactions(): MorphMany
     {
-        return $this->hasMany(PaymentAllocation::class);
+        return $this->morphMany(CashTransaction::class, 'source');
     }
 
     public function isCancelled(): bool
     {
         return $this->cancelled_at !== null;
+    }
+
+    public function scopeActive($query)
+    {
+        return $query->whereNull('cancelled_at');
     }
 }
