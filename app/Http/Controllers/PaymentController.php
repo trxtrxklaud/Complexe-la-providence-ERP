@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Http\Requests\StorePaymentRequest;
 use App\Models\Payment;
 use App\Models\Student;
+use App\Services\LedgerService;
 use App\Services\PaymentService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -12,7 +13,10 @@ use Illuminate\Support\Facades\DB;
 
 class PaymentController extends Controller
 {
-    public function __construct(private readonly PaymentService $paymentService) {}
+    public function __construct(
+        private readonly PaymentService $paymentService,
+        private readonly LedgerService $ledger,
+    ) {}
 
     public function index(Request $request): JsonResponse
     {
@@ -89,7 +93,8 @@ class PaymentController extends Controller
 
     /**
      * إلغاء موثّق بدل الحذف النهائي: يبقى سجل الدفعة وتوزيعاته للمراجعة،
-     * مع تسجيل سبب الإلغاء والمنفّذ وتاريخه، وتعود الرسوم غير مدفوعة تلقائياً.
+     * مع تسجيل سبب الإلغاء والمنفّذ وتاريخه، وتعود الرسوم غير مدفوعة تلقائياً،
+     * وتُلغى معها أسطر الدفتر النقدي حتى لا تظهر في أي تقرير مالي.
      */
     public function cancel(Request $request, Payment $payment): JsonResponse
     {
@@ -113,6 +118,9 @@ class PaymentController extends Controller
             foreach ($feeIds as $feeId) {
                 $this->paymentService->recalculateStudentFeeStatus((int) $feeId);
             }
+
+            // سحب أثر الدفعة من الدفتر النقدي المركزي بنفس السبب والمنفّذ.
+            $this->ledger->cancelFor($payment, $request->user()?->id, $data['reason']);
         });
 
         return response()->json(

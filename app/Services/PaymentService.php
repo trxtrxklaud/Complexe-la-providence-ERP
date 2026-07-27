@@ -10,6 +10,8 @@ use Illuminate\Support\Facades\DB;
 
 class PaymentService
 {
+    public function __construct(private readonly LedgerService $ledger) {}
+
     public function recordPayment(array $data, ?int $createdBy = null): Payment
     {
         $key = $data['idempotency_key'] ?? null;
@@ -80,6 +82,10 @@ class PaymentService
                         $this->updateStudentFeeStatus($allocation['student_fee_id']);
                     }
                 }
+
+                // إسقاط الدفعة في الدفتر النقدي المركزي داخل نفس المعاملة،
+                // فإمّا أن تُسجَّل الدفعة وأثرها النقدي معاً أو لا يُسجَّل شيء.
+                $this->ledger->recordPayment($payment);
 
                 return $payment;
             });

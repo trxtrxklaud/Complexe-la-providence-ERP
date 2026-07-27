@@ -3,11 +3,15 @@
 namespace App\Http\Controllers;
 
 use App\Models\Salary;
+use App\Services\LedgerService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 class SalaryController extends Controller
 {
+    public function __construct(private readonly LedgerService $ledger) {}
+
     public function index(Request $request): JsonResponse
     {
         $q = Salary::with([
@@ -43,8 +47,19 @@ class SalaryController extends Controller
             'notes' => ['nullable', 'string'],
         ]);
         $data['created_by'] = $request->user()?->id;
-        $salary = Salary::create($data)->load(['employee:id,first_name,last_name', 'academicYear:id,name']);
-        return response()->json($salary, 201);
+
+        // الراتب وأثره النقدي يُسجَّلان معاً أو لا يُسجَّل أيّهما.
+        $salary = DB::transaction(function () use ($data) {
+            $salary = Salary::create($data);
+            $this->ledger->recordSalary($salary);
+
+            return $salary;
+        });
+
+        return response()->json(
+            $salary->load(['employee:id,first_name,last_name', 'academicYear:id,name']),
+            201
+        );
     }
 
     public function show(Salary $salary): JsonResponse
@@ -69,12 +84,21 @@ class SalaryController extends Controller
             'reference' => ['nullable', 'string', 'max:100'],
             'notes' => ['nullable', 'string'],
         ]);
-        $salary->update($data);
-        return response()->json($salary->fresh()->load(['employee:id,first_name,last_name', 'academicYear:id,name']));
+
+        // إعادة إسقاط الراتب في الدفتر بعد التعديل حتى يبقى المبلغ والتاريخ متطابقَين.
+        $salary = DB::transaction(function () use ($salary, $data) {
+            $salary->update($data);
+            $this->ledger->recordSalary($salary->fresh());
+
+            return $salary->fresh();
+        });
+
+        return response()->json($salary->load(['employee:id,first_name,last_name', 'academicYear:id,name']));
     }
 
     /**
-     * إلغاء موثّق للراتب بدل الحذف النهائي (سبب + منفّذ + تاريخ).
+     * إلغاء موثّق للراتب بدل الحذف النهائي (سبب + منفّذ + تاريخ)،
+     * مع سحب أثره من الدفتر النقدي المركزي.
      */
     public function cancel(Request $request, Salary $salary): JsonResponse
     {
@@ -86,11 +110,15 @@ class SalaryController extends Controller
             return response()->json(['message' => 'هذا الراتب ملغى مسبقاً'], 422);
         }
 
-        $salary->update([
-            'cancelled_at'        => now(),
-            'cancelled_by'        => $request->user()?->id,
-            'cancellation_reason' => $data['reason'],
-        ]);
+        DB::transaction(function () use ($salary, $data, $request) {
+            $salary->update([
+                'cancelled_at'        => now(),
+                'cancelled_by'        => $request->user()?->id,
+                'cancellation_reason' => $data['reason'],
+            ]);
+
+            $this->ledger->cancelFor($salary, $request->user()?->id, $data['reason']);
+        });
 
         return response()->json(
             $salary->fresh()->load([
