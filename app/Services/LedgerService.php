@@ -45,7 +45,7 @@ class LedgerService
             [
                 'transaction_date'    => $date,
                 'direction'           => $direction,
-                'amount'              => round($amount, 2),
+                'amount'              => self::decimal($amount),
                 'academic_year_id'    => $academicYearId,
                 'description'         => $description,
                 'created_by'          => $createdBy,
@@ -55,6 +55,18 @@ class LedgerService
                 'cancellation_reason' => null,
             ]
         );
+    }
+
+    /**
+     * تحويل المبلغ إلى نص عشري برقمين قبل تخزينه.
+     *
+     * الفاصلة العائمة لا تمثّل المليمات تمثيلاً دقيقاً، ومكتبة الحساب العشري
+     * تُحذّر من تمرير float وستمنعه لاحقاً. التنسيق إلى نص هنا يجعل القيمة
+     * تصل إلى العمود العشري دون وسيط عائم.
+     */
+    private static function decimal(float $amount): string
+    {
+        return number_format(round($amount, 2), 2, '.', '');
     }
 
     /**
