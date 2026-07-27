@@ -1,14 +1,22 @@
 import { CalendarDays } from 'lucide-react';
-import { PageShell } from '../../components/PageShell';
+import { PeriodReport } from '../../components/PeriodReport';
+import { fetchIncomeByDate } from '../../api/reports';
+import { monthStart, today } from '../../lib/format';
 
+/**
+ * المداخيل حسب التاريخ — سطر لكل يوم مفصّل على بنود المداخيل الستّة.
+ */
 export function IncomeByDatePage() {
   return (
-    <div className="px-6 pb-6 max-w-6xl mx-auto">
-      <PageShell
-        title="المداخيل حسب التاريخ"
-        subtitle="عرض مداخيل التلاميذ ضمن مجال تاريخي محدد (يوم / مدة)"
-        icon={CalendarDays}
-      />
-    </div>
+    <PeriodReport
+      title="المداخيل حسب التاريخ"
+      subtitle="مداخيل كل يوم مفصّلة على البنود"
+      icon={CalendarDays}
+      granularity="day"
+      periodLabel="التاريخ"
+      initialFrom={monthStart()}
+      initialTo={today()}
+      load={fetchIncomeByDate}
+    />
   );
 }

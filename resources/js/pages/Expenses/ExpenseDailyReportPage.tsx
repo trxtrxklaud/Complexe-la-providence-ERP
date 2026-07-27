@@ -1,14 +1,22 @@
 import { CalendarDays } from 'lucide-react';
-import { PageShell } from '../../components/PageShell';
+import { PeriodReport } from '../../components/PeriodReport';
+import { fetchExpenseReport } from '../../api/reports';
+import { monthStart, today } from '../../lib/format';
 
+/**
+ * التقرير اليومي للمصاريف — الأجور والسلف والمصاريف لكل يوم.
+ */
 export function ExpenseDailyReportPage() {
   return (
-    <div className="px-6 pb-6 max-w-6xl mx-auto">
-      <PageShell
-        title="التقرير اليومي للمصاريف"
-        subtitle="ملخّص مصاريف اليوم الواحد"
-        icon={CalendarDays}
-      />
-    </div>
+    <PeriodReport
+      title="التقرير اليومي للمصاريف"
+      subtitle="مصاريف كل يوم مفصّلة على البنود"
+      icon={CalendarDays}
+      granularity="day"
+      periodLabel="التاريخ"
+      initialFrom={monthStart()}
+      initialTo={today()}
+      load={fetchExpenseReport}
+    />
   );
 }
