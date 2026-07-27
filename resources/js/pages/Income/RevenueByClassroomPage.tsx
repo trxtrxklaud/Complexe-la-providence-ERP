@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { AlertCircle, Layers } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { AlertCircle, ChevronLeft, Layers } from 'lucide-react';
 import { fetchClassroomRevenue, type ClassroomRevenueReport } from '../../api/reports';
 import { errorMessage, money } from '../../lib/format';
 
@@ -15,6 +16,9 @@ const C = {
 
 /**
  * المداخيل حسب القسم — تجميع نفس أسطر الدفتر على مستوى القسم.
+ *
+ * كل سطر مدخل إلى صفحة القسم، وتُمرّر الفترة في الرابط لا في الحالة،
+ * حتى يقرأ المدير نفس الرقم قبل النقر وبعده.
  */
 export function RevenueByClassroomPage() {
   const [from, setFrom] = useState('');
@@ -44,6 +48,8 @@ export function RevenueByClassroomPage() {
     return () => controller.abort();
   }, [from, to]);
 
+  const detailQuery = from || to ? `?from=${from}&to=${to}` : '';
+
   return (
     <div className="px-6 pb-10 max-w-6xl mx-auto" dir="rtl">
       <div className="flex items-center gap-3 mb-4">
@@ -52,7 +58,7 @@ export function RevenueByClassroomPage() {
         </div>
         <div>
           <h2 className="text-lg font-bold" style={{ color: C.ink }}>المداخيل حسب القسم</h2>
-          <p className="text-sm" style={{ color: C.muted }}>مردود كل قسم من الاستخلاص</p>
+          <p className="text-sm" style={{ color: C.muted }}>انقر على قسم لفتح صفحته وقائمة تلاميذه</p>
         </div>
       </div>
 
@@ -114,23 +120,52 @@ export function RevenueByClassroomPage() {
                     <th className="text-right px-4 py-3 font-semibold" style={{ color: C.ink }}>التلاميذ الدافعون</th>
                     <th className="text-right px-4 py-3 font-semibold" style={{ color: C.ink }}>عدد الدفعات</th>
                     <th className="text-right px-4 py-3 font-semibold" style={{ color: C.ink }}>المجموع</th>
+                    <th className="px-4 py-3" />
                   </tr>
                 </thead>
                 <tbody>
                   {data.rows.length === 0 && (
                     <tr>
-                      <td colSpan={5} className="px-4 py-8 text-center" style={{ color: C.muted }}>
+                      <td colSpan={6} className="px-4 py-8 text-center" style={{ color: C.muted }}>
                         لا توجد مداخيل في هذه الفترة.
                       </td>
                     </tr>
                   )}
                   {data.rows.map((row) => (
-                    <tr key={`${row.level_id ?? 'x'}-${row.section_id ?? 'x'}`} style={{ borderTop: `1px solid ${C.line}` }}>
+                    <tr
+                      key={`${row.level_id ?? 'x'}-${row.section_id ?? 'x'}`}
+                      style={{ borderTop: `1px solid ${C.line}` }}
+                      className="hover:bg-[#F7F9F4]"
+                    >
                       <td className="px-4 py-3" style={{ color: C.ink }}>{row.level ?? 'دون مستوى'}</td>
-                      <td className="px-4 py-3" style={{ color: C.ink }}>{row.section ?? 'دون قسم'}</td>
+                      <td className="px-4 py-3">
+                        {row.section_id !== null ? (
+                          <Link
+                            to={`/income/by-classroom/${row.section_id}${detailQuery}`}
+                            className="font-semibold hover:underline"
+                            style={{ color: C.forest }}
+                          >
+                            {row.section ?? 'دون قسم'}
+                          </Link>
+                        ) : (
+                          <span style={{ color: C.muted }}>دون قسم</span>
+                        )}
+                      </td>
                       <td className="px-4 py-3" style={{ color: C.muted }}>{row.students_count}</td>
                       <td className="px-4 py-3" style={{ color: C.muted }}>{row.payments_count}</td>
                       <td className="px-4 py-3 font-semibold" style={{ color: C.forest }}>{money(row.total)}</td>
+                      <td className="px-4 py-3">
+                        {row.section_id !== null && (
+                          <Link
+                            to={`/income/by-classroom/${row.section_id}${detailQuery}`}
+                            className="inline-flex items-center gap-1 text-xs"
+                            style={{ color: C.muted }}
+                          >
+                            <span>التفصيل</span>
+                            <ChevronLeft size={14} />
+                          </Link>
+                        )}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -139,6 +174,7 @@ export function RevenueByClassroomPage() {
                     <tr style={{ backgroundColor: C.sage }}>
                       <td className="px-4 py-3 font-bold" colSpan={4} style={{ color: C.ink }}>المجموع العام</td>
                       <td className="px-4 py-3 font-bold" style={{ color: C.forest }}>{money(data.summary.total)}</td>
+                      <td className="px-4 py-3" />
                     </tr>
                   </tfoot>
                 )}

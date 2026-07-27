@@ -21,7 +21,9 @@ import { RosterPage } from './pages/Classrooms/RosterPage';
 import { IncomeLayout } from './pages/Income/IncomeLayout';
 import { IncomeByDatePage } from './pages/Income/IncomeByDatePage';
 import { StudentRevenuePage } from './pages/Income/StudentRevenuePage';
+import { StudentDetailPage } from './pages/Income/StudentDetailPage';
 import { RevenueByClassroomPage } from './pages/Income/RevenueByClassroomPage';
+import { ClassroomDetailPage } from './pages/Income/ClassroomDetailPage';
 import { RevenueByYearPage } from './pages/Income/RevenueByYearPage';
 import { ExpensesLayout } from './pages/Expenses/ExpensesLayout';
 import { ExpenseCreatePage } from './pages/Expenses/ExpenseCreatePage';
@@ -122,7 +124,11 @@ export default function App() {
                         <Route path="billing" element={<CollectionPage />} />
                         <Route path="by-date" element={<IncomeByDatePage />} />
                         <Route path="revenue" element={<StudentRevenuePage />} />
+                        {/* صفحة تلميذ واحد — حفر من جدول مداخيل التلاميذ */}
+                        <Route path="revenue/:studentId" element={<StudentDetailPage />} />
                         <Route path="by-classroom" element={<RevenueByClassroomPage />} />
+                        {/* صفحة قسم واحد — حفر من جدول الأقسام */}
+                        <Route path="by-classroom/:sectionId" element={<ClassroomDetailPage />} />
                         <Route path="by-year" element={<RevenueByYearPage />} />
                     </Route>
 

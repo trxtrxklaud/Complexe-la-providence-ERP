@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { AlertCircle, TrendingUp } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { AlertCircle, ChevronLeft, TrendingUp } from 'lucide-react';
 import { fetchStudentRevenue, type StudentRevenueReport } from '../../api/reports';
 import { errorMessage, money } from '../../lib/format';
 
@@ -16,6 +17,8 @@ const C = {
 /**
  * مداخيل التلاميذ — المبالغ من دفتر الخزينة، والهوية من الدفعة والتسجيل،
  * فيبقى مجموع هذه الصفحة مطابقاً لمجموع صفحة الأقسام لنفس الفترة.
+ *
+ * اسم التلميذ مدخل إلى صفحته التي تعرض وصولاته واحداً واحداً.
  */
 export function StudentRevenuePage() {
   const [from, setFrom] = useState('');
@@ -58,6 +61,8 @@ export function StudentRevenuePage() {
     };
   }, [from, to, search]);
 
+  const detailQuery = from || to ? `?from=${from}&to=${to}` : '';
+
   return (
     <div className="px-6 pb-10 max-w-6xl mx-auto" dir="rtl">
       <div className="flex items-center gap-3 mb-4">
@@ -66,7 +71,7 @@ export function StudentRevenuePage() {
         </div>
         <div>
           <h2 className="text-lg font-bold" style={{ color: C.ink }}>مداخيل التلاميذ</h2>
-          <p className="text-sm" style={{ color: C.muted }}>ما استُخلص فعلياً من كل تلميذ</p>
+          <p className="text-sm" style={{ color: C.muted }}>انقر على اسم تلميذ لفتح صفحته ووصولاته</p>
         </div>
       </div>
 
@@ -137,24 +142,43 @@ export function StudentRevenuePage() {
                     <th className="text-right px-4 py-3 font-semibold" style={{ color: C.ink }}>القسم</th>
                     <th className="text-right px-4 py-3 font-semibold" style={{ color: C.ink }}>عدد الدفعات</th>
                     <th className="text-right px-4 py-3 font-semibold" style={{ color: C.ink }}>المجموع</th>
+                    <th className="px-4 py-3" />
                   </tr>
                 </thead>
                 <tbody>
                   {data.rows.length === 0 && (
                     <tr>
-                      <td colSpan={6} className="px-4 py-8 text-center" style={{ color: C.muted }}>
+                      <td colSpan={7} className="px-4 py-8 text-center" style={{ color: C.muted }}>
                         لا توجد مداخيل مطابقة.
                       </td>
                     </tr>
                   )}
                   {data.rows.map((row) => (
-                    <tr key={row.student_id} style={{ borderTop: `1px solid ${C.line}` }}>
+                    <tr key={row.student_id} style={{ borderTop: `1px solid ${C.line}` }} className="hover:bg-[#F7F9F4]">
                       <td className="px-4 py-3 whitespace-nowrap" style={{ color: C.muted }}>{row.student_code ?? '—'}</td>
-                      <td className="px-4 py-3" style={{ color: C.ink }}>{row.name}</td>
+                      <td className="px-4 py-3">
+                        <Link
+                          to={`/income/revenue/${row.student_id}${detailQuery}`}
+                          className="font-semibold hover:underline"
+                          style={{ color: C.forest }}
+                        >
+                          {row.name}
+                        </Link>
+                      </td>
                       <td className="px-4 py-3" style={{ color: C.muted }}>{row.level ?? '—'}</td>
                       <td className="px-4 py-3" style={{ color: C.muted }}>{row.section ?? '—'}</td>
                       <td className="px-4 py-3" style={{ color: C.muted }}>{row.payments_count}</td>
                       <td className="px-4 py-3 font-semibold" style={{ color: C.forest }}>{money(row.total)}</td>
+                      <td className="px-4 py-3">
+                        <Link
+                          to={`/income/revenue/${row.student_id}${detailQuery}`}
+                          className="inline-flex items-center gap-1 text-xs"
+                          style={{ color: C.muted }}
+                        >
+                          <span>التفصيل</span>
+                          <ChevronLeft size={14} />
+                        </Link>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
