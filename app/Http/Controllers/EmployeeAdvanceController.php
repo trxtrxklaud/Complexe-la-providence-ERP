@@ -3,10 +3,12 @@
 namespace App\Http\Controllers;
 
 use App\Models\EmployeeAdvance;
+use App\Models\EmployeeAdvanceRepayment;
 use App\Services\LedgerService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use RuntimeException;
 
 class EmployeeAdvanceController extends Controller
 {
@@ -81,6 +83,7 @@ class EmployeeAdvanceController extends Controller
             'academicYear:id,name',
             'createdBy:id,first_name,last_name',
             'cancelledBy:id,first_name,last_name',
+            'repayments' => fn ($q) => $q->orderBy('repaid_at')->orderBy('id'),
         ]));
     }
 
@@ -93,6 +96,15 @@ class EmployeeAdvanceController extends Controller
         if ($advance->settled_by_salary_id !== null) {
             return response()->json([
                 'message' => 'هذه التسبقة خُصمت من راتب؛ ألغِ الراتب أوّلاً',
+            ], 422);
+        }
+
+        // تخفيض مبلغ سلفة دون ما رُدّ منها ينتج دَيناً سالباً لا معنى له.
+        $repaid = (float) $advance->repayments()->whereNull('cancelled_at')->sum('amount');
+
+        if ($request->filled('amount') && (float) $request->input('amount') < $repaid) {
+            return response()->json([
+                'message' => 'المبلغ الجديد أقلّ ممّا رُدّ من السلفة (' . number_format($repaid, 2, '.', '') . ')',
             ], 422);
         }
 
@@ -115,26 +127,43 @@ class EmployeeAdvanceController extends Controller
                 $this->ledger->recordEmployeeAdvance($fresh);
             }
 
-            return $fresh;
+            $fresh->recalculateSettlement();
+
+            return $fresh->fresh();
         });
 
         return response()->json($advance->load(['employee:id,first_name,last_name', 'academicYear:id,name']));
     }
 
+    /** سجلّ ردّيات سلفة واحدة. */
+    public function repayments(EmployeeAdvance $advance): JsonResponse
+    {
+        return response()->json(
+            $advance->repayments()
+                ->with(['createdBy:id,first_name,last_name', 'cancelledBy:id,first_name,last_name'])
+                ->orderBy('repaid_at')
+                ->orderBy('id')
+                ->get()
+        );
+    }
+
     /**
      * خلاص جزئي أو كلّي لسلفة (loan) تُردّ على مهل.
      *
+     * كل ردّ يُسجّل سطراً مستقلاً بتاريخه، ولطريقة الردّ أثر محاسبي مختلف:
+     *   cash             → مال دخل الدرج فعلاً → دخل في بند خلاص السلفة
+     *   salary_deduction → لا مال دخل، بل سينقُص راتب الشهر → لا أثر في الدفتر هنا
+     *
      * التسبقة (advance) لا تُخلّص من هنا: خلاصها يتمّ حتماً بخصمها من الراتب،
      * وفتح بابَين لنفس العملية يُنتج خلاصين لدَين واحد.
-     *
-     * الخلاص لا يُسقَط في الدفتر هنا بعد: ردّ السلفة نقداً يحتاج سطراً مستقلاً
-     * لكلّ دفعة بتاريخها، وإسقاطه على السلفة نفسها كان سيدمج الدفعات في سطر
-     * واحد بتاريخ آخر دفعة، فيفسد الكشف اليومي.
      */
     public function settle(Request $request, EmployeeAdvance $advance): JsonResponse
     {
         $data = $request->validate([
-            'amount' => ['required', 'numeric', 'min:0.01'],
+            'amount'    => ['required', 'numeric', 'min:0.01'],
+            'repaid_at' => ['nullable', 'date'],
+            'method'    => ['nullable', 'string', 'in:cash,salary_deduction'],
+            'notes'     => ['nullable', 'string', 'max:500'],
         ]);
 
         if ($advance->cancelled_at) {
@@ -147,24 +176,85 @@ class EmployeeAdvanceController extends Controller
             ], 422);
         }
 
-        $remaining = round((float) $advance->amount - (float) $advance->settled_amount, 2);
+        $userId = $request->user()?->id;
 
-        if ($data['amount'] > $remaining) {
+        try {
+            $repayment = DB::transaction(function () use ($advance, $data, $userId) {
+                // القفل يمنع ردّين متزامنين يتجاوز مجموعهما المتبقّي.
+                $locked = EmployeeAdvance::whereKey($advance->getKey())->lockForUpdate()->firstOrFail();
+
+                $repaid    = (float) $locked->repayments()->whereNull('cancelled_at')->sum('amount');
+                $remaining = round((float) $locked->amount - $repaid, 2);
+
+                if ((float) $data['amount'] > $remaining) {
+                    throw new RuntimeException(
+                        'المبلغ (' . number_format((float) $data['amount'], 2, '.', '') . ') يتجاوز المتبقّي من السلفة (' . number_format($remaining, 2, '.', '') . ')'
+                    );
+                }
+
+                $repayment = EmployeeAdvanceRepayment::create([
+                    'employee_advance_id' => $locked->id,
+                    'employee_id'         => $locked->employee_id,
+                    'academic_year_id'    => $locked->academic_year_id,
+                    'amount'              => number_format((float) $data['amount'], 2, '.', ''),
+                    'repaid_at'           => $data['repaid_at'] ?? now()->toDateString(),
+                    'method'              => $data['method'] ?? EmployeeAdvanceRepayment::METHOD_CASH,
+                    'notes'               => $data['notes'] ?? null,
+                    'created_by'          => $userId,
+                ]);
+
+                $this->ledger->recordAdvanceRepayment($repayment);
+
+                $locked->recalculateSettlement();
+
+                return $repayment;
+            });
+        } catch (RuntimeException $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
+
+        return response()->json([
+            'repayment' => $repayment->fresh(),
+            'advance'   => $advance->fresh()->load(['employee:id,first_name,last_name']),
+        ], 201);
+    }
+
+    /**
+     * إلغاء ردّ مسجّل خطأً: يُسحب أثره من الدفتر ويُعاد احتساب المتبقّي.
+     * لا حذف نهائياً حتّى يبقى مسار التدقيق مقروءاً.
+     */
+    public function cancelRepayment(Request $request, EmployeeAdvanceRepayment $repayment): JsonResponse
+    {
+        $data = $request->validate([
+            'reason' => ['required', 'string', 'min:3', 'max:500'],
+        ]);
+
+        if ($repayment->cancelled_at) {
+            return response()->json(['message' => 'هذا الردّ ملغى مسبقاً'], 422);
+        }
+
+        if ($repayment->salary_id !== null) {
             return response()->json([
-                'message' => 'المبلغ (' . $data['amount'] . ') يتجاوز المتبقّي من السلفة (' . $remaining . ')',
+                'message' => 'هذا الردّ خُصم ضمن راتب؛ ألغِ الراتب أوّلاً',
             ], 422);
         }
 
-        $settled = round((float) $advance->settled_amount + (float) $data['amount'], 2);
+        DB::transaction(function () use ($repayment, $data, $request) {
+            $repayment->update([
+                'cancelled_at'        => now(),
+                'cancelled_by'        => $request->user()?->id,
+                'cancellation_reason' => $data['reason'],
+            ]);
 
-        $advance->update([
-            'settled_amount' => $settled,
-            'status'         => $settled >= (float) $advance->amount
-                ? EmployeeAdvance::STATUS_SETTLED
-                : EmployeeAdvance::STATUS_PARTIAL,
+            $this->ledger->cancelFor($repayment, $request->user()?->id, $data['reason']);
+
+            $repayment->advance?->recalculateSettlement();
+        });
+
+        return response()->json([
+            'repayment' => $repayment->fresh(),
+            'advance'   => $repayment->advance?->fresh(),
         ]);
-
-        return response()->json($advance->fresh()->load(['employee:id,first_name,last_name']));
     }
 
     public function cancel(Request $request, EmployeeAdvance $advance): JsonResponse
@@ -180,6 +270,15 @@ class EmployeeAdvanceController extends Controller
         if ($advance->settled_by_salary_id !== null) {
             return response()->json([
                 'message' => 'هذه التسبقة خُصمت من راتب؛ ألغِ الراتب أوّلاً',
+            ], 422);
+        }
+
+        // سلفة رُدّ منها مال فعلاً لا تُلغى: إلغاؤها يترك ردّيات بلا دَين تقابلها.
+        $repaid = (float) $advance->repayments()->whereNull('cancelled_at')->sum('amount');
+
+        if ($repaid > 0) {
+            return response()->json([
+                'message' => 'هذه السلفة رُدّ منها ' . number_format($repaid, 2, '.', '') . '؛ ألغِ الردّيات أوّلاً',
             ], 422);
         }
 
