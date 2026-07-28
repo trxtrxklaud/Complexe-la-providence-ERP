@@ -36,6 +36,9 @@ class TreasuryDaybookController extends Controller
     /** سقف أسطر التفصيل حمايةً للذاكرة؛ يُبلَّغ عنه بصراحة بدل بترٍ صامت. */
     private const MAX_DETAIL_LINES = 4000;
 
+    /** هل بُتِرت أسطر التفصيل؟ يُرسل إلى الواجهة ليُعرض تحذيراً. */
+    private bool $detailsTruncated = false;
+
     public function index(Request $request): JsonResponse
     {
         $data = $request->validate([
@@ -120,6 +123,9 @@ class TreasuryDaybookController extends Controller
             'date_to'     => $toDate,
             'days_count'  => count($days),
             'with_details' => $withDetails,
+            // المجاميع صحيحة دائماً؛ هذا العلم يخصّ أسطر التفصيل وحدها.
+            'details_truncated' => $this->detailsTruncated,
+            'details_limit'     => self::MAX_DETAIL_LINES,
             // رصيد ما قبل الفترة: هو ما يجعل التراكمي صادقاً مهما كان تاريخ البداية.
             'opening'     => $opening,
             'days'        => $days,
@@ -181,8 +187,14 @@ class TreasuryDaybookController extends Controller
             ->select(['id', 'transaction_date', 'direction', 'category', 'amount', 'description'])
             ->orderBy('transaction_date')
             ->orderBy('id')
-            ->limit(self::MAX_DETAIL_LINES)
+            ->limit(self::MAX_DETAIL_LINES + 1)
             ->get();
+
+        // طلبنا سطراً زائداً واحداً لنعرف أن هناك ما لم يُعرض، ثم نحذفه.
+        if ($rows->count() > self::MAX_DETAIL_LINES) {
+            $this->detailsTruncated = true;
+            $rows = $rows->take(self::MAX_DETAIL_LINES);
+        }
 
         $out = [];
 
