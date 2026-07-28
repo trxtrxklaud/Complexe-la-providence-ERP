@@ -181,10 +181,20 @@ export function fetchTreasuryBalance(range: { date_from?: string | null; date_to
 /**
  * كشف يوماً بيوم من تاريخ مختار إلى اليوم (أو إلى تاريخ محدّد).
  * الخادم يردّ الأيام الفارغة أيضاً، فلا يظنّ القارئ أن يوماً سقط سهواً.
+ *
+ * details يُرسل 1 أو 0 وليس true/false: الـ query string نصّ دائماً، وقاعدة boolean
+ * في Laravel تقبل "1"/"0" وترفض "true"/"false"، فكان الطلب يرجع 422.
  */
 export function fetchTreasuryDaybook(filters: DaybookFilters): Promise<DaybookReport> {
+  const params: QueryParams = {
+    date: filters.date,
+    date_to: filters.date_to ?? undefined,
+    details: filters.details ? 1 : 0,
+    academic_year_id: filters.academic_year_id ?? undefined,
+  };
+
   return apiFetch<DaybookReport>('/reports/treasury-daybook', {
-    params: filters as unknown as QueryParams,
+    params,
     fallbackMessage: 'تعذّر تحميل كشف الخزينة',
   });
 }
