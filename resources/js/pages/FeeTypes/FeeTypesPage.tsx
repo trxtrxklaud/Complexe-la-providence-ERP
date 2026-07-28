@@ -5,6 +5,8 @@ import {
     createFeeType,
     updateFeeType,
     deleteFeeType,
+    ledgerCategoryLabel,
+    LEDGER_CATEGORY_OPTIONS,
     FeeType,
     FeeTypePayload,
 } from '../../api/feeTypes';
@@ -21,6 +23,7 @@ const emptyForm: FeeTypePayload = {
     name_ar: '',
     name_fr: '',
     price: 0,
+    ledger_category: '',
     is_active: true,
 };
 
@@ -58,10 +61,12 @@ export function FeeTypesPage() {
     function openEdit(ft: FeeType) {
         setEditing(ft);
         setForm({
-            name_ar:   ft.name_ar,
-            name_fr:   ft.name_fr ?? '',
-            price:     parseFloat(ft.price),
-            is_active: ft.is_active,
+            name_ar:         ft.name_ar,
+            name_fr:         ft.name_fr ?? '',
+            price:           parseFloat(ft.price),
+            // إغفال هذا الحقل عند التعديل يعني إرسال حمولة ناقصة تُبقي البند على حاله دون علم المستخدم.
+            ledger_category: ft.ledger_category ?? '',
+            is_active:       ft.is_active,
         });
         setFormError(null);
         setShowForm(true);
@@ -88,6 +93,8 @@ export function FeeTypesPage() {
             const payload: FeeTypePayload = {
                 ...form,
                 name_fr: form.name_fr?.trim() || null,
+                // الفارغ يُرسل null لا '' لأن قاعدة in: ترفض النص الفارغ، وnull يعيد الاستدلال من الاسم.
+                ledger_category: form.ledger_category?.trim() ? form.ledger_category : null,
             };
             if (editing) {
                 const updated = await updateFeeType(editing.id, payload);
@@ -124,7 +131,7 @@ export function FeeTypesPage() {
                         أنواع المعاليم
                     </h1>
                     <p className="mt-1 text-sm" style={{ color: C.muted }}>
-                        إدارة رسوم المدرسة والنوادي
+                        إدارة رسوم المدرسة والنوادي — وبند كل رسم في الدفتر النقدي
                     </p>
                 </div>
                 <button
@@ -154,6 +161,7 @@ export function FeeTypesPage() {
                                 <th className="px-6 py-4 font-semibold" style={{ color: C.muted }}>الاسم بالعربية</th>
                                 <th className="px-6 py-4 font-semibold" style={{ color: C.muted }}>الاسم بالفرنسية</th>
                                 <th className="px-6 py-4 font-semibold" style={{ color: C.muted }}>السعر (د.ت)</th>
+                                <th className="px-6 py-4 font-semibold" style={{ color: C.muted }}>بند الدفتر</th>
                                 <th className="px-6 py-4 font-semibold" style={{ color: C.muted }}>الحالة</th>
                                 <th className="px-6 py-4 font-semibold w-28" style={{ color: C.muted }}>إجراءات</th>
                             </tr>
@@ -161,13 +169,13 @@ export function FeeTypesPage() {
                         <tbody>
                             {loading ? (
                                 <tr>
-                                    <td colSpan={5} className="px-6 py-12 text-center" style={{ color: C.muted }}>
+                                    <td colSpan={6} className="px-6 py-12 text-center" style={{ color: C.muted }}>
                                         جاري التحميل...
                                     </td>
                                 </tr>
                             ) : feeTypes.length === 0 ? (
                                 <tr>
-                                    <td colSpan={5} className="px-6 py-12 text-center" style={{ color: C.muted }}>
+                                    <td colSpan={6} className="px-6 py-12 text-center" style={{ color: C.muted }}>
                                         لا توجد أنواع معاليم بعد
                                     </td>
                                 </tr>
@@ -185,6 +193,19 @@ export function FeeTypesPage() {
                                     </td>
                                     <td className="px-6 py-4 font-medium" style={{ color: C.forest }}>
                                         {parseFloat(ft.price).toFixed(2)}
+                                    </td>
+                                    <td className="px-6 py-4">
+                                        {ft.ledger_category ? (
+                                            <span className="inline-flex px-3 py-1 rounded-full text-xs font-medium"
+                                                style={{ backgroundColor: C.sage, color: C.forest }}>
+                                                {ledgerCategoryLabel(ft.ledger_category)}
+                                            </span>
+                                        ) : (
+                                            <span className="inline-flex px-3 py-1 rounded-full text-xs font-medium bg-amber-50 text-amber-700"
+                                                title="لم يُحدّد بند؛ يُستدلّ من اسم النوع عند الاستخلاص">
+                                                استدلال من الاسم
+                                            </span>
+                                        )}
                                     </td>
                                     <td className="px-6 py-4">
                                         {ft.is_active ? (
@@ -291,6 +312,27 @@ export function FeeTypesPage() {
                                 />
                             </div>
 
+                            {/* بند الدفتر — يحدّد أين يظهر المبلغ في كل التقارير المالية */}
+                            <div>
+                                <label className="block text-sm font-medium mb-1.5" style={{ color: C.ink }}>
+                                    بند الدفتر النقدي
+                                </label>
+                                <select
+                                    value={form.ledger_category ?? ''}
+                                    onChange={e => setForm(p => ({ ...p, ledger_category: e.target.value }))}
+                                    className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#3B4A36] transition"
+                                >
+                                    <option value="">استدلال تلقائي من اسم النوع</option>
+                                    {LEDGER_CATEGORY_OPTIONS.map(opt => (
+                                        <option key={opt.value} value={opt.value}>{opt.label}</option>
+                                    ))}
+                                </select>
+                                <p className="mt-1.5 text-xs" style={{ color: C.muted }}>
+                                    يحدّد البند الذي يُسجّل فيه المبلغ عند الاستخلاص، ومنه تُبنى المداخيل والكشف اليومي.
+                                    تركه تلقائياً يجعل النظام يستدلّ من الاسم، وما لا يُعرَف يُصنّف «مداخيل أخرى».
+                                </p>
+                            </div>
+
                             <div>
                                 <label className="flex items-center gap-3 cursor-pointer w-fit">
                                     <input
@@ -323,7 +365,7 @@ export function FeeTypesPage() {
                                 {saving ? 'جاري الحفظ...' : 'حفظ'}
                             </button>
                         </div>
-    
+
                     </div>
                 </div>
             )}
