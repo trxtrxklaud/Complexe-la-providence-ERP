@@ -1,6 +1,17 @@
-import React, { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
-import { Users, GraduationCap, UserRound, CalendarCheck } from 'lucide-react';
+import {
+  AlertCircle,
+  ArrowDownCircle,
+  GraduationCap,
+  Landmark,
+  TrendingDown,
+  TrendingUp,
+  UserRound,
+  Users,
+} from 'lucide-react';
+import { fetchDashboard, type DashboardData } from '../../api/dashboard';
+import { errorMessage } from '../../lib/format';
 
 const C = {
   forest: '#3B4A36',
@@ -11,11 +22,18 @@ const C = {
   blush: '#EFE0E4',
   ink: '#1F261C',
   muted: '#7C8677',
+  error: '#A03434',
+  errorBg: '#FDECEC',
 };
+
+/** الدينار بثلاث خانات، كما في الكشوف المطبوعة. */
+function dinar(value: number | null | undefined): string {
+  return `${Number(value ?? 0).toFixed(3)} د`;
+}
 
 function AnalogClock({ size = 150 }: { size?: number }) {
   const [now, setNow] = useState(new Date());
-  
+
   useEffect(() => {
     const id = setInterval(() => setNow(new Date()), 1000);
     return () => clearInterval(id);
@@ -64,20 +82,79 @@ function AnalogClock({ size = 150 }: { size?: number }) {
   );
 }
 
-function KpiCard({ label, value, icon: Icon, tint, iconColor }: any) {
+function KpiCard({
+  label,
+  value,
+  icon: Icon,
+  tint,
+  iconColor,
+  hint,
+}: {
+  label: string;
+  value: string | number;
+  icon: React.ComponentType<{ size?: number }>;
+  tint: string;
+  iconColor: string;
+  hint?: string;
+}) {
   return (
     <div className="rounded-[22px] p-5" style={{ backgroundColor: tint }}>
       <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white/70" style={{ color: iconColor }}>
         <Icon size={20} />
       </div>
-      <p className="mt-4 text-[32px] font-extrabold" style={{ color: C.ink }}>{value}</p>
-      <p className="mt-1 text-sm" style={{ color: C.muted }}>{label}</p>
+      <p className="mt-4 text-[26px] font-extrabold" style={{ color: C.ink }}>
+        {value}
+      </p>
+      <p className="mt-1 text-sm" style={{ color: C.muted }}>
+        {label}
+      </p>
+      {hint && (
+        <p className="mt-1 text-xs" style={{ color: C.muted }}>
+          {hint}
+        </p>
+      )}
     </div>
   );
 }
 
+/**
+ * لوحة صاحبة المدرسة.
+ *
+ * كروت الصندوق تُقرأ من الدفتر النقدي المركزي لا من جداول الدفعات، فهي نفس
+ * الأرقام التي تظهر في الخزينة والدخل الصافي حرفيّاً. وهي مستقلّة عن السنة الدراسية:
+ * المدرسة تستخلص في كل الأشهر، وما يُدفع في أوت عن متخلَّد جوان هو دخل يوم أوت.
+ *
+ * أمّا كروت التلاميذ فتخصّ السنة الدراسية النشطة، واسمها معروض تحتها صراحة
+ * حتّى لا تُقرأ أرقام سنة على أنّها أرقام سنة أخرى.
+ */
 export default function Dashboard() {
   const { user } = useAuth();
+  const [data, setData] = useState<DashboardData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    const controller = new AbortController();
+    setLoading(true);
+    setError('');
+
+    fetchDashboard(controller.signal)
+      .then((result) => {
+        if (!controller.signal.aborted) setData(result);
+      })
+      .catch((e) => {
+        if (!controller.signal.aborted) setError(errorMessage(e));
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setLoading(false);
+      });
+
+    return () => controller.abort();
+  }, []);
+
+  const today = data?.cash?.today;
+  const month = data?.cash?.month;
+  const yearName = data?.academic_year?.name ?? '—';
 
   return (
     <div className="p-6 md:p-8" dir="rtl">
@@ -86,31 +163,120 @@ export default function Dashboard() {
           مرحباً، {user?.first_name || 'مدير'}
         </h1>
         <p className="mt-1 text-sm" style={{ color: C.muted }}>
-          هذه نظرة عامة على مدرستك اليوم
+          جرد اليوم {data?.current_date ?? ''}
         </p>
       </div>
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-        <KpiCard label="إجمالي التلاميذ" value={0} icon={GraduationCap} tint={C.sage} iconColor={C.forest} />
-        <KpiCard label="الإناث" value={0} icon={UserRound} tint={C.rose} iconColor="#A46E67" />
-        <KpiCard label="الذكور" value={0} icon={Users} tint={C.beige} iconColor="#8A7C57" />
-        <KpiCard label="حاضرون اليوم" value={0} icon={CalendarCheck} tint={C.blush} iconColor="#9A6B7E" />
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
-        <div className="lg:col-span-2 bg-white rounded-[22px] p-6 border border-[#EDF1E8]">
-          <h2 className="font-bold text-lg mb-2" style={{ color: C.ink }}>ملخص سريع</h2>
-          <p style={{ color: C.muted }}>
-            مرحباً بك في نظام إدارة مدرسة العناية.
-          </p>
+      {error && (
+        <div
+          className="rounded-2xl p-4 mb-6 flex items-start gap-2 text-sm"
+          style={{ backgroundColor: C.errorBg, color: C.error }}
+        >
+          <AlertCircle size={18} />
+          <span>{error}</span>
         </div>
+      )}
 
-        <div className="rounded-[22px] p-6 flex flex-col items-center justify-center" style={{ background: `linear-gradient(165deg, ${C.forest}, ${C.deep})` }}>
-          <p className="text-white/70 text-sm mb-3">توقيت المؤسسة</p>
-          <AnalogClock size={140} />
-          <p className="mt-3 text-white font-semibold text-sm">مدرسة العناية</p>
-        </div>
-      </div>
+      {loading && (
+        <p className="text-sm py-6" style={{ color: C.muted }}>
+          جارٍ التحميل…
+        </p>
+      )}
+
+      {!loading && data && (
+        <>
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
+            <KpiCard
+              label="مداخيل اليوم"
+              value={dinar(today?.income)}
+              icon={TrendingUp}
+              tint={C.sage}
+              iconColor={C.forest}
+            />
+            <KpiCard
+              label="مصاريف اليوم"
+              value={dinar(today?.expenses)}
+              icon={TrendingDown}
+              tint={C.rose}
+              iconColor="#A46E67"
+            />
+            <KpiCard
+              label="الدخل الصافي اليوم"
+              value={dinar(today?.net_income)}
+              icon={ArrowDownCircle}
+              tint={C.beige}
+              iconColor="#8A7C57"
+            />
+            <KpiCard
+              label="رصيد الخزينة"
+              value={dinar(data.treasury_balance)}
+              icon={Landmark}
+              tint={C.blush}
+              iconColor="#9A6B7E"
+              hint="من بداية السجلّ بعد السحوبات"
+            />
+          </div>
+
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+            <KpiCard
+              label="إجمالي التلاميذ"
+              value={data.total_students}
+              icon={GraduationCap}
+              tint={C.sage}
+              iconColor={C.forest}
+              hint={`السنة النشطة: ${yearName}`}
+            />
+            <KpiCard label="الإناث" value={data.total_females} icon={UserRound} tint={C.rose} iconColor="#A46E67" />
+            <KpiCard label="الذكور" value={data.total_males} icon={Users} tint={C.beige} iconColor="#8A7C57" />
+            <KpiCard
+              label="المتخلَّد"
+              value={dinar(data.outstanding_balance)}
+              icon={AlertCircle}
+              tint={C.blush}
+              iconColor="#9A6B7E"
+              hint={`السنة النشطة: ${yearName}`}
+            />
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+            <div className="lg:col-span-2 bg-white rounded-[22px] p-6 border border-[#EDF1E8]">
+              <h2 className="font-bold text-lg mb-4" style={{ color: C.ink }}>
+                الشهر الجاري
+              </h2>
+              <div className="space-y-2 text-sm">
+                <div className="flex items-center justify-between">
+                  <span style={{ color: C.muted }}>مجموع المداخيل</span>
+                  <strong style={{ color: C.forest }}>{dinar(month?.income)}</strong>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span style={{ color: C.muted }}>مجموع المصاريف</span>
+                  <strong style={{ color: C.error }}>{dinar(month?.expenses)}</strong>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span style={{ color: C.muted }}>الدخل الصافي</span>
+                  <strong style={{ color: C.ink }}>{dinar(month?.net_income)}</strong>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span style={{ color: C.muted }}>السحوبات</span>
+                  <strong style={{ color: C.muted }}>{dinar(month?.withdrawals)}</strong>
+                </div>
+              </div>
+              <p className="mt-4 text-xs" style={{ color: C.muted }}>
+                أرقام الصندوق تتبع تاريخ القبض الفعلي، لا الشهر المُستخلَص عنه.
+              </p>
+            </div>
+
+            <div
+              className="rounded-[22px] p-6 flex flex-col items-center justify-center"
+              style={{ background: `linear-gradient(165deg, ${C.forest}, ${C.deep})` }}
+            >
+              <p className="text-white/70 text-sm mb-3">توقيت المؤسسة</p>
+              <AnalogClock size={140} />
+              <p className="mt-3 text-white font-semibold text-sm">مدرسة العناية</p>
+            </div>
+          </div>
+        </>
+      )}
     </div>
   );
 }
