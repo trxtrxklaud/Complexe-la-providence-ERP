@@ -219,7 +219,11 @@ class LedgerService
     }
 
     /**
-     * سلفة إطار → خروج نقدي في بند مستقل عن الأجور.
+     * تسبقة أو سلفة إطار → خروج نقدي في بند مستقل عن الأجور.
+     *
+     * البند في الدفتر واحد للنوعين لأنّ الأثر النقدي واحد، لكن البيان يفرّق بينهما:
+     * التسبقة تُخصم من راتب الشهر نفسه، والسلفة دَين يُردّ لاحقاً. من يقرأ سجلّ
+     * الخزينة يجب أن يعرف أيّهما أمامه دون فتح ملفّ الإطار.
      */
     public function recordEmployeeAdvance(EmployeeAdvance $advance): void
     {
@@ -231,6 +235,8 @@ class LedgerService
 
         $advance->loadMissing('employee');
 
+        $typeLabel = EmployeeAdvance::TYPE_LABELS[$advance->type] ?? 'سلفة';
+
         $this->post(
             source: $advance,
             category: CashTransaction::CATEGORY_EMPLOYEE_ADVANCE,
@@ -238,7 +244,7 @@ class LedgerService
             amount: (float) $advance->amount,
             date: $advance->advance_date?->toDateString() ?? now()->toDateString(),
             academicYearId: $advance->academic_year_id,
-            description: 'سلفة: ' . ($advance->employee?->full_name ?? ('إطار #' . $advance->employee_id)),
+            description: $typeLabel . ': ' . ($advance->employee?->full_name ?? ('إطار #' . $advance->employee_id)),
             createdBy: $advance->created_by,
         );
     }
