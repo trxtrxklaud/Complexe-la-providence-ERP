@@ -33,7 +33,11 @@ import { ExpenseYearlyReportPage } from './pages/Expenses/ExpenseYearlyReportPag
 import { TreasuryLayout } from './pages/Treasury/TreasuryLayout';
 import { TreasuryHistoryPage } from './pages/Treasury/TreasuryHistoryPage';
 import { TreasuryWithdrawalsPage } from './pages/Treasury/TreasuryWithdrawalsPage';
-import { NetIncomeReportPage } from './pages/Treasury/NetIncomeReportPage';
+// ─── الدخل الصافي — موديول مستقل ───
+import { NetIncomeLayout } from './pages/NetIncome/NetIncomeLayout';
+import { NetIncomeDailyPage } from './pages/NetIncome/NetIncomeDailyPage';
+import { NetRevenueMonthlyPage } from './pages/NetIncome/NetRevenueMonthlyPage';
+import { NetRevenueYearlyPage } from './pages/NetIncome/NetRevenueYearlyPage';
 
 function Layout({ children }: { children: React.ReactNode }) {
     return (
@@ -154,7 +158,20 @@ export default function App() {
                         <Route index element={<Navigate to="history" replace />} />
                         <Route path="history" element={<TreasuryHistoryPage />} />
                         <Route path="withdrawals" element={<TreasuryWithdrawalsPage />} />
-                        <Route path="net-income" element={<NetIncomeReportPage />} />
+                        {/* الكشف انتقل إلى موديول مستقل؛ يُحفظ المسار القديم حتى لا تنكسر روابط المستخدمين */}
+                        <Route path="net-income" element={<Navigate to="/net-income/daily" replace />} />
+                    </Route>
+
+                    {/* ═══ الدخل الصافي ═══ */}
+                    <Route path="/net-income" element={
+                        <ProtectedRoute>
+                            <Layout><NetIncomeLayout /></Layout>
+                        </ProtectedRoute>
+                    }>
+                        <Route index element={<Navigate to="daily" replace />} />
+                        <Route path="daily" element={<NetIncomeDailyPage />} />
+                        <Route path="monthly" element={<NetRevenueMonthlyPage />} />
+                        <Route path="yearly" element={<NetRevenueYearlyPage />} />
                     </Route>
 
                     {/* استخلاص مستقل (توافق خلفي): يُحوّل إلى تبويب الفوترة داخل المداخيل */}
