@@ -98,6 +98,70 @@ export type WithdrawalFilters = {
   page?: number;
 };
 
+// ===== كشف الخزينة اليومي =====
+
+export type DaybookLine = {
+  category: string;
+  label: string;
+  total: number;
+};
+
+export type DaybookDetail = {
+  id: number;
+  category: string;
+  label: string;
+  description?: string | null;
+  amount: number;
+};
+
+export type DaybookRunning = {
+  net_income: number;
+  withdrawals: number;
+  balance: number;
+};
+
+export type DaybookDay = {
+  date: string;
+  income: { lines: DaybookLine[]; total: number };
+  expenses: { lines: DaybookLine[]; total: number };
+  net_income: number;
+  withdrawals: number;
+  balance: number;
+  has_activity: boolean;
+  details: {
+    income: DaybookDetail[];
+    expenses: DaybookDetail[];
+    withdrawals: DaybookDetail[];
+  } | null;
+  /** من بداية السجل لا من بداية الفترة المعروضة. */
+  cumulative: DaybookRunning;
+};
+
+export type DaybookReport = {
+  date_from: string;
+  date_to: string;
+  days_count: number;
+  with_details: boolean;
+  /** رصيد ما قبل تاريخ البداية. */
+  opening: DaybookRunning;
+  days: DaybookDay[];
+  summary: {
+    income: { lines: DaybookLine[]; total: number };
+    expenses: { lines: DaybookLine[]; total: number };
+    net_income: number;
+    withdrawals: number;
+    balance: number;
+  };
+  closing: DaybookRunning;
+};
+
+export type DaybookFilters = {
+  date: string;
+  date_to?: string | null;
+  details?: boolean;
+  academic_year_id?: number | null;
+};
+
 // ===== سجلّ الخزينة والرصيد =====
 
 export function fetchTreasuryHistory(filters: HistoryFilters = {}): Promise<TreasuryHistory> {
@@ -111,6 +175,17 @@ export function fetchTreasuryBalance(range: { date_from?: string | null; date_to
   return apiFetch<TreasurySummary>('/treasury/balance', {
     params: range as QueryParams,
     fallbackMessage: 'تعذّر تحميل رصيد الخزينة',
+  });
+}
+
+/**
+ * كشف يوماً بيوم من تاريخ مختار إلى اليوم (أو إلى تاريخ محدّد).
+ * الخادم يردّ الأيام الفارغة أيضاً، فلا يظنّ القارئ أن يوماً سقط سهواً.
+ */
+export function fetchTreasuryDaybook(filters: DaybookFilters): Promise<DaybookReport> {
+  return apiFetch<DaybookReport>('/reports/treasury-daybook', {
+    params: filters as unknown as QueryParams,
+    fallbackMessage: 'تعذّر تحميل كشف الخزينة',
   });
 }
 
