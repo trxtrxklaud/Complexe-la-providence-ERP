@@ -7,7 +7,7 @@ import {
   type DaybookDetail,
   type DaybookLine,
 } from '../../api/treasury';
-import { errorMessage, money, today, monthStart } from '../../lib/format';
+import { errorMessage, money, today } from '../../lib/format';
 
 const C = {
   forest: '#3B4A36',
@@ -23,6 +23,26 @@ const C = {
 
 const SCHOOL_AR = 'مركب العناية للتعليم الخاص';
 const CITY_AR = 'سيدي بوزيد';
+
+type Mode = 'day' | 'month' | 'months' | 'range';
+
+const MODE_LABELS: Record<Mode, string> = {
+  day: 'يوم واحد',
+  month: 'شهر',
+  months: 'أشهر',
+  range: 'مدى حرّ',
+};
+
+/** أوّل وآخر يوم في شهر بصيغة YYYY-MM — مع مراعاة السنة الكبيسة. */
+function monthBounds(month: string): { from: string; to: string } {
+  const [year, mon] = month.split('-').map(Number);
+  const lastDay = new Date(year, mon, 0).getDate();
+  return { from: month + '-01', to: month + '-' + String(lastDay).padStart(2, '0') };
+}
+
+function currentMonth(): string {
+  return today().slice(0, 7);
+}
 
 /** مبلغ ملوّن: السالب أحمر دائماً حتى لا يمرّ رصيد سالب دون أن يُرى. */
 function Amount({ value, bold }: { value: number; bold?: boolean }) {
@@ -97,17 +117,41 @@ function TotalRow({
 }
 
 /** بطاقة يوم واحد — نفس ترتيب الكشف الورقي الذي تعرفه الإدارة. */
-function DayCard({ day, showCumulative }: { day: DaybookDay; showCumulative: boolean }) {
+function DayCard({
+  day,
+  showCumulative,
+  isPrintTarget,
+  onPrintDay,
+}: {
+  day: DaybookDay;
+  showCumulative: boolean;
+  isPrintTarget: boolean;
+  onPrintDay: (date: string) => void;
+}) {
   return (
     <div
-      className="rounded-2xl overflow-hidden mb-4 daybook-card"
+      className={'rounded-2xl overflow-hidden mb-4 daybook-card' + (isPrintTarget ? ' print-target' : '')}
       style={{ backgroundColor: '#FFFFFF', border: `1px solid ${C.line}` }}
     >
-      <div className="px-4 py-2 text-sm font-bold" style={{ backgroundColor: C.sage, color: C.deep }}>
-        تقرير يوم {day.date}
-        {!day.has_activity && (
-          <span className="font-normal mr-2" style={{ color: C.muted }}>— لا حركة</span>
-        )}
+      <div
+        className="px-4 py-2 text-sm font-bold flex items-center justify-between gap-3"
+        style={{ backgroundColor: C.sage, color: C.deep }}
+      >
+        <span>
+          تقرير يوم {day.date}
+          {!day.has_activity && (
+            <span className="font-normal mr-2" style={{ color: C.muted }}>— لا حركة</span>
+          )}
+        </span>
+        <button
+          onClick={() => onPrintDay(day.date)}
+          className="no-print flex items-center gap-1 text-xs font-bold rounded-lg px-2 py-1"
+          style={{ backgroundColor: '#FFFFFF', color: C.forest, border: `1px solid ${C.line}` }}
+          title="طباعة هذا اليوم وحده"
+        >
+          <Printer size={13} />
+          طباعة اليوم
+        </button>
       </div>
 
       <div className="grid md:grid-cols-2">
@@ -161,14 +205,21 @@ function DayCard({ day, showCumulative }: { day: DaybookDay; showCumulative: boo
 /**
  * كشف الخزينة اليومي.
  *
- * يختار المستعمل تاريخ بداية، فيظهر له كشف يوماً بيوم إلى اليوم: ماذا دخل، ماذا خرج،
- * وماذا بقي. الأيام الفارغة تُعرض أيضاً إلاّ إذا طلب إخفاءها، لأن يوماً مفقوداً
- * من الكشف يعني عند المدقّق احتمال حركة منسية لا يوم هادئاً.
+ * أربعة أنماط للفترة: يوم واحد، شهر، أشهر متتالية، أو مدى حرّ. وكل بطاقة
+ * تُطبع وحدها عند الحاجة — لأن من يريد ورقة يوم أمس لا يجوز أن يُجبر على
+ * طباعة أربعين صفحة ليأخذها.
  */
 export function TreasuryDaybookPage() {
-  const [dateFrom, setDateFrom] = useState<string>(monthStart());
-  const [toNow, setToNow] = useState(true);
+  const [mode, setMode] = useState<Mode>('month');
+
+  const [dayValue, setDayValue] = useState<string>(today());
+  const [monthValue, setMonthValue] = useState<string>(currentMonth());
+  const [monthFrom, setMonthFrom] = useState<string>(currentMonth());
+  const [monthTo, setMonthTo] = useState<string>(currentMonth());
+  const [dateFrom, setDateFrom] = useState<string>(today().slice(0, 8) + '01');
   const [dateTo, setDateTo] = useState<string>(today());
+  const [toNow, setToNow] = useState(true);
+
   const [withDetails, setWithDetails] = useState(true);
   const [showCumulative, setShowCumulative] = useState(true);
   const [hideEmpty, setHideEmpty] = useState(false);
@@ -177,15 +228,27 @@ export function TreasuryDaybookPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  /** اليوم المطلوب طباعته وحده؛ null يعني طباعة الكشف كله. */
+  const [printDay, setPrintDay] = useState<string | null>(null);
+
+  function resolveRange(): { from: string; to: string } {
+    if (mode === 'day') return { from: dayValue, to: dayValue };
+    if (mode === 'month') return monthBounds(monthValue);
+    if (mode === 'months') {
+      const a = monthBounds(monthFrom);
+      const b = monthBounds(monthTo);
+      return a.from <= b.from ? { from: a.from, to: b.to } : { from: b.from, to: a.to };
+    }
+    return { from: dateFrom, to: toNow ? today() : dateTo };
+  }
+
   async function load() {
+    const { from, to } = resolveRange();
+
     setLoading(true);
     setError(null);
     try {
-      const data = await fetchTreasuryDaybook({
-        date: dateFrom,
-        date_to: toNow ? today() : dateTo,
-        details: withDetails,
-      });
+      const data = await fetchTreasuryDaybook({ date: from, date_to: to, details: withDetails });
       setReport(data);
     } catch (e) {
       setError(errorMessage(e));
@@ -201,17 +264,41 @@ export function TreasuryDaybookPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // الطباعة تجري بعد إعادة الرسم، وإلّا طُبِعت الصفحة قبل عزل اليوم المقصود.
+  useEffect(() => {
+    if (!printDay) return;
+
+    const clear = () => setPrintDay(null);
+    window.addEventListener('afterprint', clear, { once: true });
+
+    const timer = window.setTimeout(() => {
+      window.print();
+      // شبكة أمان: بعض متصفّحات الهاتف لا تطلق afterprint.
+      window.setTimeout(clear, 3000);
+    }, 60);
+
+    return () => {
+      window.clearTimeout(timer);
+      window.removeEventListener('afterprint', clear);
+    };
+  }, [printDay]);
+
   const days = report
     ? (hideEmpty ? report.days.filter((d) => d.has_activity) : report.days)
     : [];
 
   return (
-    <div dir="rtl" className="px-6 pb-10 max-w-6xl mx-auto">
+    <div
+      dir="rtl"
+      className={'px-6 pb-10 max-w-6xl mx-auto' + (printDay ? ' printing-single' : '')}
+    >
       <style>{`
         @media print {
           .no-print { display: none !important; }
           body { background: #fff; }
           .daybook-card { break-inside: avoid; page-break-inside: avoid; }
+          .printing-single .daybook-card:not(.print-target) { display: none !important; }
+          .printing-single .range-only { display: none !important; }
         }
       `}</style>
 
@@ -220,34 +307,104 @@ export function TreasuryDaybookPage() {
         className="no-print rounded-2xl p-4 mb-5"
         style={{ backgroundColor: '#FFFFFF', border: `1px solid ${C.line}` }}
       >
+        <div className="flex flex-wrap items-center gap-2 mb-4">
+          {(Object.keys(MODE_LABELS) as Mode[]).map((m) => (
+            <button
+              key={m}
+              onClick={() => setMode(m)}
+              className="rounded-xl px-3 py-1.5 text-sm font-bold"
+              style={
+                mode === m
+                  ? { backgroundColor: C.forest, color: '#FFFFFF' }
+                  : { backgroundColor: C.bg, color: C.muted, border: `1px solid ${C.line}` }
+              }
+            >
+              {MODE_LABELS[m]}
+            </button>
+          ))}
+        </div>
+
         <div className="flex flex-wrap items-end gap-4">
-          <div>
-            <label className="block text-xs mb-1" style={{ color: C.muted }}>من تاريخ</label>
-            <input
-              type="date"
-              value={dateFrom}
-              onChange={(e) => setDateFrom(e.target.value)}
-              className="rounded-xl px-3 py-2 text-sm"
-              style={{ border: `1px solid ${C.line}`, color: C.ink }}
-            />
-          </div>
+          {mode === 'day' && (
+            <div>
+              <label className="block text-xs mb-1" style={{ color: C.muted }}>اليوم</label>
+              <input
+                type="date"
+                value={dayValue}
+                onChange={(e) => setDayValue(e.target.value)}
+                className="rounded-xl px-3 py-2 text-sm"
+                style={{ border: `1px solid ${C.line}`, color: C.ink }}
+              />
+            </div>
+          )}
 
-          <div>
-            <label className="block text-xs mb-1" style={{ color: C.muted }}>إلى تاريخ</label>
-            <input
-              type="date"
-              value={toNow ? today() : dateTo}
-              disabled={toNow}
-              onChange={(e) => setDateTo(e.target.value)}
-              className="rounded-xl px-3 py-2 text-sm disabled:opacity-50"
-              style={{ border: `1px solid ${C.line}`, color: C.ink }}
-            />
-          </div>
+          {mode === 'month' && (
+            <div>
+              <label className="block text-xs mb-1" style={{ color: C.muted }}>الشهر</label>
+              <input
+                type="month"
+                value={monthValue}
+                onChange={(e) => setMonthValue(e.target.value)}
+                className="rounded-xl px-3 py-2 text-sm"
+                style={{ border: `1px solid ${C.line}`, color: C.ink }}
+              />
+            </div>
+          )}
 
-          <label className="flex items-center gap-2 text-sm" style={{ color: C.ink }}>
-            <input type="checkbox" checked={toNow} onChange={(e) => setToNow(e.target.checked)} />
-            إلى اليوم
-          </label>
+          {mode === 'months' && (
+            <>
+              <div>
+                <label className="block text-xs mb-1" style={{ color: C.muted }}>من شهر</label>
+                <input
+                  type="month"
+                  value={monthFrom}
+                  onChange={(e) => setMonthFrom(e.target.value)}
+                  className="rounded-xl px-3 py-2 text-sm"
+                  style={{ border: `1px solid ${C.line}`, color: C.ink }}
+                />
+              </div>
+              <div>
+                <label className="block text-xs mb-1" style={{ color: C.muted }}>إلى شهر</label>
+                <input
+                  type="month"
+                  value={monthTo}
+                  onChange={(e) => setMonthTo(e.target.value)}
+                  className="rounded-xl px-3 py-2 text-sm"
+                  style={{ border: `1px solid ${C.line}`, color: C.ink }}
+                />
+              </div>
+            </>
+          )}
+
+          {mode === 'range' && (
+            <>
+              <div>
+                <label className="block text-xs mb-1" style={{ color: C.muted }}>من تاريخ</label>
+                <input
+                  type="date"
+                  value={dateFrom}
+                  onChange={(e) => setDateFrom(e.target.value)}
+                  className="rounded-xl px-3 py-2 text-sm"
+                  style={{ border: `1px solid ${C.line}`, color: C.ink }}
+                />
+              </div>
+              <div>
+                <label className="block text-xs mb-1" style={{ color: C.muted }}>إلى تاريخ</label>
+                <input
+                  type="date"
+                  value={toNow ? today() : dateTo}
+                  disabled={toNow}
+                  onChange={(e) => setDateTo(e.target.value)}
+                  className="rounded-xl px-3 py-2 text-sm disabled:opacity-50"
+                  style={{ border: `1px solid ${C.line}`, color: C.ink }}
+                />
+              </div>
+              <label className="flex items-center gap-2 text-sm" style={{ color: C.ink }}>
+                <input type="checkbox" checked={toNow} onChange={(e) => setToNow(e.target.checked)} />
+                إلى اليوم
+              </label>
+            </>
+          )}
 
           <label className="flex items-center gap-2 text-sm" style={{ color: C.ink }}>
             <input type="checkbox" checked={showCumulative} onChange={(e) => setShowCumulative(e.target.checked)} />
@@ -275,12 +432,15 @@ export function TreasuryDaybookPage() {
           </button>
 
           <button
-            onClick={() => window.print()}
+            onClick={() => {
+              setPrintDay(null);
+              window.print();
+            }}
             className="rounded-xl px-4 py-2 text-sm font-bold flex items-center gap-2"
             style={{ border: `1px solid ${C.line}`, color: C.forest }}
           >
             <Printer size={16} />
-            طباعة
+            طباعة الكشف كله
           </button>
         </div>
       </div>
@@ -301,14 +461,27 @@ export function TreasuryDaybookPage() {
           <div className="text-center mb-4">
             <div className="font-bold" style={{ color: C.ink }}>{SCHOOL_AR}</div>
             <div className="text-xs" style={{ color: C.muted }}>{CITY_AR}</div>
-            <h2 className="text-base font-bold mt-2" style={{ color: C.deep }}>
+            <h2 className="text-base font-bold mt-2 range-only" style={{ color: C.deep }}>
               تقرير الخزينة: من {report.date_from} إلى {report.date_to}
             </h2>
           </div>
 
+          {report.details_truncated && (
+            <div
+              className="rounded-2xl p-3 mb-4 text-sm flex items-start gap-2"
+              style={{ backgroundColor: C.errorBg, color: C.error, border: `1px solid ${C.error}` }}
+            >
+              <AlertCircle size={18} />
+              <span>
+                المجاميع كاملة وصحيحة، لكنّ أسطر التفصيل تجاوزت {report.details_limit} سطراً فلم تُعرض كلّها.
+                اختر مدى أقصر لمطالعة التفاصيل كاملة.
+              </span>
+            </div>
+          )}
+
           {/* الملخّص العام */}
           <div
-            className="rounded-2xl p-4 mb-5 grid grid-cols-2 md:grid-cols-5 gap-4"
+            className="rounded-2xl p-4 mb-5 grid grid-cols-2 md:grid-cols-5 gap-4 range-only"
             style={{ backgroundColor: '#FFFFFF', border: `1px solid ${C.line}` }}
           >
             <div>
@@ -341,10 +514,18 @@ export function TreasuryDaybookPage() {
               لا توجد أيام لعرضها في هذا المدى.
             </div>
           ) : (
-            days.map((d) => <DayCard key={d.date} day={d} showCumulative={showCumulative} />)
+            days.map((d) => (
+              <DayCard
+                key={d.date}
+                day={d}
+                showCumulative={showCumulative}
+                isPrintTarget={printDay === d.date}
+                onPrintDay={setPrintDay}
+              />
+            ))
           )}
 
-          <div className="text-xs text-center mt-4" style={{ color: C.muted }}>
+          <div className="text-xs text-center mt-4 range-only" style={{ color: C.muted }}>
             {report.days_count} يوماً في المدى — كل المبالغ مقروءة من الدفتر النقدي المركزي مع استثناء الحركات الملغاة.
           </div>
         </>
