@@ -24,7 +24,7 @@ use Illuminate\Support\Facades\DB;
 class FinancialReportController extends Controller
 {
     /**
-     * الدخل الصافي — مرآة للتقرير الورقي القديم: كشف يومي + تراكمي من بداية السجل
+     * الدخل الصافي اليومي — مرآة للتقرير الورقي القديم: كشف يومي + تراكمي من بداية السجل
      * حتى التاريخ المختار، مع السحوبات والرصيد النهائي.
      */
     public function netIncome(Request $request): JsonResponse
@@ -49,6 +49,60 @@ class FinancialReportController extends Controller
         }
 
         return response()->json($response);
+    }
+
+    /**
+     * الدخل الصافي مجمّعاً شهرياً أو سنوياً.
+     *
+     * يستعمل عمداً نفس base() و linesFor() و periodExpression() التي يستعملها الكشف اليومي.
+     * لو كتبتُ للشهري استعلاماً مستقلاً لأمكن أن ينحرف عن اليومي بعد أول تعديل في التصنيفات،
+     * ومدير المدرسة يرى رقمين مختلفين لنفس الفترة دون أن يعرف أيهما الصحيح.
+     */
+    public function netIncomePeriods(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'granularity'      => ['nullable', 'string', 'in:month,year'],
+            'date_from'        => ['nullable', 'date'],
+            'date_to'          => ['nullable', 'date', 'after_or_equal:date_from'],
+            'academic_year_id' => ['nullable', 'integer', 'exists:academic_years,id'],
+        ]);
+
+        $granularity = $data['granularity'] ?? 'month';
+        $from        = $data['date_from'] ?? null;
+        $to          = $data['date_to'] ?? null;
+        $yearId      = $data['academic_year_id'] ?? null;
+
+        $expression = $this->periodExpression($granularity);
+
+        $rows = $this->base($from, $to, $yearId)
+            ->selectRaw($expression . ' as period')
+            ->selectRaw('category, SUM(amount) as total')
+            ->groupBy(DB::raw($expression), 'category')
+            ->orderBy('period')
+            ->get();
+
+        $periods = [];
+        $grand   = [];
+
+        foreach ($rows as $row) {
+            $total = round((float) $row->total, 2);
+
+            $periods[$row->period][$row->category] = $total;
+            $grand[$row->category] = round(($grand[$row->category] ?? 0.0) + $total, 2);
+        }
+
+        $result = [];
+        foreach ($periods as $period => $totals) {
+            $result[] = $this->netFigures((string) $period, $totals);
+        }
+
+        return response()->json([
+            'granularity' => $granularity,
+            'date_from'   => $from,
+            'date_to'     => $to,
+            'rows'        => $result,
+            'summary'     => $this->netFigures('المجموع', $grand),
+        ]);
     }
 
     /**
@@ -431,6 +485,34 @@ class FinancialReportController extends Controller
     }
 
     /**
+     * أرقام الدخل الصافي لفترة واحدة انطلاقاً من مجاميع بنودها.
+     *
+     * السحب لا يدخل في الدخل الصافي لأنه نقل أموال لا استهلاك، لكنه يُنقِص الرصيد.
+     *
+     * @param  array<string,float>  $totals
+     * @return array<string,mixed>
+     */
+    private function netFigures(string $period, array $totals): array
+    {
+        $income      = $this->linesFor(CashTransaction::INCOME_CATEGORIES, $totals);
+        $expenses    = $this->linesFor(CashTransaction::EXPENSE_CATEGORIES, $totals);
+        $withdrawals = round($totals[CashTransaction::CATEGORY_WITHDRAWAL] ?? 0.0, 2);
+
+        $incomeTotal  = round(array_sum(array_column($income, 'total')), 2);
+        $expenseTotal = round(array_sum(array_column($expenses, 'total')), 2);
+        $net          = round($incomeTotal - $expenseTotal, 2);
+
+        return [
+            'period'      => $period,
+            'income'      => ['lines' => $income, 'total' => $incomeTotal],
+            'expenses'    => ['lines' => $expenses, 'total' => $expenseTotal],
+            'net_income'  => $net,
+            'withdrawals' => $withdrawals,
+            'balance'     => round($net - $withdrawals, 2),
+        ];
+    }
+
+    /**
      * مجاميع البنود لاستعلام أبعاد جاهز.
      *
      * @return array<string,float>
@@ -486,7 +568,6 @@ class FinancialReportController extends Controller
 
     /**
      * ملخّص فترة: بنود المداخيل والمصاريف والسحوبات والرصيد.
-     * السحب لا يدخل في الدخل الصافي لأنه نقل أموال لا استهلاك، لكنه يُنقِص الرصيد.
      */
     private function summarize(?string $from, ?string $to, ?int $yearId = null): array
     {
@@ -500,22 +581,16 @@ class FinancialReportController extends Controller
             $totals[$row->category] = round((float) $row->total, 2);
         }
 
-        $income      = $this->linesFor(CashTransaction::INCOME_CATEGORIES, $totals);
-        $expenses    = $this->linesFor(CashTransaction::EXPENSE_CATEGORIES, $totals);
-        $withdrawals = $totals[CashTransaction::CATEGORY_WITHDRAWAL] ?? 0.0;
-
-        $incomeTotal  = round(array_sum(array_column($income, 'total')), 2);
-        $expenseTotal = round(array_sum(array_column($expenses, 'total')), 2);
-        $net          = round($incomeTotal - $expenseTotal, 2);
+        $figures = $this->netFigures((string) ($to ?? ''), $totals);
 
         return [
             'date_from'   => $from,
             'date_to'     => $to,
-            'income'      => ['lines' => $income, 'total' => $incomeTotal],
-            'expenses'    => ['lines' => $expenses, 'total' => $expenseTotal],
-            'net_income'  => $net,
-            'withdrawals' => round($withdrawals, 2),
-            'balance'     => round($net - $withdrawals, 2),
+            'income'      => $figures['income'],
+            'expenses'    => $figures['expenses'],
+            'net_income'  => $figures['net_income'],
+            'withdrawals' => $figures['withdrawals'],
+            'balance'     => $figures['balance'],
         ];
     }
 
@@ -625,8 +700,6 @@ class FinancialReportController extends Controller
     /**
      * الأساس المشترك لتقارير الأبعاد (تلميذ / قسم):
      * المبالغ من الدفتر، والربط مع الدفعة يتم بـ source_type/source_id.
-     *
-     * يُقرأ اسم النوع من getMorphClass() لا يُكتب نصاً، فيبقى سليماً لو أُضيفت خريطة morph لاحقاً.
      */
     private function paymentDimensionQuery(array $data)
     {
