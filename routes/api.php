@@ -69,6 +69,12 @@ Route::middleware(['auth:sanctum', 'active'])->group(function () {
     // التقارير المالية — قراءة فقط، وكلها تُبنى على الدفتر النقدي المركزي
     Route::middleware('permission:view_reports')->group(function () {
         Route::get('/reports/net-income',         [FinancialReportController::class, 'netIncome']);
+
+        // الدخل الصافي مجمّعاً: granularity=month|year
+        // مسار مستقل لا معامِل داخل net-income، حتى لا يبتلع مسارٌ ذو {parameter}
+        // قيمة ثابتة مثل periods ويصعب تشخيصه لاحقاً.
+        Route::get('/reports/net-income/periods', [FinancialReportController::class, 'netIncomePeriods']);
+
         Route::get('/reports/income-by-date',     [FinancialReportController::class, 'incomeByDate']);
         Route::get('/reports/expenses',           [FinancialReportController::class, 'expenses']);
         Route::get('/reports/revenue/students',   [FinancialReportController::class, 'revenueByStudent']);
