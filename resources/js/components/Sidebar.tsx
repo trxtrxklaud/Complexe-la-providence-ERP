@@ -1,5 +1,5 @@
 import { NavLink, useNavigate, useLocation } from 'react-router-dom';
-import { LayoutDashboard, Users, LogOut, GraduationCap, Tags, Layers, ClipboardList, History, Wallet, Receipt, Landmark } from 'lucide-react';
+import { LayoutDashboard, Users, LogOut, GraduationCap, Tags, Layers, ClipboardList, History, Wallet, Receipt, Landmark, TrendingUp } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { setToken } from '../api/http';
 
@@ -154,6 +154,17 @@ export function Sidebar() {
                 >
                     <Landmark size={20} />
                     <span>الخزينة</span>
+                </NavLink>
+
+                {/* الدخل الصافي — موديول مستقل لأنه يقرأ من كل المصادر لا من الخزينة وحدها */}
+                <NavLink
+                    to="/net-income"
+                    className={({ isActive }) =>
+                        linkClass(isActive || location.pathname.startsWith('/net-income'))
+                    }
+                >
+                    <TrendingUp size={20} />
+                    <span>الدخل الصافي</span>
                 </NavLink>
 
                 <NavLink

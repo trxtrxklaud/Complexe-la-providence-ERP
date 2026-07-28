@@ -1,11 +1,15 @@
 import { Outlet } from 'react-router-dom';
-import { Landmark, History, Banknote, TrendingUp } from 'lucide-react';
+import { Landmark, History, Banknote } from 'lucide-react';
 import { SectionTabs } from '../../components/SectionTabs';
 
 const C = { forest: '#3B4A36', sage: '#E3EBDB', ink: '#1F261C', muted: '#7C8677' };
 
 /**
- * موديول الخزينة — سجل الحركات والسحوبات وكشف الدخل الصافي.
+ * موديول الخزينة — سجل الحركات والسحوبات.
+ *
+ * كشف الدخل الصافي انتقل إلى موديول مستقل (/net-income) لأنه يقرأ من المداخيل
+ * والمصاريف والأجور والسلف معاً، لا من الخزينة وحدها؛ وتركه تبويباً هنا كان يوحي
+ * أنه فرع من الخزينة فيخطئ من يبحث عنه أو يعدّل فيه.
  */
 export function TreasuryLayout() {
   return (
@@ -17,14 +21,13 @@ export function TreasuryLayout() {
           </div>
           <div>
             <h1 className="text-xl font-bold" style={{ color: C.ink }}>الخزينة</h1>
-            <p className="text-sm" style={{ color: C.muted }}>حركات الخزينة والسحوبات والكشوف المالية</p>
+            <p className="text-sm" style={{ color: C.muted }}>حركات الخزينة والسحوبات</p>
           </div>
         </div>
         <SectionTabs
           tabs={[
             { to: 'history', label: 'سجل الحركات', icon: History },
             { to: 'withdrawals', label: 'السحوبات', icon: Banknote },
-            { to: 'net-income', label: 'الدخل الصافي', icon: TrendingUp },
           ]}
         />
       </div>
