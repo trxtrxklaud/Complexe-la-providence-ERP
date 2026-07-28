@@ -12,19 +12,43 @@ export interface Employee {
   notes?: string | null;
 }
 
+/**
+ * تسبقة (advance) تُخصم كاملة من راتب الشهر نفسه،
+ * أو سلفة (loan) تُردّ على مهل دفعات.
+ */
+export interface EmployeeAdvance {
+  id: number;
+  employee_id: number;
+  type: 'advance' | 'loan';
+  amount: string | number;
+  settled_amount: string | number;
+  advance_date: string;
+  reason?: string | null;
+  status: string;
+  is_opening?: boolean;
+  settled_by_salary_id?: number | null;
+  employee?: { id: number; first_name: string; last_name: string };
+}
+
 export interface Salary {
   id: number;
   employee_id: number;
   academic_year_id: number;
+  /** الصافي المدفوع نقداً — وهو وحده ما يدخل الدفتر النقدي. */
   amount: string | number;
+  gross_amount?: string | number | null;
+  advance_deduction?: string | number | null;
   period_from: string;
   period_to: string;
   paid_at?: string | null;
   method?: string | null;
   reference?: string | null;
   notes?: string | null;
+  cancelled_at?: string | null;
+  cancellation_reason?: string | null;
   employee?: { id: number; first_name: string; last_name: string };
   academic_year?: { id: number; name: string };
+  settled_advances?: EmployeeAdvance[];
 }
 
 async function parse(res: Response) {
@@ -70,10 +94,34 @@ export async function getSalaries(params?: {
   return parse(await fetch(url, { headers: getHeaders() }));
 }
 
+/**
+ * التسبقات القائمة لإطار واحد: غير ملغاة، ولم تُخلّص بعد.
+ * السلف (loan) مستثناة لأنّها تُردّ على مهل ولا تُخصم من الراتب.
+ */
+export async function getOutstandingAdvances(employeeId: number): Promise<EmployeeAdvance[]> {
+  const q = new URLSearchParams({
+    employee_id: String(employeeId),
+    type: 'advance',
+    outstanding: '1',
+    exclude_cancelled: '1',
+    per_page: '100',
+  });
+  const res = await parse(await fetch(`${API_BASE}/employee-advances?${q}`, { headers: getHeaders() }));
+
+  return res?.data ?? [];
+}
+
+/**
+ * خلاص راتب.
+ *
+ * يُرسَل الراتب الخام وقائمة التسبقات المراد خصمها، والخادم وحده
+ * يحسب الصافي. لا تُحتسب المبالغ في الواجهة.
+ */
 export async function createSalary(data: {
   employee_id: number;
   academic_year_id: number;
-  amount: number;
+  gross_amount: number;
+  advance_ids?: number[];
   period_from: string;
   period_to: string;
   paid_at?: string;
@@ -85,8 +133,12 @@ export async function createSalary(data: {
   }));
 }
 
-export async function deleteSalary(id: number): Promise<void> {
-  await parse(await fetch(`${API_BASE}/salaries/${id}`, {
-    method: 'DELETE', headers: getHeaders(),
+/**
+ * الرواتب لا تُحذف: تُلغى بسبب موثّق، فيُسحب أثرها من الدفتر
+ * وتعود التسبقات المخصومة بها قائمة من جديد.
+ */
+export async function cancelSalary(id: number, reason: string): Promise<Salary> {
+  return parse(await fetch(`${API_BASE}/salaries/${id}/cancel`, {
+    method: 'POST', headers: getHeaders(), body: JSON.stringify({ reason }),
   }));
 }
