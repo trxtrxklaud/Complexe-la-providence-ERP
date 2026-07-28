@@ -1,11 +1,13 @@
 import React, { useEffect, useState } from 'react';
-import { Users, Plus, Trash2, Loader2 } from 'lucide-react';
+import { Users, Plus, Trash2, Ban, Banknote, Loader2 } from 'lucide-react';
 import {
   getEmployees, createEmployee, deleteEmployee,
-  getSalaries, createSalary, deleteSalary,
-  type Employee, type Salary,
+  getSalaries, createSalary, cancelSalary,
+  getAdvances, createAdvance, settleAdvance, cancelAdvance, getOutstandingAdvances,
+  type Employee, type Salary, type EmployeeAdvance,
 } from '../../api/employees';
 import { getToken } from '../../api/http';
+import { TreasuryBalanceHint } from '../../components/TreasuryBalanceHint';
 
 
 const C = {
@@ -13,7 +15,17 @@ const C = {
   muted: '#7C8677', line: '#EDF1E8', bg: '#F4F6F1',
 };
 
-type Tab = 'salaries' | 'staff';
+type Tab = 'salaries' | 'advances' | 'staff';
+
+const TYPE_LABELS: Record<string, string> = {
+  advance: 'تسبقة',
+  loan: 'سلفة',
+};
+
+/** المتبقّي من تسبقة أو سلفة: المبلغ ناقص ما خُلّص منه. */
+function remainingOf(advance: EmployeeAdvance): number {
+  return Number(advance.amount ?? 0) - Number(advance.settled_amount ?? 0);
+}
 
 async function fetchYears() {
   const token = getToken();
@@ -41,14 +53,34 @@ export function EmployeesPage() {
   const [showEmpForm, setShowEmpForm] = useState(false);
   const [showSalForm, setShowSalForm] = useState(false);
 
+  // قائمة التسبقات والسلف (تبويب مستقلّ)
+  const [advList, setAdvList] = useState<EmployeeAdvance[]>([]);
+  const [advLoading, setAdvLoading] = useState(false);
+  const [showAdvForm, setShowAdvForm] = useState(false);
+  const [advForm, setAdvForm] = useState({
+    employee_id: '', type: 'advance' as 'advance' | 'loan', amount: '',
+    advance_date: new Date().toISOString().slice(0, 10), reason: '', method: 'cash',
+  });
+
+  // التسبقات القائمة للإطار المختار داخل نموذج الراتب.
+  const [advances, setAdvances] = useState<EmployeeAdvance[]>([]);
+  const [advancesLoading, setAdvancesLoading] = useState(false);
+  const [selectedAdvances, setSelectedAdvances] = useState<number[]>([]);
+
   const [empForm, setEmpForm] = useState({
     first_name: '', last_name: '', phone: '', job_title: '', default_salary: '',
   });
   const [salForm, setSalForm] = useState({
-    employee_id: '', academic_year_id: '', amount: '',
+    employee_id: '', academic_year_id: '', gross_amount: '',
     period_from: '', period_to: '', paid_at: new Date().toISOString().slice(0, 10),
     method: 'cash',
   });
+
+  const deduction = advances
+    .filter((a) => selectedAdvances.includes(a.id))
+    .reduce((sum, a) => sum + remainingOf(a), 0);
+  const grossValue = Number(salForm.gross_amount || 0);
+  const netValue = grossValue - deduction;
 
   async function loadBase() {
     setLoading(true);
@@ -78,8 +110,57 @@ export function EmployeesPage() {
     }
   }
 
+  async function loadAdvances() {
+    setAdvLoading(true);
+    try {
+      const rows = await getAdvances({
+        employee_id: empFilter ? Number(empFilter) : undefined,
+      });
+      setAdvList(rows);
+    } catch (err: any) {
+      setError(err.message || 'فشل تحميل التسبقات');
+    } finally {
+      setAdvLoading(false);
+    }
+  }
+
   useEffect(() => { loadBase(); }, []);
   useEffect(() => { if (tab === 'salaries') loadSalaries(); }, [tab, yearId, empFilter]);
+  useEffect(() => { if (tab === 'advances') loadAdvances(); }, [tab, empFilter]);
+
+  // عند تغيير الإطار تُجلَب تسبقاته القائمة، وتُمسح الاختيارات السابقة
+  // حتّى لا يُخصم من إطار دَين إطار آخر.
+  useEffect(() => {
+    setSelectedAdvances([]);
+    setAdvances([]);
+
+    if (!showSalForm || !salForm.employee_id) return;
+
+    let cancelled = false;
+    setAdvancesLoading(true);
+
+    getOutstandingAdvances(Number(salForm.employee_id))
+      .then((rows) => {
+        if (cancelled) return;
+        setAdvances(rows);
+        // التسبقة تُخصم كاملة في شهرها، فتُختار كلّها مبدئيّاً.
+        setSelectedAdvances(rows.map((r) => r.id));
+      })
+      .catch(() => {
+        if (!cancelled) setAdvances([]);
+      })
+      .finally(() => {
+        if (!cancelled) setAdvancesLoading(false);
+      });
+
+    return () => { cancelled = true; };
+  }, [salForm.employee_id, showSalForm]);
+
+  function toggleAdvance(id: number) {
+    setSelectedAdvances((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
+    );
+  }
 
   async function onCreateEmployee(e: React.FormEvent) {
     e.preventDefault();
@@ -104,6 +185,70 @@ export function EmployeesPage() {
     }
   }
 
+  async function onCreateAdvance(e: React.FormEvent) {
+    e.preventDefault();
+    setSaving(true); setError('');
+    try {
+      await createAdvance({
+        employee_id: Number(advForm.employee_id),
+        academic_year_id: yearId ? Number(yearId) : undefined,
+        type: advForm.type,
+        amount: Number(advForm.amount),
+        advance_date: advForm.advance_date,
+        method: advForm.method,
+        reason: advForm.reason || undefined,
+      });
+      setShowAdvForm(false);
+      setAdvForm({
+        employee_id: '', type: 'advance', amount: '',
+        advance_date: new Date().toISOString().slice(0, 10), reason: '', method: 'cash',
+      });
+      await loadAdvances();
+    } catch (err: any) {
+      setError(err.message || 'فشل حفظ التسبقة');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function onSettleAdvance(advance: EmployeeAdvance) {
+    const remaining = remainingOf(advance);
+    const input = window.prompt(`مبلغ الخلاص (المتبقّي ${remaining.toFixed(2)}):`, remaining.toFixed(2));
+    if (input === null) return;
+
+    const amount = Number(input);
+    if (!amount || amount <= 0) {
+      setError('مبلغ الخلاص غير صالح');
+      return;
+    }
+
+    setError('');
+    try {
+      await settleAdvance(advance.id, amount);
+      await loadAdvances();
+    } catch (err: any) {
+      setError(err.message || 'فشل خلاص السلفة');
+    }
+  }
+
+  async function onCancelAdvance(advance: EmployeeAdvance) {
+    const reason = window.prompt('سبب الإلغاء (إجباري):');
+    if (reason === null) return;
+
+    if (reason.trim().length < 3) {
+      setError('سبب الإلغاء مطلوب (ثلاثة أحرف على الأقلّ)');
+      return;
+    }
+
+    setError('');
+    try {
+      await cancelAdvance(advance.id, reason.trim());
+      await loadAdvances();
+    } catch (err: any) {
+      setError(err.message || 'فشل الإلغاء');
+    }
+  }
+
   async function onCreateSalary(e: React.FormEvent) {
     e.preventDefault();
     setSaving(true); setError('');
@@ -111,15 +256,18 @@ export function EmployeesPage() {
       await createSalary({
         employee_id: Number(salForm.employee_id),
         academic_year_id: Number(salForm.academic_year_id || yearId),
-        amount: Number(salForm.amount),
+        gross_amount: Number(salForm.gross_amount),
+        advance_ids: selectedAdvances,
         period_from: salForm.period_from,
         period_to: salForm.period_to,
         paid_at: salForm.paid_at || undefined,
         method: salForm.method,
       });
       setShowSalForm(false);
+      setSelectedAdvances([]);
+      setAdvances([]);
       setSalForm({
-        employee_id: '', academic_year_id: yearId, amount: '',
+        employee_id: '', academic_year_id: yearId, gross_amount: '',
         period_from: '', period_to: '', paid_at: new Date().toISOString().slice(0, 10), method: 'cash',
       });
       await loadSalaries();
@@ -130,6 +278,24 @@ export function EmployeesPage() {
     }
   }
 
+  async function onCancelSalary(salary: Salary) {
+    const reason = window.prompt('سبب إلغاء الراتب (إجباري):');
+    if (reason === null) return;
+
+    if (reason.trim().length < 3) {
+      setError('سبب الإلغاء مطلوب (ثلاثة أحرف على الأقلّ)');
+      return;
+    }
+
+    setError('');
+    try {
+      await cancelSalary(salary.id, reason.trim());
+      await loadSalaries();
+    } catch (err: any) {
+      setError(err.message || 'فشل إلغاء الراتب');
+    }
+  }
+
   return (
     <div className="p-4 md:p-6 space-y-4" dir="rtl" style={{ background: C.bg, minHeight: '100%' }}>
       <div className="flex items-center justify-between gap-3 flex-wrap">
@@ -137,12 +303,17 @@ export function EmployeesPage() {
           <Users size={22} style={{ color: C.forest }} />
           <h1 className="text-xl font-bold" style={{ color: C.ink }}>الإطارات</h1>
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-2 flex-wrap">
           <button
             onClick={() => setTab('salaries')}
             className="px-3 py-2 rounded-xl text-sm font-semibold"
             style={{ background: tab === 'salaries' ? C.forest : '#fff', color: tab === 'salaries' ? '#fff' : C.ink, border: `1px solid ${C.line}` }}
           >الرواتب</button>
+          <button
+            onClick={() => setTab('advances')}
+            className="px-3 py-2 rounded-xl text-sm font-semibold"
+            style={{ background: tab === 'advances' ? C.forest : '#fff', color: tab === 'advances' ? '#fff' : C.ink, border: `1px solid ${C.line}` }}
+          >التسبقات والسلف</button>
           <button
             onClick={() => setTab('staff')}
             className="px-3 py-2 rounded-xl text-sm font-semibold"
@@ -178,7 +349,7 @@ export function EmployeesPage() {
                 className="w-full py-2.5 rounded-xl text-white text-sm font-bold flex items-center justify-center gap-2"
                 style={{ background: C.forest }}
               >
-                <Plus size={16} /> إضافة راتب
+                <Plus size={16} /> خلاص راتب
               </button>
             </div>
           </div>
@@ -190,7 +361,9 @@ export function EmployeesPage() {
                   <th className="p-3">#</th>
                   <th>السنة</th>
                   <th>اسم الإطار</th>
-                  <th>المبلغ</th>
+                  <th>الخام</th>
+                  <th>خصم التسبقة</th>
+                  <th>المدفوع</th>
                   <th>من</th>
                   <th>إلى</th>
                   <th>تاريخ الدفع</th>
@@ -199,23 +372,114 @@ export function EmployeesPage() {
               </thead>
               <tbody>
                 {loading ? (
-                  <tr><td colSpan={8} className="p-6 text-center"><Loader2 className="inline animate-spin" /></td></tr>
+                  <tr><td colSpan={10} className="p-6 text-center"><Loader2 className="inline animate-spin" /></td></tr>
                 ) : salaries.length === 0 ? (
-                  <tr><td colSpan={8} className="p-6 text-center" style={{ color: C.muted }}>لا توجد رواتب</td></tr>
+                  <tr><td colSpan={10} className="p-6 text-center" style={{ color: C.muted }}>لا توجد رواتب</td></tr>
                 ) : salaries.map((s) => (
-                  <tr key={s.id} className="border-t" style={{ borderColor: C.line }}>
+                  <tr key={s.id} className="border-t" style={{ borderColor: C.line, opacity: s.cancelled_at ? 0.55 : 1 }}>
                     <td className="p-3">{s.id}</td>
                     <td>{s.academic_year?.name || s.academic_year_id}</td>
                     <td>{s.employee ? `${s.employee.first_name} ${s.employee.last_name}` : s.employee_id}</td>
+                    <td>{s.gross_amount != null ? Number(s.gross_amount).toFixed(2) : '—'}</td>
+                    <td style={{ color: Number(s.advance_deduction ?? 0) > 0 ? '#A03434' : C.muted }}>
+                      {Number(s.advance_deduction ?? 0).toFixed(2)}
+                    </td>
                     <td style={{ fontWeight: 700, color: C.forest }}>{Number(s.amount).toFixed(2)}</td>
                     <td>{String(s.period_from).slice(0, 10)}</td>
                     <td>{String(s.period_to).slice(0, 10)}</td>
                     <td>{s.paid_at ? String(s.paid_at).slice(0, 10) : '—'}</td>
                     <td>
-                      <button onClick={async () => { if (confirm('حذف؟')) { await deleteSalary(s.id); loadSalaries(); } }}
-                        className="p-2 rounded-lg" style={{ color: '#DC2626' }}>
-                        <Trash2 size={16} />
-                      </button>
+                      {s.cancelled_at ? (
+                        <span className="text-xs" style={{ color: '#A03434' }}>ملغى</span>
+                      ) : (
+                        <button onClick={() => onCancelSalary(s)} title="إلغاء موثّق"
+                          className="p-2 rounded-lg" style={{ color: '#DC2626' }}>
+                          <Ban size={16} />
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
+
+      {tab === 'advances' && (
+        <>
+          <div className="bg-white rounded-2xl border p-4 grid grid-cols-1 md:grid-cols-3 gap-3" style={{ borderColor: C.line }}>
+            <div className="md:col-span-2">
+              <label className="text-xs" style={{ color: C.muted }}>الإطار</label>
+              <select value={empFilter} onChange={(e) => setEmpFilter(e.target.value)} className="w-full mt-1 border rounded-xl px-3 py-2 text-sm" style={{ borderColor: C.line }}>
+                <option value="">كل الإطارات</option>
+                {employees.map((e) => <option key={e.id} value={e.id}>{e.first_name} {e.last_name}</option>)}
+              </select>
+            </div>
+            <div className="flex items-end">
+              <button
+                onClick={() => setShowAdvForm(true)}
+                className="w-full py-2.5 rounded-xl text-white text-sm font-bold flex items-center justify-center gap-2"
+                style={{ background: C.forest }}
+              >
+                <Plus size={16} /> منح تسبقة أو سلفة
+              </button>
+            </div>
+          </div>
+
+          <div className="rounded-xl px-3 py-2 text-xs" style={{ background: C.sage, color: C.ink }}>
+            التسبقة تُخصم كاملة عند خلاص راتب الشهر نفسه، ولا تُخلّص من هنا. أمّا السلفة فتُردّ على مهل بزرّ «خلاص».
+          </div>
+
+          <div className="bg-white rounded-2xl border overflow-x-auto" style={{ borderColor: C.line }}>
+            <table className="w-full text-sm">
+              <thead>
+                <tr style={{ color: C.muted, textAlign: 'right' }}>
+                  <th className="p-3">#</th>
+                  <th>الإطار</th>
+                  <th>النوع</th>
+                  <th>التاريخ</th>
+                  <th>المبلغ</th>
+                  <th>المخلّص</th>
+                  <th>المتبقّي</th>
+                  <th>السبب</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                {advLoading ? (
+                  <tr><td colSpan={9} className="p-6 text-center"><Loader2 className="inline animate-spin" /></td></tr>
+                ) : advList.length === 0 ? (
+                  <tr><td colSpan={9} className="p-6 text-center" style={{ color: C.muted }}>لا توجد تسبقات أو سلف</td></tr>
+                ) : advList.map((a) => (
+                  <tr key={a.id} className="border-t" style={{ borderColor: C.line, opacity: a.cancelled_at ? 0.55 : 1 }}>
+                    <td className="p-3">{a.id}</td>
+                    <td>{a.employee ? `${a.employee.first_name} ${a.employee.last_name}` : a.employee_id}</td>
+                    <td>{TYPE_LABELS[a.type] || a.type}</td>
+                    <td>{String(a.advance_date).slice(0, 10)}</td>
+                    <td style={{ fontWeight: 700 }}>{Number(a.amount).toFixed(2)}</td>
+                    <td>{Number(a.settled_amount ?? 0).toFixed(2)}</td>
+                    <td style={{ color: remainingOf(a) > 0 ? '#A03434' : C.forest }}>{remainingOf(a).toFixed(2)}</td>
+                    <td style={{ color: C.muted }}>{a.reason || '—'}</td>
+                    <td>
+                      {a.cancelled_at ? (
+                        <span className="text-xs" style={{ color: '#A03434' }}>ملغاة</span>
+                      ) : a.settled_by_salary_id ? (
+                        <span className="text-xs" style={{ color: C.muted }}>خُصمت من الراتب #{a.settled_by_salary_id}</span>
+                      ) : (
+                        <div className="flex gap-1">
+                          {a.type === 'loan' && remainingOf(a) > 0 && (
+                            <button onClick={() => onSettleAdvance(a)} title="خلاص"
+                              className="p-2 rounded-lg" style={{ color: C.forest }}>
+                              <Banknote size={16} />
+                            </button>
+                          )}
+                          <button onClick={() => onCancelAdvance(a)} title="إلغاء موثّق"
+                            className="p-2 rounded-lg" style={{ color: '#DC2626' }}>
+                            <Ban size={16} />
+                          </button>
+                        </div>
+                      )}
                     </td>
                   </tr>
                 ))}
@@ -290,10 +554,55 @@ export function EmployeesPage() {
         </div>
       )}
 
+      {showAdvForm && (
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+          <form onSubmit={onCreateAdvance} className="bg-white rounded-2xl p-5 w-full max-w-md space-y-3 max-h-[90vh] overflow-y-auto">
+            <h3 className="font-bold text-lg" style={{ color: C.ink }}>منح تسبقة أو سلفة</h3>
+
+            <select required className="w-full border rounded-xl px-3 py-2" style={{ borderColor: C.line }}
+              value={advForm.employee_id} onChange={(e) => setAdvForm({ ...advForm, employee_id: e.target.value })}>
+              <option value="">اختر الإطار</option>
+              {employees.map((e) => <option key={e.id} value={e.id}>{e.first_name} {e.last_name}</option>)}
+            </select>
+
+            <div>
+              <label className="text-xs" style={{ color: C.muted }}>النوع</label>
+              <select className="w-full mt-1 border rounded-xl px-3 py-2" style={{ borderColor: C.line }}
+                value={advForm.type} onChange={(e) => setAdvForm({ ...advForm, type: e.target.value as 'advance' | 'loan' })}>
+                <option value="advance">تسبقة — تُخصم من راتب الشهر</option>
+                <option value="loan">سلفة — تُردّ على مهل</option>
+              </select>
+            </div>
+
+            <input required type="number" step="0.01" placeholder="المبلغ" className="w-full border rounded-xl px-3 py-2" style={{ borderColor: C.line }}
+              value={advForm.amount} onChange={(e) => setAdvForm({ ...advForm, amount: e.target.value })} />
+
+            <input required type="date" className="w-full border rounded-xl px-3 py-2" style={{ borderColor: C.line }}
+              value={advForm.advance_date} onChange={(e) => setAdvForm({ ...advForm, advance_date: e.target.value })} />
+
+            <input placeholder="السبب (اختياري)" className="w-full border rounded-xl px-3 py-2" style={{ borderColor: C.line }}
+              value={advForm.reason} onChange={(e) => setAdvForm({ ...advForm, reason: e.target.value })} />
+
+            <TreasuryBalanceHint amount={Number(advForm.amount || 0)} refreshKey={showAdvForm} />
+
+            <p className="text-xs" style={{ color: C.muted }}>
+              هذا المبلغ يخرج من الخزينة يوم منحه ويُسجّل في الدفتر النقدي.
+            </p>
+
+            <div className="flex gap-2 justify-end">
+              <button type="button" onClick={() => setShowAdvForm(false)} className="px-4 py-2 rounded-xl border" style={{ borderColor: C.line }}>إلغاء</button>
+              <button type="submit" disabled={saving} className="px-4 py-2 rounded-xl text-white font-bold" style={{ background: C.forest }}>
+                {saving ? 'جاري...' : 'حفظ'}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
       {showSalForm && (
         <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
-          <form onSubmit={onCreateSalary} className="bg-white rounded-2xl p-5 w-full max-w-md space-y-3">
-            <h3 className="font-bold text-lg" style={{ color: C.ink }}>إضافة راتب</h3>
+          <form onSubmit={onCreateSalary} className="bg-white rounded-2xl p-5 w-full max-w-md space-y-3 max-h-[90vh] overflow-y-auto">
+            <h3 className="font-bold text-lg" style={{ color: C.ink }}>خلاص راتب</h3>
             <select required className="w-full border rounded-xl px-3 py-2" style={{ borderColor: C.line }}
               value={salForm.employee_id} onChange={(e) => setSalForm({ ...salForm, employee_id: e.target.value })}>
               <option value="">اختر الإطار</option>
@@ -304,8 +613,64 @@ export function EmployeesPage() {
               <option value="">السنة</option>
               {years.map((y) => <option key={y.id} value={y.id}>{y.name}</option>)}
             </select>
-            <input required type="number" step="0.01" placeholder="المبلغ" className="w-full border rounded-xl px-3 py-2" style={{ borderColor: C.line }}
-              value={salForm.amount} onChange={(e) => setSalForm({ ...salForm, amount: e.target.value })} />
+
+            <div>
+              <label className="text-xs" style={{ color: C.muted }}>الراتب الخام</label>
+              <input required type="number" step="0.01" placeholder="مثال: 500" className="w-full mt-1 border rounded-xl px-3 py-2" style={{ borderColor: C.line }}
+                value={salForm.gross_amount} onChange={(e) => setSalForm({ ...salForm, gross_amount: e.target.value })} />
+            </div>
+
+            {salForm.employee_id && (
+              <div className="rounded-xl p-3" style={{ background: C.sage }}>
+                <p className="text-xs font-bold mb-2" style={{ color: C.ink }}>التسبقات القائمة</p>
+
+                {advancesLoading ? (
+                  <p className="text-xs" style={{ color: C.muted }}>جارٍ التحميل…</p>
+                ) : advances.length === 0 ? (
+                  <p className="text-xs" style={{ color: C.muted }}>لا توجد تسبقات قائمة لهذا الإطار.</p>
+                ) : (
+                  <div className="space-y-1">
+                    {advances.map((a) => (
+                      <label key={a.id} className="flex items-center justify-between gap-2 text-xs">
+                        <span className="flex items-center gap-2">
+                          <input
+                            type="checkbox"
+                            checked={selectedAdvances.includes(a.id)}
+                            onChange={() => toggleAdvance(a.id)}
+                          />
+                          <span>{String(a.advance_date).slice(0, 10)}{a.reason ? ` — ${a.reason}` : ''}</span>
+                        </span>
+                        <strong>{remainingOf(a).toFixed(2)}</strong>
+                      </label>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            <div className="rounded-xl border p-3 text-sm space-y-1" style={{ borderColor: C.line }}>
+              <div className="flex justify-between">
+                <span style={{ color: C.muted }}>الخام</span>
+                <span>{grossValue.toFixed(2)}</span>
+              </div>
+              <div className="flex justify-between">
+                <span style={{ color: C.muted }}>خصم التسبقات</span>
+                <span style={{ color: '#A03434' }}>{deduction.toFixed(2)}</span>
+              </div>
+              <div className="flex justify-between font-bold">
+                <span style={{ color: C.ink }}>المدفوع نقداً</span>
+                <span style={{ color: netValue < 0 ? '#A03434' : C.forest }}>{netValue.toFixed(2)}</span>
+              </div>
+              {netValue < 0 && (
+                <p className="text-xs" style={{ color: '#A03434' }}>
+                  التسبقات تتجاوز الراتب الخام.
+                </p>
+              )}
+            </div>
+
+            {/* التحذير يقارن الرصيد بالمدفوع نقداً لا بالخام، لأنّ التسبقة خرجت من الخزينة سابقاً. */}
+            <TreasuryBalanceHint amount={netValue > 0 ? netValue : 0} refreshKey={showSalForm} />
+
             <div className="grid grid-cols-2 gap-2">
               <input required type="date" className="border rounded-xl px-3 py-2" style={{ borderColor: C.line }}
                 value={salForm.period_from} onChange={(e) => setSalForm({ ...salForm, period_from: e.target.value })} />
@@ -316,7 +681,7 @@ export function EmployeesPage() {
               value={salForm.paid_at} onChange={(e) => setSalForm({ ...salForm, paid_at: e.target.value })} />
             <div className="flex gap-2 justify-end">
               <button type="button" onClick={() => setShowSalForm(false)} className="px-4 py-2 rounded-xl border" style={{ borderColor: C.line }}>إلغاء</button>
-              <button type="submit" disabled={saving} className="px-4 py-2 rounded-xl text-white font-bold" style={{ background: C.forest }}>
+              <button type="submit" disabled={saving || netValue < 0} className="px-4 py-2 rounded-xl text-white font-bold disabled:opacity-50" style={{ background: C.forest }}>
                 {saving ? 'جاري...' : 'حفظ'}
               </button>
             </div>

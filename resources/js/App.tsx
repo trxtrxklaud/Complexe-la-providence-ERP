@@ -17,11 +17,13 @@ import { CollectionPage } from './pages/Payments/CollectionPage';
 import { HistoriquePage } from './pages/Payments/HistoriquePage';
 import { ClassroomsPage } from './pages/Classrooms/ClassroomsPage';
 import { RosterPage } from './pages/Classrooms/RosterPage';
-// ─── الأقسام المالية (المرحلة 1: هيكل) ───
+// ─── الأقسام المالية ───
 import { IncomeLayout } from './pages/Income/IncomeLayout';
 import { IncomeByDatePage } from './pages/Income/IncomeByDatePage';
 import { StudentRevenuePage } from './pages/Income/StudentRevenuePage';
+import { StudentDetailPage } from './pages/Income/StudentDetailPage';
 import { RevenueByClassroomPage } from './pages/Income/RevenueByClassroomPage';
+import { ClassroomDetailPage } from './pages/Income/ClassroomDetailPage';
 import { RevenueByYearPage } from './pages/Income/RevenueByYearPage';
 import { ExpensesLayout } from './pages/Expenses/ExpensesLayout';
 import { ExpenseCreatePage } from './pages/Expenses/ExpenseCreatePage';
@@ -29,8 +31,14 @@ import { ExpenseDailyReportPage } from './pages/Expenses/ExpenseDailyReportPage'
 import { ExpenseMonthlyReportPage } from './pages/Expenses/ExpenseMonthlyReportPage';
 import { ExpenseYearlyReportPage } from './pages/Expenses/ExpenseYearlyReportPage';
 import { TreasuryLayout } from './pages/Treasury/TreasuryLayout';
+import { TreasuryDaybookPage } from './pages/Treasury/TreasuryDaybookPage';
 import { TreasuryHistoryPage } from './pages/Treasury/TreasuryHistoryPage';
 import { TreasuryWithdrawalsPage } from './pages/Treasury/TreasuryWithdrawalsPage';
+// ─── الدخل الصافي — موديول مستقل ───
+import { NetIncomeLayout } from './pages/NetIncome/NetIncomeLayout';
+import { NetIncomeDailyPage } from './pages/NetIncome/NetIncomeDailyPage';
+import { NetRevenueMonthlyPage } from './pages/NetIncome/NetRevenueMonthlyPage';
+import { NetRevenueYearlyPage } from './pages/NetIncome/NetRevenueYearlyPage';
 
 function Layout({ children }: { children: React.ReactNode }) {
     return (
@@ -121,7 +129,11 @@ export default function App() {
                         <Route path="billing" element={<CollectionPage />} />
                         <Route path="by-date" element={<IncomeByDatePage />} />
                         <Route path="revenue" element={<StudentRevenuePage />} />
+                        {/* صفحة تلميذ واحد — حفر من جدول مداخيل التلاميذ */}
+                        <Route path="revenue/:studentId" element={<StudentDetailPage />} />
                         <Route path="by-classroom" element={<RevenueByClassroomPage />} />
+                        {/* صفحة قسم واحد — حفر من جدول الأقسام */}
+                        <Route path="by-classroom/:sectionId" element={<ClassroomDetailPage />} />
                         <Route path="by-year" element={<RevenueByYearPage />} />
                     </Route>
 
@@ -144,9 +156,25 @@ export default function App() {
                             <Layout><TreasuryLayout /></Layout>
                         </ProtectedRoute>
                     }>
-                        <Route index element={<Navigate to="history" replace />} />
+                        {/* الكشف اليومي هو الواجهة الافتراضية: هو ما تفتحه الإدارة كل صباح */}
+                        <Route index element={<Navigate to="daybook" replace />} />
+                        <Route path="daybook" element={<TreasuryDaybookPage />} />
                         <Route path="history" element={<TreasuryHistoryPage />} />
                         <Route path="withdrawals" element={<TreasuryWithdrawalsPage />} />
+                        {/* الكشف انتقل إلى موديول مستقل؛ يُحفظ المسار القديم حتى لا تنكسر روابط المستخدمين */}
+                        <Route path="net-income" element={<Navigate to="/net-income/daily" replace />} />
+                    </Route>
+
+                    {/* ═══ الدخل الصافي ═══ */}
+                    <Route path="/net-income" element={
+                        <ProtectedRoute>
+                            <Layout><NetIncomeLayout /></Layout>
+                        </ProtectedRoute>
+                    }>
+                        <Route index element={<Navigate to="daily" replace />} />
+                        <Route path="daily" element={<NetIncomeDailyPage />} />
+                        <Route path="monthly" element={<NetRevenueMonthlyPage />} />
+                        <Route path="yearly" element={<NetRevenueYearlyPage />} />
                     </Route>
 
                     {/* استخلاص مستقل (توافق خلفي): يُحوّل إلى تبويب الفوترة داخل المداخيل */}

@@ -14,16 +14,23 @@ use App\Http\Controllers\AcademicYearController;
 use App\Http\Controllers\LevelController;
 use App\Http\Controllers\SectionController;
 use App\Http\Controllers\RosterController;
+use App\Http\Controllers\ExpenseCategoryController;
+use App\Http\Controllers\ExpenseController;
+use App\Http\Controllers\EmployeeAdvanceController;
+use App\Http\Controllers\FinancialReportController;
+use App\Http\Controllers\TreasuryController;
+use App\Http\Controllers\TreasuryDaybookController;
+use App\Http\Controllers\TreasuryWithdrawalController;
 
 Route::middleware('throttle:5,1')->post('/login', [AuthController::class, 'login']);
 
-// كل المسارات المصادَق عليها تمرّ بـ active فيمنع أي حساب معطَّل من الوصول.
+// كل المسارات المصادَق عليها تمرّ بـ active فيمنع أي حساب معطَل من الوصول.
 Route::middleware(['auth:sanctum', 'active'])->group(function () {
     Route::post('/logout', [AuthController::class, 'logout']);
     Route::get('/user',    [AuthController::class, 'user']);
     Route::get('/dashboard', [DashboardController::class, 'index']);
 
-    // قائمة السنوات الدراسية — قراءة فقط تُستعمل في عدة شاشات، متاحة لأي مستخدِم مُفعَّل.
+    // قائمة السنوات الدراسية — قراءة فقط تُستعمل في عدة شاشات، متاحة لأي مستخدِم مُفعّل.
     Route::get('/academic-years', [AcademicYearController::class, 'index']);
 
     // الموظفون — صلاحية منفصلة
@@ -35,6 +42,52 @@ Route::middleware(['auth:sanctum', 'active'])->group(function () {
     Route::middleware('permission:manage_salaries')->group(function () {
         Route::apiResource('/salaries', SalaryController::class)->except(['destroy']);
         Route::post('/salaries/{salary}/cancel', [SalaryController::class, 'cancel']);
+
+        // سلف الإطارات — التزام تجاه الإطار، فتتبع صلاحية الرواتب
+        Route::apiResource('/employee-advances', EmployeeAdvanceController::class)
+            ->except(['destroy'])
+            ->parameters(['employee-advances' => 'advance']);
+        Route::post('/employee-advances/{advance}/settle', [EmployeeAdvanceController::class, 'settle']);
+        Route::post('/employee-advances/{advance}/cancel', [EmployeeAdvanceController::class, 'cancel']);
+    });
+
+    // المصاريف وأصنافها — صلاحية مستقلة
+    Route::middleware('permission:manage_expenses')->group(function () {
+        Route::apiResource('/expense-categories', ExpenseCategoryController::class);
+        Route::apiResource('/expenses', ExpenseController::class)->except(['destroy']);
+        Route::post('/expenses/{expense}/cancel', [ExpenseController::class, 'cancel']);
+    });
+
+    // الخزينة — السجلّ والرصيد والسحوبات
+    Route::middleware('permission:manage_treasury')->group(function () {
+        Route::get('/treasury/history', [TreasuryController::class, 'history']);
+        Route::get('/treasury/balance', [TreasuryController::class, 'balance']);
+
+        Route::apiResource('/treasury/withdrawals', TreasuryWithdrawalController::class)->except(['destroy']);
+        Route::post('/treasury/withdrawals/{withdrawal}/cancel', [TreasuryWithdrawalController::class, 'cancel']);
+    });
+
+    // التقارير المالية — قراءة فقط، وكلها تُبنى على الدفتر النقدي المركزي
+    Route::middleware('permission:view_reports')->group(function () {
+        Route::get('/reports/net-income',         [FinancialReportController::class, 'netIncome']);
+
+        // الدخل الصافي مجمّعاً: granularity=month|year
+        // مسار مستقل لا معامِل داخل net-income، حتى لا يبتلع مسارٌ ذو {parameter}
+        // قيمة ثابتة مثل periods ويصعب تشخيصه لاحقاً.
+        Route::get('/reports/net-income/periods', [FinancialReportController::class, 'netIncomePeriods']);
+
+        // كشف الخزينة اليومي: من تاريخ مختار إلى اليوم، بطاقة لكل يوم مع التراكمي.
+        Route::get('/reports/treasury-daybook',   [TreasuryDaybookController::class, 'index']);
+
+        Route::get('/reports/income-by-date',     [FinancialReportController::class, 'incomeByDate']);
+        Route::get('/reports/expenses',           [FinancialReportController::class, 'expenses']);
+        Route::get('/reports/revenue/students',   [FinancialReportController::class, 'revenueByStudent']);
+        Route::get('/reports/revenue/classrooms', [FinancialReportController::class, 'revenueByClassroom']);
+        Route::get('/reports/revenue/years',      [FinancialReportController::class, 'revenueByYear']);
+
+        // صفحات التفصيل: قسم واحد أو تلميذ واحد
+        Route::get('/reports/revenue/classrooms/{section}', [FinancialReportController::class, 'classroomDetail']);
+        Route::get('/reports/revenue/students/{student}',   [FinancialReportController::class, 'studentDetail']);
     });
 
     // User Management

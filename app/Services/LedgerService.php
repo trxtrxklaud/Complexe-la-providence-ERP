@@ -45,7 +45,7 @@ class LedgerService
             [
                 'transaction_date'    => $date,
                 'direction'           => $direction,
-                'amount'              => round($amount, 2),
+                'amount'              => self::decimal($amount),
                 'academic_year_id'    => $academicYearId,
                 'description'         => $description,
                 'created_by'          => $createdBy,
@@ -55,6 +55,18 @@ class LedgerService
                 'cancellation_reason' => null,
             ]
         );
+    }
+
+    /**
+     * تحويل المبلغ إلى نص عشري برقمين قبل تخزينه.
+     *
+     * الفاصلة العائمة لا تمثّل المليمات تمثيلاً دقيقاً، ومكتبة الحساب العشري
+     * تُحذّر من تمرير float وستمنعه لاحقاً. التنسيق إلى نص هنا يجعل القيمة
+     * تصل إلى العمود العشري دون وسيط عائم.
+     */
+    private static function decimal(float $amount): string
+    {
+        return number_format(round($amount, 2), 2, '.', '');
     }
 
     /**
@@ -94,11 +106,8 @@ class LedgerService
     }
 
     /**
-     * دفعة تلميذ → مداخيل، مفصّلة حسب نوع الرسم المُخصّص له.
+     * دفعة تلميذ → مداخيل، مفصّلة حسب بند كل رسم مُخصّص لها.
      *
-     * التصنيف يعتمد على frequency في fee_plans وليس على مطابقة نصوص، ضماناً للدقة:
-     * - yearly  → معاليم التسجيل
-     * - monthly → معاليم الأشهر
      * وما لم يُوزّع من الدفعة يُسجّل كمداخيل أخرى، فلا يضيع أي مليم من الصندوق.
      */
     public function recordPayment(Payment $payment): void
@@ -109,7 +118,11 @@ class LedgerService
             return;
         }
 
-        $payment->loadMissing(['paymentAllocations.studentFee.feePlan', 'enrollment']);
+        $payment->loadMissing([
+            'paymentAllocations.studentFee.feePlan',
+            'paymentAllocations.studentFee.feeType',
+            'enrollment',
+        ]);
 
         $buckets   = [];
         $allocated = 0.0;
@@ -206,7 +219,11 @@ class LedgerService
     }
 
     /**
-     * سلفة إطار → خروج نقدي في بند مستقل عن الأجور.
+     * تسبقة أو سلفة إطار → خروج نقدي في بند مستقل عن الأجور.
+     *
+     * البند في الدفتر واحد للنوعين لأنّ الأثر النقدي واحد، لكن البيان يفرّق بينهما:
+     * التسبقة تُخصم من راتب الشهر نفسه، والسلفة دَين يُردّ لاحقاً. من يقرأ سجلّ
+     * الخزينة يجب أن يعرف أيّهما أمامه دون فتح ملفّ الإطار.
      */
     public function recordEmployeeAdvance(EmployeeAdvance $advance): void
     {
@@ -218,6 +235,8 @@ class LedgerService
 
         $advance->loadMissing('employee');
 
+        $typeLabel = EmployeeAdvance::TYPE_LABELS[$advance->type] ?? 'سلفة';
+
         $this->post(
             source: $advance,
             category: CashTransaction::CATEGORY_EMPLOYEE_ADVANCE,
@@ -225,7 +244,7 @@ class LedgerService
             amount: (float) $advance->amount,
             date: $advance->advance_date?->toDateString() ?? now()->toDateString(),
             academicYearId: $advance->academic_year_id,
-            description: 'سلفة: ' . ($advance->employee?->full_name ?? ('إطار #' . $advance->employee_id)),
+            description: $typeLabel . ': ' . ($advance->employee?->full_name ?? ('إطار #' . $advance->employee_id)),
             createdBy: $advance->created_by,
         );
     }
@@ -254,13 +273,23 @@ class LedgerService
     }
 
     /**
-     * تصنيف رسم التلميذ إلى بند مداخيل.
+     * تصنيف رسم التلميذ إلى بند مداخيل، بأولوية بنيوية لا نصّية:
+     *   1) خطة الرسوم (fee_plans.frequency) للرسوم المُولَّدة تلقائياً
+     *   2) نوع الرسم (fee_types.ledger_category) للرسوم المُستخلَصة يدوياً
+     *   3) معاليم الأشهر كقيمة افتراضية للرسوم القديمة بلا رابط
      */
     private function categoryForFee(?StudentFee $fee): string
     {
-        return match ($fee?->feePlan?->frequency) {
-            'yearly' => CashTransaction::CATEGORY_REGISTRATION_FEE,
-            default  => CashTransaction::CATEGORY_MONTHLY_FEE,
-        };
+        if ($fee?->feePlan) {
+            return $fee->feePlan->frequency === 'yearly'
+                ? CashTransaction::CATEGORY_REGISTRATION_FEE
+                : CashTransaction::CATEGORY_MONTHLY_FEE;
+        }
+
+        if ($fee?->feeType) {
+            return $fee->feeType->resolveLedgerCategory();
+        }
+
+        return CashTransaction::CATEGORY_MONTHLY_FEE;
     }
 }

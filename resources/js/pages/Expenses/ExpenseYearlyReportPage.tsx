@@ -1,14 +1,26 @@
 import { CalendarClock } from 'lucide-react';
-import { PageShell } from '../../components/PageShell';
+import { PeriodReport } from '../../components/PeriodReport';
+import { fetchExpenseReport } from '../../api/reports';
+import { today } from '../../lib/format';
 
+function fiveYearsAgo(): string {
+  return `${new Date().getFullYear() - 5}-01-01`;
+}
+
+/**
+ * التقرير السنوي للمصاريف — أعلى درجة تجميع لنفس الدفتر.
+ */
 export function ExpenseYearlyReportPage() {
   return (
-    <div className="px-6 pb-6 max-w-6xl mx-auto">
-      <PageShell
-        title="التقرير السنوي للمصاريف"
-        subtitle="ملخّص المصاريف خلال السنة الدراسية"
-        icon={CalendarClock}
-      />
-    </div>
+    <PeriodReport
+      title="التقرير السنوي للمصاريف"
+      subtitle="مصاريف كل سنة مفصّلة على البنود"
+      icon={CalendarClock}
+      granularity="year"
+      periodLabel="السنة"
+      initialFrom={fiveYearsAgo()}
+      initialTo={today()}
+      load={fetchExpenseReport}
+    />
   );
 }

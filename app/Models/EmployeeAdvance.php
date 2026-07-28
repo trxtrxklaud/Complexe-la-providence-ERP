@@ -9,11 +9,24 @@ use Illuminate\Database\Eloquent\Relations\MorphMany;
 class EmployeeAdvance extends Model
 {
     public const STATUS_PENDING = 'pending';
+    public const STATUS_PARTIAL = 'partial';
     public const STATUS_SETTLED = 'settled';
+
+    /** تسبقة: تُخصم كاملة من راتب الشهر نفسه. */
+    public const TYPE_ADVANCE = 'advance';
+
+    /** سلفة: تُردّ على مهل دفعات. */
+    public const TYPE_LOAN = 'loan';
+
+    public const TYPE_LABELS = [
+        self::TYPE_ADVANCE => 'تسبقة',
+        self::TYPE_LOAN    => 'سلفة',
+    ];
 
     protected $fillable = [
         'employee_id',
         'academic_year_id',
+        'type',
         'amount',
         'settled_amount',
         'advance_date',
@@ -21,6 +34,8 @@ class EmployeeAdvance extends Model
         'reason',
         'notes',
         'status',
+        'is_opening',
+        'settled_by_salary_id',
         'created_by',
         'cancelled_at',
         'cancelled_by',
@@ -31,6 +46,7 @@ class EmployeeAdvance extends Model
         'amount'         => 'decimal:2',
         'settled_amount' => 'decimal:2',
         'advance_date'   => 'date',
+        'is_opening'     => 'boolean',
         'cancelled_at'   => 'datetime',
     ];
 
@@ -78,5 +94,22 @@ class EmployeeAdvance extends Model
     public function scopePending($query)
     {
         return $query->where('status', self::STATUS_PENDING);
+    }
+
+    /** القائم فعلاً: لم يُخلّص بعد كاملاً. */
+    public function scopeOutstanding($query)
+    {
+        return $query->whereNull('cancelled_at')
+            ->whereColumn('settled_amount', '<', 'amount');
+    }
+
+    public function scopeAdvances($query)
+    {
+        return $query->where('type', self::TYPE_ADVANCE);
+    }
+
+    public function scopeLoans($query)
+    {
+        return $query->where('type', self::TYPE_LOAN);
     }
 }
