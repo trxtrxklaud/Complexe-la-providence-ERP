@@ -1,7 +1,7 @@
 import { NavLink, useNavigate, useLocation } from 'react-router-dom';
 import {
     LayoutDashboard, Users, LogOut, GraduationCap, Tags, Layers,
-    ClipboardList, History, Wallet, Receipt, Landmark, TrendingUp, UserCog,
+    ClipboardList, History, Wallet, Receipt, Landmark, TrendingUp,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { setToken } from '../api/http';
@@ -37,7 +37,7 @@ export function Sidebar() {
     const canAny = (...names: string[]) => names.some((name) => hasPermission(name));
 
     // القائمة تعكس ما يستطيع المستخدم فتحه فعلاً. رابط يقود إلى رسالة منع
-    // ليس ثغرة أمنية لكنه يُفقد الثقة ويكشف بنية النظام لمن لا يعنيه.
+    // ليس ثغرة أمنية — الحارس الحقيقي هو routes/api.php — لكنه يُفقد الثقة.
     const showSetup = hasPermission('manage_users');
     const showFinance = canAny('manage_payments', 'manage_expenses', 'manage_treasury', 'view_reports');
     const showHr = canAny('manage_employees', 'manage_salaries');
@@ -195,7 +195,7 @@ export function Sidebar() {
                             to="/employees"
                             className={({ isActive }) => linkClass(isActive || startsWith('/employees'))}
                         >
-                            <UserCog size={20} />
+                            <Users size={20} />
                             <span>الإطارات</span>
                         </NavLink>
                     </>
