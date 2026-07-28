@@ -19,6 +19,7 @@ use App\Http\Controllers\ExpenseController;
 use App\Http\Controllers\EmployeeAdvanceController;
 use App\Http\Controllers\FinancialReportController;
 use App\Http\Controllers\TreasuryController;
+use App\Http\Controllers\TreasuryDaybookController;
 use App\Http\Controllers\TreasuryWithdrawalController;
 
 Route::middleware('throttle:5,1')->post('/login', [AuthController::class, 'login']);
@@ -74,6 +75,9 @@ Route::middleware(['auth:sanctum', 'active'])->group(function () {
         // مسار مستقل لا معامِل داخل net-income، حتى لا يبتلع مسارٌ ذو {parameter}
         // قيمة ثابتة مثل periods ويصعب تشخيصه لاحقاً.
         Route::get('/reports/net-income/periods', [FinancialReportController::class, 'netIncomePeriods']);
+
+        // كشف الخزينة اليومي: من تاريخ مختار إلى اليوم، بطاقة لكل يوم مع التراكمي.
+        Route::get('/reports/treasury-daybook',   [TreasuryDaybookController::class, 'index']);
 
         Route::get('/reports/income-by-date',     [FinancialReportController::class, 'incomeByDate']);
         Route::get('/reports/expenses',           [FinancialReportController::class, 'expenses']);
