@@ -80,8 +80,13 @@ class CollectionController extends Controller
     public function collect(CollectPaymentRequest $request): JsonResponse
     {
         try {
+            $data = $request->validated();
+            // مفتاح منع التكرار: يُفضَّل ترويسة Idempotency-Key ثم حقل الطلب.
+            $data['idempotency_key'] = $request->header('Idempotency-Key')
+                ?: ($data['idempotency_key'] ?? null);
+
             $receipt = $this->collectionService->collect(
-                $request->validated(),
+                $data,
                 (int) auth()->id()
             );
 

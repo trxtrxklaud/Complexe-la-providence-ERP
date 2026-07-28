@@ -1,5 +1,5 @@
 import { NavLink, useNavigate, useLocation } from 'react-router-dom';
-import { LayoutDashboard, Users, LogOut, GraduationCap, Tags, CreditCard, Layers, ClipboardList } from 'lucide-react';
+import { LayoutDashboard, Users, LogOut, GraduationCap, Tags, Layers, ClipboardList, History, Wallet, Receipt, Landmark, TrendingUp } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { setToken } from '../api/http';
 
@@ -122,30 +122,75 @@ export function Sidebar() {
                     </NavLink>
                 )}
 
+                {/* ─── الأقسام المالية ─── */}
+                <div className="pt-3 mt-2 border-t border-white/10" />
+                <p className="px-4 pb-1 text-[11px] font-semibold tracking-wider text-white/40">المالية</p>
+
                 <NavLink
-                    to="/collection"
+                    to="/income"
                     className={({ isActive }) =>
-                        linkClass(isActive || location.pathname.startsWith('/collection'))
+                        linkClass(isActive || location.pathname.startsWith('/income'))
                     }
                 >
-                    <CreditCard size={20} />
-                    <span>استخلاص</span>
+                    <Wallet size={20} />
+                    <span>المداخيل</span>
                 </NavLink>
 
-                    <NavLink
-                        to="/employees"
-                        className={({ isActive }) =>
-                            `flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm transition ${
-                                isActive ? 'bg-white/15 text-white font-semibold' : 'text-white/80 hover:bg-white/10'
-                            }`
-                        }
-                    >
-                        <Users size={18} />
-                        <span>الإطارات</span>
-                    </NavLink>
+                <NavLink
+                    to="/expenses"
+                    className={({ isActive }) =>
+                        linkClass(isActive || location.pathname.startsWith('/expenses'))
+                    }
+                >
+                    <Receipt size={20} />
+                    <span>المصاريف</span>
+                </NavLink>
 
+                <NavLink
+                    to="/treasury"
+                    className={({ isActive }) =>
+                        linkClass(isActive || location.pathname.startsWith('/treasury'))
+                    }
+                >
+                    <Landmark size={20} />
+                    <span>الخزينة</span>
+                </NavLink>
 
+                {/* الدخل الصافي — موديول مستقل لأنه يقرأ من كل المصادر لا من الخزينة وحدها */}
+                <NavLink
+                    to="/net-income"
+                    className={({ isActive }) =>
+                        linkClass(isActive || location.pathname.startsWith('/net-income'))
+                    }
+                >
+                    <TrendingUp size={20} />
+                    <span>الدخل الصافي</span>
+                </NavLink>
 
+                <NavLink
+                    to="/historique"
+                    className={({ isActive }) =>
+                        linkClass(isActive || location.pathname.startsWith('/historique'))
+                    }
+                >
+                    <History size={20} />
+                    <span>الوصولات الملغاة</span>
+                </NavLink>
+
+                {/* ─── الموارد البشرية ─── */}
+                <div className="pt-3 mt-2 border-t border-white/10" />
+
+                <NavLink
+                    to="/employees"
+                    className={({ isActive }) =>
+                        `flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm transition ${
+                            isActive ? 'bg-white/15 text-white font-semibold' : 'text-white/80 hover:bg-white/10'
+                        }`
+                    }
+                >
+                    <Users size={18} />
+                    <span>الإطارات</span>
+                </NavLink>
             </nav>
 
             {/* Logout */}

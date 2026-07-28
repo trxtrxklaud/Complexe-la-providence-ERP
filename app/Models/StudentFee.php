@@ -11,6 +11,7 @@ class StudentFee extends Model
     protected $fillable = [
         'enrollment_id',
         'fee_plan_id',
+        'fee_type_id',
         'description',
         'amount_due',
         'due_date',
@@ -30,6 +31,14 @@ class StudentFee extends Model
     public function feePlan(): BelongsTo
     {
         return $this->belongsTo(FeePlan::class);
+    }
+
+    /**
+     * نوع الرسم كما اختاره المستخلِص — مصدر تصنيف بند المداخيل في الدفتر.
+     */
+    public function feeType(): BelongsTo
+    {
+        return $this->belongsTo(FeeType::class);
     }
 
     public function paymentAllocations(): HasMany

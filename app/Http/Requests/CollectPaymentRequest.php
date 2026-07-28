@@ -24,6 +24,7 @@ class CollectPaymentRequest extends FormRequest
             'method'               => ['required', 'in:cash,bank_transfer,check,card'],
             'reference'            => ['nullable', 'string', 'max:100'],
             'notes'                => ['nullable', 'string', 'max:500'],
+            'idempotency_key'      => ['nullable', 'string', 'max:64'],
             'discount'             => ['nullable', 'numeric', 'min:0'],
             'items'                => ['required', 'array', 'min:1', 'max:20'],
             'items.*.fee_type_id'  => ['required', 'integer', 'distinct', 'exists:fee_types,id'],

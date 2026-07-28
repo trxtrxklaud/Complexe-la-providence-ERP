@@ -11,7 +11,6 @@ import {
   paymentsApi,
 } from '../../api/payments';
 import { ReceiptModal } from './ReceiptModal';
-import { getToken } from '../../api/http';
 
 const C = {
   forest: '#3B4A36',
@@ -273,22 +272,7 @@ export function CollectionPage() {
         user_name: [user?.first_name, user?.last_name].filter(Boolean).join(' ') || '—',
       });
 
-      const ledger: any = await getEnrollmentLedger(picked.enrollment_id);
-      setYearMonths(ledger.year_months || []);
-      setPaidMonths(ledger.paid_months || []);
-      const rows: any[] = [];
-      const bag = ledger.ledger || {};
-      Object.keys(bag).sort().forEach((month) => {
-        (bag[month] || []).forEach((x: any) => rows.push({ month, ...x }));
-      });
-      const seen = new Set();
-      const uniq: any[] = [];
-      for (const r of rows) {
-        if (seen.has(r.payment_id)) continue;
-        seen.add(r.payment_id);
-        uniq.push(r);
-      }
-      setLedgerRows(uniq.sort((a,b)=>String(b.payment_date).localeCompare(String(a.payment_date))));
+      await refreshLedger(picked.enrollment_id);
       setSelectedMonths([]);
       setSelectedFees({});
       setDiscount('0');
@@ -299,20 +283,48 @@ export function CollectionPage() {
     }
   }
 
+  // يُعيد جلب سجل الأشهر والمدفوعات بعد أي تغيير (حفظ أو إلغاء).
+  async function refreshLedger(enrollmentId?: number) {
+    const eid = enrollmentId ?? picked?.enrollment_id;
+    if (!eid) return;
+    const ledger: any = await getEnrollmentLedger(eid);
+    setYearMonths(ledger.year_months || []);
+    setPaidMonths(ledger.paid_months || []);
+    const rows: any[] = [];
+    const bag = ledger.ledger || {};
+    Object.keys(bag).sort().forEach((month) => {
+      (bag[month] || []).forEach((x: any) => rows.push({ month, ...x }));
+    });
+    const seen = new Set();
+    const uniq: any[] = [];
+    for (const r of rows) {
+      if (seen.has(r.payment_id)) continue;
+      seen.add(r.payment_id);
+      uniq.push(r);
+    }
+    setLedgerRows(uniq.sort((a, b) => String(b.payment_date).localeCompare(String(a.payment_date))));
+  }
+
+  // إلغاء موثّق للدفعة: يطلب سبباً إلزامياً ثم يستدعي مسار الإلغاء.
+  async function handleCancelPayment(paymentId: number): Promise<boolean> {
+    const reason = window.prompt('سبب إلغاء الدفعة (إلزامي):');
+    if (reason === null) return false;
+    if (reason.trim().length < 3) { alert('يرجى إدخال سبب واضح (3 أحرف على الأقل)'); return false; }
+    try {
+      await paymentsApi.cancel(paymentId, reason.trim());
+      await refreshLedger();
+      alert('تم إلغاء الدفعة وتوثيق السبب. عادت أشهرها متاحة لإعادة الدفع.');
+      return true;
+    } catch (e: any) {
+      alert(e.message || 'فشل إلغاء الدفعة');
+      return false;
+    }
+  }
+
   async function handleDelete() {
     if (!receipt?.payment_id) return;
-    if (!confirm('حذف كلي لهذه الدفعة من النظام؟')) return;
-    try {
-      await paymentsApi.destroy(receipt.payment_id);
-      setReceipt(null);
-      if (picked) {
-        const ledger: any = await getEnrollmentLedger(picked.enrollment_id);
-        setYearMonths(ledger.year_months || []);
-        setPaidMonths(ledger.paid_months || []);
-      }
-    } catch (e: any) {
-      setError(e.message || 'فشل الحذف');
-    }
+    const ok = await handleCancelPayment(Number(receipt.payment_id));
+    if (ok) setReceipt(null);
   }
 
   return (
@@ -501,40 +513,8 @@ export function CollectionPage() {
                               type="button"
                               className="text-xs px-2 py-1 rounded-lg text-white"
                               style={{ background: '#DC2626' }}
-                              onClick={async () => {
-                                if (!confirm('حذف هذه الدفعة نهائيًا من المداخيل والنظام؟')) return;
-                                try {
-                                  const token = getToken() || '';
-                                  const res = await fetch('/api/payments/' + r.payment_id, {
-                                    method: 'DELETE',
-                                    headers: { Accept: 'application/json', Authorization: 'Bearer ' + token },
-                                  });
-                                  if (!res.ok) throw new Error('فشل الحذف');
-                                  // refresh ledger
-                                  if (picked) {
-                                    const ledger: any = await getEnrollmentLedger(picked.enrollment_id);
-                                    setPaidMonths(ledger.paid_months || []);
-                                    setYearMonths(ledger.year_months || []);
-                                    const rows: any[] = [];
-                                    const bag = ledger.ledger || {};
-                                    Object.keys(bag).forEach((month) => {
-                                      (bag[month] || []).forEach((x: any) => rows.push({ month, ...x }));
-                                    });
-                                    const seen = new Set();
-                                    const uniq: any[] = [];
-                                    for (const x of rows) {
-                                      if (seen.has(x.payment_id)) continue;
-                                      seen.add(x.payment_id);
-                                      uniq.push(x);
-                                    }
-                                    setLedgerRows(uniq);
-                                  }
-                                  alert('تم الحذف من النظام');
-                                } catch (e: any) {
-                                  alert(e.message || 'خطأ في الحذف');
-                                }
-                              }}
-                            >حذف من النظام</button>
+                              onClick={() => handleCancelPayment(r.payment_id)}
+                            >إلغاء</button>
                           </td>
                         </tr>
                       ))}

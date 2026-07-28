@@ -15,6 +15,7 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->alias([
             'auth'       => \Illuminate\Auth\Middleware\Authenticate::class,
             'permission' => \App\Http\Middleware\CheckPermission::class,
+            'active'     => \App\Http\Middleware\EnsureUserIsActive::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions) {

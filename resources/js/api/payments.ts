@@ -14,6 +14,10 @@ export interface PaymentFilters {
   date_to?: string;
   per_page?: number;
   page?: number;
+  // إرجاع الوصولات الملغاة فقط (صفحة Historique)
+  cancelled?: boolean;
+  // استبعاد الملغاة من النتائج
+  exclude_cancelled?: boolean;
 }
 
 export const paymentsApi = {
@@ -50,12 +54,18 @@ export const paymentsApi = {
     return res.json();
   },
 
-  async destroy(id: number): Promise<void> {
-    const res = await fetch(API_BASE + '/payments/' + id, {
-      method: 'DELETE',
+  // إلغاء موثّق بدل الحذف النهائي: يشترط سبباً ويُبقي السجل للمراجعة.
+  async cancel(id: number, reason: string): Promise<Payment> {
+    const res = await fetch(API_BASE + '/payments/' + id + '/cancel', {
+      method: 'POST',
       headers: getHeaders(),
+      body: JSON.stringify({ reason }),
     });
-    if (!res.ok) throw new Error('فشل حذف الدفعة');
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.message || 'فشل إلغاء الدفعة');
+    }
+    return res.json();
   },
 };
 

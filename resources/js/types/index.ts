@@ -114,6 +114,13 @@ export interface PaymentAllocation {
   student_fee?:     StudentFee;
 }
 
+// ملخّص مستخدم يُرجعه الـ backend عبر علاقات createdBy / cancelledBy
+export interface UserBrief {
+  id:         number;
+  first_name: string;
+  last_name:  string;
+}
+
 export interface Payment {
   id:                   number;
   student_id:           number;
@@ -123,9 +130,13 @@ export interface Payment {
   method:               PaymentMethod;
   reference:            string | null;
   notes:                string | null;
-  created_by:           number | null;
+  created_by:           number | UserBrief | null;
   created_at:           string;
   updated_at:           string;
+  // حقول الإلغاء الموثّق (Phase 3)
+  cancelled_at?:        string | null;
+  cancellation_reason?: string | null;
+  cancelled_by?:        number | UserBrief | null;
   student?:             Pick<Student, 'id' | 'first_name' | 'last_name' | 'student_code'>;
   enrollment?:          Enrollment;
   payment_allocations?: PaymentAllocation[];

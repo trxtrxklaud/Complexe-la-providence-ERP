@@ -16,7 +16,12 @@ class Payment extends Model
         'payment_date',
         'method',
         'reference',
+        'idempotency_key',
         'notes',
+        'meta',
+        'cancelled_at',
+        'cancelled_by',
+        'cancellation_reason',
         'created_by',
     ];
 
@@ -24,6 +29,8 @@ class Payment extends Model
         'amount'       => 'decimal:2',
         'payment_date' => 'date',
         'months'       => 'array',
+        'meta'         => 'array',
+        'cancelled_at' => 'datetime',
     ];
 
     public function student(): BelongsTo
@@ -41,8 +48,18 @@ class Payment extends Model
         return $this->belongsTo(User::class, 'created_by');
     }
 
+    public function cancelledBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'cancelled_by');
+    }
+
     public function paymentAllocations(): HasMany
     {
         return $this->hasMany(PaymentAllocation::class);
+    }
+
+    public function isCancelled(): bool
+    {
+        return $this->cancelled_at !== null;
     }
 }
