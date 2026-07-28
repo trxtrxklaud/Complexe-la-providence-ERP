@@ -1,49 +1,38 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { AlertCircle } from 'lucide-react';
 import {
   fetchAcademicYears,
   fetchNetIncomePeriods,
-  type AcademicYearOption,
   type NetPeriodReport,
 } from '../../api/netIncome';
 import { errorMessage } from '../../lib/format';
-import { NetFiguresPanel, NetPeriodsTable, NetTotalsCards } from './NetPeriodPanels';
+import { C, FilterBar, NetReportTable, PrintHeader, PrintStyles } from './NetPeriodPanels';
 
-const C = {
-  ink: '#1F261C',
-  muted: '#7C8677',
-  line: '#EDF1E8',
-  error: '#A03434',
-  errorBg: '#FDECEC',
-};
+type YearOption = { id: number | string; name: string };
 
 /**
- * الدخل الصافي السنوي.
+ * الدخل الصافي السنوي — مرشِّح واحد كما في الصفحة القديمة: السنة الدراسية.
  *
- * تمييز مقصود: الأسطر مجمّعة حسب السنة التقويمية للحركة النقدية، بينما منتقي
- * «السنة الدراسية» يرشّح حسب academic_year_id المخزّن في السطر نفسه. السنة الدراسية
- * تعبر سنتين تقويميتين (سبتمبر → جوان)، فدمجهما في مفهوم واحد ينتج رقماً لا يطابق
- * لا التقويم المدرسي ولا التصريح الجبائي.
+ * الكشف المعروض هو مجموع السنة الدراسية كاملة (summary)، لا السنة التقويمية،
+ * لأنّ السنة الدراسية تمتدّ على سنتين تقويميتين (سبتمبر → جوان)، فخلطهما يعطي
+ * رقماً لا يطابق التقويم المدرسي. ويُعرَض تحته تفصيل السنوات التقويمية للشفافية.
  */
 export function NetRevenueYearlyPage() {
-  const [years, setYears] = useState<AcademicYearOption[]>([]);
+  const [years, setYears] = useState<YearOption[]>([]);
   const [yearId, setYearId] = useState('');
-  const [selected, setSelected] = useState('');
-  const [data, setData] = useState<NetPeriodReport | null>(null);
+  const [report, setReport] = useState<NetPeriodReport | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
   useEffect(() => {
     const controller = new AbortController();
-
     fetchAcademicYears(controller.signal)
-      .then((result) => {
-        if (!controller.signal.aborted) setYears(result);
+      .then((list) => {
+        if (!controller.signal.aborted) setYears(list as YearOption[]);
       })
       .catch(() => {
-        // غياب قائمة السنوات لا يجوز أن يحجب الكشف نفسه.
+        /* فشل قائمة السنوات لا يمنع عرض الكشف العامّ. */
       });
-
     return () => controller.abort();
   }, []);
 
@@ -53,20 +42,15 @@ export function NetRevenueYearlyPage() {
     setError('');
 
     fetchNetIncomePeriods(
-      {
-        granularity: 'year',
-        academic_year_id: yearId ? Number(yearId) : undefined,
-      },
+      { granularity: 'year', academic_year_id: yearId || undefined },
       controller.signal,
     )
       .then((result) => {
-        if (controller.signal.aborted) return;
-        setData(result);
-        setSelected(result.rows.length > 0 ? result.rows[result.rows.length - 1].period : '');
+        if (!controller.signal.aborted) setReport(result);
       })
       .catch((e) => {
         if (!controller.signal.aborted) {
-          setData(null);
+          setReport(null);
           setError(errorMessage(e));
         }
       })
@@ -77,55 +61,38 @@ export function NetRevenueYearlyPage() {
     return () => controller.abort();
   }, [yearId]);
 
-  const selectedRow = useMemo(
-    () => data?.rows.find((row) => row.period === selected) ?? null,
-    [data, selected],
-  );
+  const selectedYearName =
+    years.find((year) => String(year.id) === yearId)?.name ?? 'كلّ السنوات';
+  const summary = report?.summary ?? null;
 
   return (
-    <div className="px-6 pb-10 max-w-6xl mx-auto" dir="rtl">
-      <div
-        className="bg-white rounded-2xl p-4 mb-4 flex flex-wrap items-end gap-4"
-        style={{ border: `1px solid ${C.line}` }}
-      >
+    <div className="px-6 pb-10" dir="rtl">
+      <PrintStyles />
+
+      <FilterBar>
         <div>
-          <label className="block text-sm mb-1" style={{ color: C.muted }}>السنة الدراسية</label>
+          <label className="block text-sm mb-1" style={{ color: C.muted }}>
+            السنة الدراسية
+          </label>
           <select
             value={yearId}
             onChange={(e) => setYearId(e.target.value)}
-            className="rounded-xl px-3 py-2 text-sm"
+            className="rounded-xl px-3 py-2 text-sm bg-white"
             style={{ border: `1px solid ${C.line}`, color: C.ink }}
           >
-            <option value="">كل السنوات</option>
+            <option value="">كلّ السنوات</option>
             {years.map((year) => (
-              <option key={year.id} value={year.id}>{year.name}</option>
+              <option key={year.id} value={String(year.id)}>
+                {year.name}
+              </option>
             ))}
           </select>
         </div>
-
-        <div>
-          <label className="block text-sm mb-1" style={{ color: C.muted }}>السنة المعروضة</label>
-          <select
-            value={selected}
-            onChange={(e) => setSelected(e.target.value)}
-            className="rounded-xl px-3 py-2 text-sm"
-            style={{ border: `1px solid ${C.line}`, color: C.ink }}
-          >
-            {(data?.rows ?? []).length === 0 && <option value="">—</option>}
-            {(data?.rows ?? []).map((row) => (
-              <option key={row.period} value={row.period}>{row.period}</option>
-            ))}
-          </select>
-        </div>
-
-        <p className="text-xs flex-1 min-w-[14rem]" style={{ color: C.muted }}>
-          التجميع حسب السنة التقويمية للحركة، والترشيح حسب السنة الدراسية المرتبطة بالسطر.
-        </p>
-      </div>
+      </FilterBar>
 
       {error && (
         <div
-          className="rounded-2xl p-4 mb-4 flex items-start gap-2 text-sm"
+          className="no-print rounded-2xl p-4 mb-4 flex items-start gap-2 text-sm"
           style={{ backgroundColor: C.errorBg, color: C.error }}
         >
           <AlertCircle size={18} />
@@ -133,26 +100,64 @@ export function NetRevenueYearlyPage() {
         </div>
       )}
 
-      {loading && <p className="text-sm py-6 text-center" style={{ color: C.muted }}>جارٍ التحميل…</p>}
+      {loading && (
+        <p className="no-print text-sm py-6 text-center" style={{ color: C.muted }}>
+          جارٍ التحميل…
+        </p>
+      )}
 
-      {!loading && data && (
-        <>
-          {selectedRow && (
-            <>
-              <NetTotalsCards row={selectedRow} />
-              <NetFiguresPanel row={selectedRow} title={selectedRow.period} />
-            </>
-          )}
+      {!loading && !error && summary && (
+        <div id="net-print-area">
+          <PrintHeader date={selectedYearName} />
 
-          <h3 className="text-sm font-bold mb-2" style={{ color: C.ink }}>كل السنوات</h3>
-          <NetPeriodsTable
-            rows={data.rows}
-            selected={selected}
-            onSelect={setSelected}
-            periodLabel="السنة"
-            formatPeriod={(period) => period}
+          <NetReportTable
+            caption={`الدخل الصافي للسنة الدراسية: ${selectedYearName}`}
+            income={summary.income}
+            expenses={summary.expenses}
+            netIncome={summary.net_income}
+            withdrawals={summary.withdrawals}
+            balance={summary.balance}
           />
-        </>
+
+          {(report?.rows ?? []).length > 1 && (
+            <table className="w-full bg-white text-sm mt-4" style={{ border: `1px solid ${C.line}` }}>
+              <thead>
+                <tr style={{ backgroundColor: C.sage }}>
+                  <th className="text-right px-4 py-2" style={{ border: `1px solid ${C.line}`, color: C.ink }}>
+                    السنة التقويمية
+                  </th>
+                  <th className="text-right px-4 py-2" style={{ border: `1px solid ${C.line}`, color: C.ink }}>
+                    المداخيل
+                  </th>
+                  <th className="text-right px-4 py-2" style={{ border: `1px solid ${C.line}`, color: C.ink }}>
+                    المصاريف
+                  </th>
+                  <th className="text-right px-4 py-2" style={{ border: `1px solid ${C.line}`, color: C.ink }}>
+                    الدخل الصافي
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {(report?.rows ?? []).map((item) => (
+                  <tr key={item.period}>
+                    <td className="px-4 py-2" style={{ border: `1px solid ${C.line}`, color: C.ink }}>
+                      {item.period}
+                    </td>
+                    <td className="px-4 py-2" style={{ border: `1px solid ${C.line}`, color: C.forest }}>
+                      {item.income.total.toFixed(3)}
+                    </td>
+                    <td className="px-4 py-2" style={{ border: `1px solid ${C.line}`, color: C.error }}>
+                      {item.expenses.total.toFixed(3)}
+                    </td>
+                    <td className="px-4 py-2 font-bold" style={{ border: `1px solid ${C.line}`, color: C.ink }}>
+                      {item.net_income.toFixed(3)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
       )}
     </div>
   );
