@@ -31,6 +31,7 @@ import { ExpenseDailyReportPage } from './pages/Expenses/ExpenseDailyReportPage'
 import { ExpenseMonthlyReportPage } from './pages/Expenses/ExpenseMonthlyReportPage';
 import { ExpenseYearlyReportPage } from './pages/Expenses/ExpenseYearlyReportPage';
 import { TreasuryLayout } from './pages/Treasury/TreasuryLayout';
+import { TreasuryDaybookPage } from './pages/Treasury/TreasuryDaybookPage';
 import { TreasuryHistoryPage } from './pages/Treasury/TreasuryHistoryPage';
 import { TreasuryWithdrawalsPage } from './pages/Treasury/TreasuryWithdrawalsPage';
 // ─── الدخل الصافي — موديول مستقل ───
@@ -155,7 +156,9 @@ export default function App() {
                             <Layout><TreasuryLayout /></Layout>
                         </ProtectedRoute>
                     }>
-                        <Route index element={<Navigate to="history" replace />} />
+                        {/* الكشف اليومي هو الواجهة الافتراضية: هو ما تفتحه الإدارة كل صباح */}
+                        <Route index element={<Navigate to="daybook" replace />} />
+                        <Route path="daybook" element={<TreasuryDaybookPage />} />
                         <Route path="history" element={<TreasuryHistoryPage />} />
                         <Route path="withdrawals" element={<TreasuryWithdrawalsPage />} />
                         {/* الكشف انتقل إلى موديول مستقل؛ يُحفظ المسار القديم حتى لا تنكسر روابط المستخدمين */}
