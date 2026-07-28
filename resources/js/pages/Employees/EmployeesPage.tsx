@@ -7,6 +7,7 @@ import {
   type Employee, type Salary, type EmployeeAdvance,
 } from '../../api/employees';
 import { getToken } from '../../api/http';
+import { TreasuryBalanceHint } from '../../components/TreasuryBalanceHint';
 
 
 const C = {
@@ -555,7 +556,7 @@ export function EmployeesPage() {
 
       {showAdvForm && (
         <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
-          <form onSubmit={onCreateAdvance} className="bg-white rounded-2xl p-5 w-full max-w-md space-y-3">
+          <form onSubmit={onCreateAdvance} className="bg-white rounded-2xl p-5 w-full max-w-md space-y-3 max-h-[90vh] overflow-y-auto">
             <h3 className="font-bold text-lg" style={{ color: C.ink }}>منح تسبقة أو سلفة</h3>
 
             <select required className="w-full border rounded-xl px-3 py-2" style={{ borderColor: C.line }}
@@ -582,8 +583,10 @@ export function EmployeesPage() {
             <input placeholder="السبب (اختياري)" className="w-full border rounded-xl px-3 py-2" style={{ borderColor: C.line }}
               value={advForm.reason} onChange={(e) => setAdvForm({ ...advForm, reason: e.target.value })} />
 
+            <TreasuryBalanceHint amount={Number(advForm.amount || 0)} refreshKey={showAdvForm} />
+
             <p className="text-xs" style={{ color: C.muted }}>
-              هذا المبلغ يخرج من الخزينة اليوم ويُسجّل في الدفتر النقدي.
+              هذا المبلغ يخرج من الخزينة يوم منحه ويُسجّل في الدفتر النقدي.
             </p>
 
             <div className="flex gap-2 justify-end">
@@ -664,6 +667,9 @@ export function EmployeesPage() {
                 </p>
               )}
             </div>
+
+            {/* التحذير يقارن الرصيد بالمدفوع نقداً لا بالخام، لأنّ التسبقة خرجت من الخزينة سابقاً. */}
+            <TreasuryBalanceHint amount={netValue > 0 ? netValue : 0} refreshKey={showSalForm} />
 
             <div className="grid grid-cols-2 gap-2">
               <input required type="date" className="border rounded-xl px-3 py-2" style={{ borderColor: C.line }}
