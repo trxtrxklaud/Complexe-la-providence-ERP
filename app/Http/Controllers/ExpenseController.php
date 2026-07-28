@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\AcademicYear;
 use App\Models\Expense;
 use App\Services\LedgerService;
 use Illuminate\Http\JsonResponse;
@@ -38,7 +39,15 @@ class ExpenseController extends Controller
         $data = $this->validated($request, true);
         $data['created_by'] = $request->user()?->id;
 
-        // المصروف وأثره النقدي يُسجَّلان معاً أو لا يُسجَّل أيّهما.
+        // مصروف بلا سنة دراسية يختفي من أي كشف مُرشَّح بالسنة، فتظهر المداخيل
+        // وحدها ويبدو الدخل الصافي أكبر ممّا هو. ولأنّ المدرسة تعمل في كل
+        // الأشهر (منها أشهر تقع خارج مدى أيّ سنة دراسية)، تُستنتَج السنة من
+        // السنة النشطة لا من تاريخ المصروف، مع إبقاء حقّ المستخدم في تحديدها يدويّاً.
+        if (($data['academic_year_id'] ?? null) === null) {
+            $data['academic_year_id'] = $this->defaultAcademicYearId();
+        }
+
+        // المصروف وأثره النقدي يُسجّلان معاً أو لا يُسجّل أيّهما.
         $expense = DB::transaction(function () use ($data) {
             $expense = Expense::create($data);
             $this->ledger->recordExpense($expense);
@@ -107,6 +116,20 @@ class ExpenseController extends Controller
             'academicYear:id,name',
             'cancelledBy:id,first_name,last_name',
         ]));
+    }
+
+    /**
+     * السنة الدراسية النشطة، أو null إن لم توجد.
+     *
+     * لم أستنتجها من تاريخ المصروف عمداً: أشهر الصيف تقع خارج مدى كلّ السنوات
+     * المُعرَّفة، فالاستنتاج من التاريخ كان سيُرجِع null في جويلية وأوت تحديداً،
+     * وهما شهران تعملون فيهما فعلاً.
+     */
+    private function defaultAcademicYearId(): ?int
+    {
+        $id = AcademicYear::where('is_active', true)->value('id');
+
+        return $id !== null ? (int) $id : null;
     }
 
     /**

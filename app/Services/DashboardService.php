@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\AcademicYear;
+use App\Models\CashTransaction;
 use App\Models\Enrollment;
 use App\Models\Payment;
 use App\Models\Student;
@@ -16,8 +17,18 @@ class DashboardService
         $today      = Carbon::today();
         $activeYear = AcademicYear::where('is_active', true)->first();
 
+        // الجرد النقدي لا يتبع سنة دراسية: المدرسة تستخلص في كل الأشهر،
+        // ودفعة أوت لمتخلَّد جوان حركة نقدية يوم أوت مهما كانت السنة الدراسية
+        // التي تخصّها. لذلك تُحسب الكروت النقدية قبل التحقّق من السنة النشطة
+        // ولا تتوقّف عليها إطلاقاً: صاحبة المدرسة ترى حركة اليوم حتّى في العطلة.
+        $cash = [
+            'today'    => $this->cashFigures($today->toDateString(), $today->toDateString()),
+            'month'    => $this->cashFigures($today->copy()->startOfMonth()->toDateString(), $today->toDateString()),
+            'all_time' => $this->cashFigures(null, $today->toDateString()),
+        ];
+
         if (!$activeYear) {
-            return $this->emptyDashboard();
+            return $this->emptyDashboard($cash);
         }
 
         $totalStudents = Enrollment::where('academic_year_id', $activeYear->id)
@@ -74,10 +85,53 @@ class DashboardService
                 'collected_amount' => $totalCollected,
                 'pending_amount'   => $outstandingBalance,
             ],
+            // الجرد النقدي المحيّن: اليوم، الشهر الجاري، ومن بداية السجلّ.
+            'cash'                   => $cash,
+            'treasury_balance'       => $cash['all_time']['balance'],
         ];
     }
 
-    private function emptyDashboard(): array
+    /**
+     * أرقام الصندوق لفترة، مقروءة من الدفتر النقدي المركزي حصراً.
+     *
+     * تُقرأ من نفس الجدول الذي تقرأ منه شاشات الخزينة والدخل الصافي،
+     * فيستحيل أن تعرض اللوحة رقماً يخالف الكشف. والسحب لا يُنقِص
+     * الدخل الصافي لأنّه نقل أموال لا استهلاك، لكنّه يُنقِص الرصيد.
+     *
+     * @return array<string,float>
+     */
+    private function cashFigures(?string $from, string $to): array
+    {
+        $base = CashTransaction::query()
+            ->whereNull('cancelled_at')
+            ->when($from !== null, fn ($q) => $q->whereDate('transaction_date', '>=', $from))
+            ->whereDate('transaction_date', '<=', $to);
+
+        $income = (float) (clone $base)
+            ->whereIn('category', CashTransaction::INCOME_CATEGORIES)
+            ->sum('amount');
+
+        $expenses = (float) (clone $base)
+            ->whereIn('category', CashTransaction::EXPENSE_CATEGORIES)
+            ->sum('amount');
+
+        $withdrawals = (float) (clone $base)
+            ->where('category', CashTransaction::CATEGORY_WITHDRAWAL)
+            ->sum('amount');
+
+        return [
+            'income'      => round($income, 2),
+            'expenses'    => round($expenses, 2),
+            'net_income'  => round($income - $expenses, 2),
+            'withdrawals' => round($withdrawals, 2),
+            'balance'     => round($income - $expenses - $withdrawals, 2),
+        ];
+    }
+
+    /**
+     * @param  array<string,array<string,float>>  $cash
+     */
+    private function emptyDashboard(array $cash): array
     {
         return [
             'current_date'           => now()->toDateString(),
@@ -93,6 +147,9 @@ class DashboardService
                 'collected_amount' => 0,
                 'pending_amount'   => 0,
             ],
+            // حتّى بلا سنة نشطة، حركة الصندوق تبقى ظاهرة.
+            'cash'                   => $cash,
+            'treasury_balance'       => $cash['all_time']['balance'],
         ];
     }
 }
