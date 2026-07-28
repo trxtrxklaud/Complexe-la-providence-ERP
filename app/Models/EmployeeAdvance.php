@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\MorphMany;
 
 class EmployeeAdvance extends Model
@@ -75,7 +76,37 @@ class EmployeeAdvance extends Model
         return $this->morphMany(CashTransaction::class, 'source');
     }
 
-    /** المتبقّي غير المسدَّد من السلفة. */
+    /** ردّيات السلفة، كل ردّ بتاريخه وطريقته. */
+    public function repayments(): HasMany
+    {
+        return $this->hasMany(EmployeeAdvanceRepayment::class, 'employee_advance_id');
+    }
+
+    /**
+     * إعادة احتساب المُخلّص من الردّيات القائمة.
+     *
+     * settled_amount لم يعُد رقماً يُكتب بالزيادة بل مجموعاً مُشتقّاً:
+     * الجمع التراكمي ينحرف عند أول إلغاء ردّ، والاشتقاق لا ينحرف.
+     * التسبقة مستثناة: خلاصها بالخصم من الراتب عبر settled_by_salary_id.
+     */
+    public function recalculateSettlement(): void
+    {
+        if ($this->type === self::TYPE_ADVANCE) {
+            return;
+        }
+
+        $settled = (float) $this->repayments()->whereNull('cancelled_at')->sum('amount');
+        $amount  = (float) $this->amount;
+
+        $this->update([
+            'settled_amount' => number_format(round($settled, 2), 2, '.', ''),
+            'status'         => $settled <= 0
+                ? self::STATUS_PENDING
+                : ($settled >= $amount ? self::STATUS_SETTLED : self::STATUS_PARTIAL),
+        ]);
+    }
+
+    /** المتبقّي غير المسدَد من السلفة. */
     public function getRemainingAttribute(): string
     {
         return number_format((float) $this->amount - (float) $this->settled_amount, 2, '.', '');
