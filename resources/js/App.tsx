@@ -49,6 +49,11 @@ function Layout({ children }: { children: React.ReactNode }) {
     );
 }
 
+/**
+ * قاعدة واحدة تحكم كل ما يلي: حراسة الواجهة تطابق حراسة routes/api.php حرفاً.
+ * الواجهة ليست طبقة أمان — الـ backend هو الحارس الحقيقي — لكن اختلافهما
+ * يُنتج أسوأ تجربة: صفحة تُفتح ثم تمتلئ رسائل 403.
+ */
 export default function App() {
     return (
         <AuthProvider>
@@ -62,29 +67,31 @@ export default function App() {
                         </ProtectedRoute>
                     } />
 
-                    {/* Students — view لا يحتاج permission، enroll يحتاج */}
+                    {/* التلاميذ — كل مسارات /students في الـ backend تحت manage_students.
+                        صلاحية enroll_student موجودة في قاعدة البيانات لكنها لا تحرس أي مسار،
+                        فكان من يملكها وحدها يرى معالج التسجيل ثم يُرفَض عند الحفظ. */}
                     <Route path="/students" element={
-                        <ProtectedRoute>
+                        <ProtectedRoute permission="manage_students">
                             <Layout><StudentsDashboard /></Layout>
                         </ProtectedRoute>
                     } />
                     <Route path="/students/enroll" element={
-                        <ProtectedRoute permission="enroll_student">
+                        <ProtectedRoute permission="manage_students">
                             <Layout><EnrollWizard /></Layout>
                         </ProtectedRoute>
                     } />
                     <Route path="/students/enroll/new" element={
-                        <ProtectedRoute permission="enroll_student">
+                        <ProtectedRoute permission="manage_students">
                             <Layout><NewStudentWizard /></Layout>
                         </ProtectedRoute>
                     } />
                     <Route path="/students/enroll/old" element={
-                        <ProtectedRoute permission="enroll_student">
+                        <ProtectedRoute permission="manage_students">
                             <Layout><OldStudentReenroll /></Layout>
                         </ProtectedRoute>
                     } />
 
-                    {/* بنية المدرسة وقوائم الأقسام */}
+                    {/* بنية المدرسة وقوائم الأقسام — manage_users في الـ backend */}
                     <Route path="/classrooms" element={
                         <ProtectedRoute permission="manage_users">
                             <Layout><ClassroomsPage /></Layout>
@@ -96,7 +103,7 @@ export default function App() {
                         </ProtectedRoute>
                     } />
 
-                    {/* Users — كلها تحت manage_users مطابقةً للـ backend */}
+                    {/* Users */}
                     <Route path="/users" element={
                         <ProtectedRoute permission="manage_users">
                             <Layout><UsersList /></Layout>
@@ -113,15 +120,18 @@ export default function App() {
                         </ProtectedRoute>
                     } />
 
+                    {/* أنواع المعاليم — apiResource('/fee-types') داخل manage_payments لا manage_users */}
                     <Route path="/fee-types" element={
-                        <ProtectedRoute permission="manage_users">
+                        <ProtectedRoute permission="manage_payments">
                             <Layout><FeeTypesPage /></Layout>
                         </ProtectedRoute>
                     } />
 
-                    {/* ═══ المداخيل (موديول بـ routes متداخلة) ═══ */}
+                    {/* ═══ المداخيل ═══
+                        موديول مختلط: الفوترة تستدعي /payments/collect (manage_payments)
+                        وبقية التبويبات تستدعي /reports/* (view_reports). */}
                     <Route path="/income" element={
-                        <ProtectedRoute>
+                        <ProtectedRoute anyOf={['manage_payments', 'view_reports']}>
                             <Layout><IncomeLayout /></Layout>
                         </ProtectedRoute>
                     }>
@@ -137,9 +147,10 @@ export default function App() {
                         <Route path="by-year" element={<RevenueByYearPage />} />
                     </Route>
 
-                    {/* ═══ المصاريف ═══ */}
+                    {/* ═══ المصاريف ═══
+                        التسجيل manage_expenses والتقارير view_reports. */}
                     <Route path="/expenses" element={
-                        <ProtectedRoute>
+                        <ProtectedRoute anyOf={['manage_expenses', 'view_reports']}>
                             <Layout><ExpensesLayout /></Layout>
                         </ProtectedRoute>
                     }>
@@ -150,9 +161,11 @@ export default function App() {
                         <Route path="yearly" element={<ExpenseYearlyReportPage />} />
                     </Route>
 
-                    {/* ═══ الخزينة ═══ */}
+                    {/* ═══ الخزينة ═══
+                        السجلّ والسحوبات manage_treasury، أمّا الكشف اليومي وهو التبويب الافتراضي
+                        فمساره /reports/treasury-daybook تحت view_reports. */}
                     <Route path="/treasury" element={
-                        <ProtectedRoute>
+                        <ProtectedRoute anyOf={['manage_treasury', 'view_reports']}>
                             <Layout><TreasuryLayout /></Layout>
                         </ProtectedRoute>
                     }>
@@ -165,9 +178,9 @@ export default function App() {
                         <Route path="net-income" element={<Navigate to="/net-income/daily" replace />} />
                     </Route>
 
-                    {/* ═══ الدخل الصافي ═══ */}
+                    {/* ═══ الدخل الصافي — قراءة تقارير بحتة ═══ */}
                     <Route path="/net-income" element={
-                        <ProtectedRoute>
+                        <ProtectedRoute permission="view_reports">
                             <Layout><NetIncomeLayout /></Layout>
                         </ProtectedRoute>
                     }>
@@ -180,15 +193,16 @@ export default function App() {
                     {/* استخلاص مستقل (توافق خلفي): يُحوّل إلى تبويب الفوترة داخل المداخيل */}
                     <Route path="/collection" element={<Navigate to="/income/billing" replace />} />
 
-                    {/* Historique — سجل الوصولات الملغاة */}
+                    {/* Historique — سجل الوصولات الملغاة، يقرأ من /payments */}
                     <Route path="/historique" element={
-                        <ProtectedRoute>
+                        <ProtectedRoute permission="manage_payments">
                             <Layout><HistoriquePage /></Layout>
                         </ProtectedRoute>
                     } />
 
+                    {/* الإطارات — بيانات الإطار manage_employees، وتبويب التسبقات والرواتب manage_salaries */}
                     <Route path="/employees" element={
-                        <ProtectedRoute>
+                        <ProtectedRoute anyOf={['manage_employees', 'manage_salaries']}>
                             <Layout><EmployeesPage /></Layout>
                         </ProtectedRoute>
                     } />
