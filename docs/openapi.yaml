@@ -1,10 +1,12 @@
 openapi: 3.0.3
 info:
-  title: School La Providence ERP API
-  description: Production API for School La Providence Management System
+  title: Complexe La Providence ERP API
+  description: >-
+    Internal API for the Complexe La Providence school management system.
+    Proprietary software — owner: Complexe La Providence — Prod RH, Sidi Bouzid, Tunisie.
   version: 1.0.0
   contact:
-    name: School La Providence IT Team
+    name: Complexe La Providence — Prod RH
 
 servers:
   - url: http://localhost:8000/api
@@ -33,7 +35,11 @@ components:
           type: string
         gender:
           type: string
+          nullable: true
           enum: [male, female]
+        mother_name:
+          type: string
+          nullable: true
 
     Enrollment:
       type: object
@@ -121,6 +127,9 @@ paths:
       tags:
         - Students
       summary: Enroll a new student
+      description: >-
+        Only the name and the target level are mandatory: the school registers pupils
+        by name first and completes guardian data later.
       security:
         - bearerAuth: []
       requestBody:
@@ -132,13 +141,32 @@ paths:
               required:
                 - first_name
                 - last_name
-                - dob
-                - gender
-                - guardian_first_name
-                - guardian_last_name
-                - guardian_phone
-                - address
                 - level_id
+              properties:
+                first_name:
+                  type: string
+                last_name:
+                  type: string
+                level_id:
+                  type: integer
+                section_id:
+                  type: integer
+                dob:
+                  type: string
+                  format: date
+                gender:
+                  type: string
+                  enum: [male, female]
+                guardian_first_name:
+                  type: string
+                guardian_last_name:
+                  type: string
+                mother_name:
+                  type: string
+                guardian_phone:
+                  type: string
+                mother_phone:
+                  type: string
       responses:
         '201':
           description: Student enrolled successfully

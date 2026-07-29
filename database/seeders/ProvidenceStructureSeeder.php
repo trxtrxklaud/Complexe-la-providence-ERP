@@ -7,11 +7,12 @@ use App\Models\Section;
 use Illuminate\Database\Seeder;
 
 /**
- * البنية الحقيقية لمجمّع لا بروفيدانس، مستخرجة من المنصة القديمة.
+ * الهيكل الرسمي للمؤسسة (بيانات المدرسة نفسها): المستويات وأقسامها كما هي
+ * معتمدة إدارياً في مركب العناية.
  *
- * ملاحظة عن «مغادرون»: النظام القديم ينشئ قسماً وهمياً لكل سنة يضع فيه
- * التلاميذ المغادرين، لأنه لا يملك حقل حالة. عندنا enrollments.status = withdrawn
- * فلا حاجة لاستنساخ تلك الأقسام الوهمية.
+ * ملاحظة عن «مغادرون»: لا يُنشأ قسم خاص بالتلاميذ المغادرين، لأن المغادرة عندنا
+ * حالة تسجيل لا مكاناً دراسياً: enrollments.status = withdrawn. هكذا يبقى عدد
+ * الأقسام مطابقاً للواقع، ويظلّ التلميذ المغادر مربوطاً بقسمه الأصلي في التقارير.
  *
  * التشغيل: php artisan db:seed --class=ProvidenceStructureSeeder
  */
@@ -47,7 +48,7 @@ class ProvidenceStructureSeeder extends Seeder
                 $level->update(['order' => $data['order']]);
             }
 
-            // توحيد التسمية: البذرة القديمة كتبت «هـ» والمنصة القديمة تكتب «ه».
+            // توحيد التسمية: بذرة سابقة كتبت «هـ» بالتطويل، والمعتمد رسمياً «ه».
             if (in_array('ه', $data['sections'], true)) {
                 $legacy = Section::where('level_id', $level->id)->where('name', 'هـ')->first();
                 $exists = Section::where('level_id', $level->id)->where('name', 'ه')->exists();

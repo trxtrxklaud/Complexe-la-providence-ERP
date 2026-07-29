@@ -34,6 +34,35 @@ export interface EmployeeAdvance {
   employee?: { id: number; first_name: string; last_name: string };
 }
 
+/** طريقة ردّ السلفة، ولكلّ واحدة أثر محاسبي مختلف. */
+export type RepaymentMethod = 'cash' | 'salary_deduction';
+
+export const REPAYMENT_METHOD_LABELS: Record<RepaymentMethod, string> = {
+  cash: 'نقداً',
+  salary_deduction: 'خصم من الراتب',
+};
+
+/**
+ * ردّ واحد من ردّيات سلفة.
+ *
+ * الردّ النقدي يدخل الخزينة فيُسقَط في بند «خلاص سلفة»،
+ * أمّا الخصم من الراتب فلا يمرّ بالصندوق إطلاقاً، وإسقاطه كان سينفخ
+ * المداخيل والمصاريف معاً بمبلغ وهمي.
+ */
+export interface AdvanceRepayment {
+  id: number;
+  employee_advance_id: number;
+  employee_id: number;
+  academic_year_id?: number | null;
+  amount: string | number;
+  repaid_at: string;
+  method: RepaymentMethod;
+  salary_id?: number | null;
+  notes?: string | null;
+  cancelled_at?: string | null;
+  cancellation_reason?: string | null;
+}
+
 export interface Salary {
   id: number;
   employee_id: number;
@@ -144,10 +173,33 @@ export async function createAdvance(data: {
   }));
 }
 
-/** خلاص جزئي أو كلّي لسلفة تُردّ على مهل. لا يُستعمل مع التسبقة. */
-export async function settleAdvance(id: number, amount: number): Promise<EmployeeAdvance> {
+/**
+ * خلاص جزئي أو كلّي لسلفة تُردّ على مهل. لا يُستعمل مع التسبقة.
+ * كلّ استدعاء يُنشئ سطر ردّ مستقلّاً بتاريخه وطريقته.
+ */
+export async function settleAdvance(
+  id: number,
+  data: { amount: number; method: RepaymentMethod; repaid_at?: string; notes?: string },
+): Promise<{ repayment: AdvanceRepayment; advance: EmployeeAdvance }> {
   return parse(await fetch(`${API_BASE}/employee-advances/${id}/settle`, {
-    method: 'POST', headers: getHeaders(), body: JSON.stringify({ amount }),
+    method: 'POST', headers: getHeaders(), body: JSON.stringify(data),
+  }));
+}
+
+/** سجلّ ردّيات سلفة واحدة، مرتّباً بالتاريخ. */
+export async function getRepayments(advanceId: number): Promise<AdvanceRepayment[]> {
+  return parse(await fetch(`${API_BASE}/employee-advances/${advanceId}/repayments`, {
+    headers: getHeaders(),
+  }));
+}
+
+/** إلغاء ردّ مفرد بسبب موثّق، دون المساس ببقية الردّيات. */
+export async function cancelRepayment(
+  repaymentId: number,
+  reason: string,
+): Promise<{ repayment: AdvanceRepayment; advance: EmployeeAdvance | null }> {
+  return parse(await fetch(`${API_BASE}/advance-repayments/${repaymentId}/cancel`, {
+    method: 'POST', headers: getHeaders(), body: JSON.stringify({ reason }),
   }));
 }
 

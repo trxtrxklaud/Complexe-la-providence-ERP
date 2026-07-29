@@ -1,5 +1,8 @@
 import { NavLink, useNavigate, useLocation } from 'react-router-dom';
-import { LayoutDashboard, Users, LogOut, GraduationCap, Tags, Layers, ClipboardList, History, Wallet, Receipt, Landmark, TrendingUp } from 'lucide-react';
+import {
+    LayoutDashboard, Users, LogOut, GraduationCap, Tags, Layers,
+    ClipboardList, History, Wallet, Receipt, Landmark, TrendingUp,
+} from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { setToken } from '../api/http';
 
@@ -28,6 +31,17 @@ export function Sidebar() {
                 : 'text-white/70 hover:bg-white/10 hover:text-white'
         }`;
 
+    const startsWith = (prefix: string) => location.pathname.startsWith(prefix);
+
+    /** يكفي امتلاك واحدة — مطابق لـ anyOf في ProtectedRoute. */
+    const canAny = (...names: string[]) => names.some((name) => hasPermission(name));
+
+    // القائمة تعكس ما يستطيع المستخدم فتحه فعلاً. رابط يقود إلى رسالة منع
+    // ليس ثغرة أمنية — الحارس الحقيقي هو routes/api.php — لكنه يُفقد الثقة.
+    const showSetup = hasPermission('manage_users');
+    const showFinance = canAny('manage_payments', 'manage_expenses', 'manage_treasury', 'view_reports');
+    const showHr = canAny('manage_employees', 'manage_salaries');
+
     return (
         <div
             className="w-64 text-white flex flex-col min-h-screen shadow-xl"
@@ -54,143 +68,138 @@ export function Sidebar() {
 
             {/* Nav */}
             <nav className="flex-1 p-4 space-y-2 overflow-y-auto">
-                <NavLink
-                    to="/"
-                    end
-                    className={({ isActive }) => linkClass(isActive)}
-                >
+                <NavLink to="/" end className={({ isActive }) => linkClass(isActive)}>
                     <LayoutDashboard size={20} />
                     <span>لوحة القيادة</span>
                 </NavLink>
 
-                <NavLink
-                    to="/students"
-                    className={({ isActive }) =>
-                        linkClass(isActive || location.pathname.startsWith('/students'))
-                    }
-                >
-                    <GraduationCap size={20} />
-                    <span>التلاميذ</span>
-                </NavLink>
-
-                {hasPermission('manage_users') && (
+                {hasPermission('manage_students') && (
                     <NavLink
-                        to="/classrooms"
-                        className={({ isActive }) =>
-                            linkClass(isActive || location.pathname.startsWith('/classrooms'))
-                        }
+                        to="/students"
+                        className={({ isActive }) => linkClass(isActive || startsWith('/students'))}
                     >
-                        <Layers size={20} />
-                        <span>المستويات والأقسام</span>
+                        <GraduationCap size={20} />
+                        <span>التلاميذ</span>
                     </NavLink>
                 )}
 
-                {hasPermission('manage_users') && (
-                    <NavLink
-                        to="/rosters"
-                        className={({ isActive }) =>
-                            linkClass(isActive || location.pathname.startsWith('/rosters'))
-                        }
-                    >
-                        <ClipboardList size={20} />
-                        <span>قوائم الأقسام</span>
-                    </NavLink>
+                {/* ─── الإعداد ─── */}
+                {showSetup && (
+                    <>
+                        <div className="pt-3 mt-2 border-t border-white/10" />
+                        <p className="px-4 pb-1 text-[11px] font-semibold tracking-wider text-white/40">الإعداد</p>
+
+                        <NavLink
+                            to="/classrooms"
+                            className={({ isActive }) => linkClass(isActive || startsWith('/classrooms'))}
+                        >
+                            <Layers size={20} />
+                            <span>المستويات والأقسام</span>
+                        </NavLink>
+
+                        <NavLink
+                            to="/rosters"
+                            className={({ isActive }) => linkClass(isActive || startsWith('/rosters'))}
+                        >
+                            <ClipboardList size={20} />
+                            <span>قوائم الأقسام</span>
+                        </NavLink>
+
+                        <NavLink
+                            to="/users"
+                            className={({ isActive }) => linkClass(isActive || startsWith('/users'))}
+                        >
+                            <Users size={20} />
+                            <span>إدارة المستخدمين</span>
+                        </NavLink>
+                    </>
                 )}
 
-                {/* يظهر فقط إذا كان للمستخدم صلاحية manage_users */}
-                {hasPermission('manage_users') && (
-                    <NavLink
-                        to="/users"
-                        className={({ isActive }) =>
-                            linkClass(isActive || location.pathname.startsWith('/users'))
-                        }
-                    >
-                        <Users size={20} />
-                        <span>إدارة المستخدمين</span>
-                    </NavLink>
+                {/* ─── الأقسام المالية ─── */}
+                {showFinance && (
+                    <>
+                        <div className="pt-3 mt-2 border-t border-white/10" />
+                        <p className="px-4 pb-1 text-[11px] font-semibold tracking-wider text-white/40">المالية</p>
+                    </>
                 )}
 
-                {hasPermission('manage_users') && (
+                {/* أنواع المعاليم — manage_payments مطابقةً للـ backend لا manage_users */}
+                {hasPermission('manage_payments') && (
                     <NavLink
                         to="/fee-types"
-                        className={({ isActive }) =>
-                            linkClass(isActive || location.pathname.startsWith('/fee-types'))
-                        }
+                        className={({ isActive }) => linkClass(isActive || startsWith('/fee-types'))}
                     >
                         <Tags size={20} />
                         <span>أنواع المعاليم</span>
                     </NavLink>
                 )}
 
-                {/* ─── الأقسام المالية ─── */}
-                <div className="pt-3 mt-2 border-t border-white/10" />
-                <p className="px-4 pb-1 text-[11px] font-semibold tracking-wider text-white/40">المالية</p>
+                {canAny('manage_payments', 'view_reports') && (
+                    <NavLink
+                        to="/income"
+                        className={({ isActive }) => linkClass(isActive || startsWith('/income'))}
+                    >
+                        <Wallet size={20} />
+                        <span>المداخيل</span>
+                    </NavLink>
+                )}
 
-                <NavLink
-                    to="/income"
-                    className={({ isActive }) =>
-                        linkClass(isActive || location.pathname.startsWith('/income'))
-                    }
-                >
-                    <Wallet size={20} />
-                    <span>المداخيل</span>
-                </NavLink>
+                {canAny('manage_expenses', 'view_reports') && (
+                    <NavLink
+                        to="/expenses"
+                        className={({ isActive }) => linkClass(isActive || startsWith('/expenses'))}
+                    >
+                        <Receipt size={20} />
+                        <span>المصاريف</span>
+                    </NavLink>
+                )}
 
-                <NavLink
-                    to="/expenses"
-                    className={({ isActive }) =>
-                        linkClass(isActive || location.pathname.startsWith('/expenses'))
-                    }
-                >
-                    <Receipt size={20} />
-                    <span>المصاريف</span>
-                </NavLink>
-
-                <NavLink
-                    to="/treasury"
-                    className={({ isActive }) =>
-                        linkClass(isActive || location.pathname.startsWith('/treasury'))
-                    }
-                >
-                    <Landmark size={20} />
-                    <span>الخزينة</span>
-                </NavLink>
+                {canAny('manage_treasury', 'view_reports') && (
+                    <NavLink
+                        to="/treasury"
+                        className={({ isActive }) => linkClass(isActive || startsWith('/treasury'))}
+                    >
+                        <Landmark size={20} />
+                        <span>الخزينة</span>
+                    </NavLink>
+                )}
 
                 {/* الدخل الصافي — موديول مستقل لأنه يقرأ من كل المصادر لا من الخزينة وحدها */}
-                <NavLink
-                    to="/net-income"
-                    className={({ isActive }) =>
-                        linkClass(isActive || location.pathname.startsWith('/net-income'))
-                    }
-                >
-                    <TrendingUp size={20} />
-                    <span>الدخل الصافي</span>
-                </NavLink>
+                {hasPermission('view_reports') && (
+                    <NavLink
+                        to="/net-income"
+                        className={({ isActive }) => linkClass(isActive || startsWith('/net-income'))}
+                    >
+                        <TrendingUp size={20} />
+                        <span>الدخل الصافي</span>
+                    </NavLink>
+                )}
 
-                <NavLink
-                    to="/historique"
-                    className={({ isActive }) =>
-                        linkClass(isActive || location.pathname.startsWith('/historique'))
-                    }
-                >
-                    <History size={20} />
-                    <span>الوصولات الملغاة</span>
-                </NavLink>
+                {hasPermission('manage_payments') && (
+                    <NavLink
+                        to="/historique"
+                        className={({ isActive }) => linkClass(isActive || startsWith('/historique'))}
+                    >
+                        <History size={20} />
+                        <span>الوصولات الملغاة</span>
+                    </NavLink>
+                )}
 
                 {/* ─── الموارد البشرية ─── */}
-                <div className="pt-3 mt-2 border-t border-white/10" />
+                {showHr && (
+                    <>
+                        <div className="pt-3 mt-2 border-t border-white/10" />
+                        <p className="px-4 pb-1 text-[11px] font-semibold tracking-wider text-white/40">الموارد البشرية</p>
 
-                <NavLink
-                    to="/employees"
-                    className={({ isActive }) =>
-                        `flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm transition ${
-                            isActive ? 'bg-white/15 text-white font-semibold' : 'text-white/80 hover:bg-white/10'
-                        }`
-                    }
-                >
-                    <Users size={18} />
-                    <span>الإطارات</span>
-                </NavLink>
+                        <NavLink
+                            to="/employees"
+                            className={({ isActive }) => linkClass(isActive || startsWith('/employees'))}
+                        >
+                            <Users size={20} />
+                            <span>الإطارات</span>
+                        </NavLink>
+                    </>
+                )}
             </nav>
 
             {/* Logout */}

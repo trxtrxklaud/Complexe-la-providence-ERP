@@ -1,11 +1,11 @@
 <?php
 
 return [
-    'name' => env('APP_NAME', 'School La Providence ERP'),
+    'name' => env('APP_NAME', 'مركب العناية للتعليم الخاص'),
     'env' => env('APP_ENV', 'production'),
     'debug' => (bool) env('APP_DEBUG', false),
     'url' => env('APP_URL', 'http://localhost'),
-    'timezone' => 'UTC',
+    'timezone' => env('APP_TIMEZONE', 'Africa/Tunis'),
     'locale' => 'ar',
     'fallback_locale' => 'en',
     'key' => env('APP_KEY'),

@@ -1,19 +1,24 @@
-# ── Environment ───────────────────────────────────────────
+# ── Environment ─────────────────────────────
 .env
 .env.local
 .env.*.local
+# نسخ الاحتياط اليدوية تحمل كلمات المرور ومفاتيح التطبيق
+.env.bak*
+.env.backup*
+.env.save
+.env.old
 auth.json
 
-# ── Dependencies ─────────────────────────────────────────
+# ── Dependencies ───────────────────────────
 /node_modules
 /vendor
 
-# ── Build output ─────────────────────────────────────────
+# ── Build output ───────────────────────────
 /public/build
 /public/hot
 /public/storage
 
-# ── Storage / runtime ────────────────────────────────────
+# ── Storage / runtime ───────────────────────
 /storage/*.key
 /storage/framework/cache/*
 /storage/framework/sessions/*
@@ -24,24 +29,28 @@ auth.json
 !/storage/framework/views/.gitignore
 !/storage/logs/.gitignore
 
-# ── Local databases (never commit real data) ──────────────────
+# ── Local databases (never commit real data) ──────────────
 *.sqlite
 *.sqlite3
+*.sqlite-journal
+*.sqlite-wal
+*.sqlite-shm
 /database/database.sqlite
+/database/backup-*.sqlite
 /providence
 
-# ── Archives ───────────────────────────────────────────
+# ── Archives ──────────────────────────────
 *.zip
 *.tar.gz
 
-# ── IDE / OS ───────────────────────────────────────────
+# ── IDE / OS ──────────────────────────────
 .idea
 .vscode
 *.swp
 .DS_Store
 Thumbs.db
 
-# ── Logs / misc ────────────────────────────────────────
+# ── Logs / misc ────────────────────────────
 npm-debug.log
 yarn-error.log
 *.log

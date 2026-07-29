@@ -1,8 +1,15 @@
 {
     "name": "school-la-providence/erp",
-    "description": "School La Providence ERP - Production Grade School Management System",
+    "description": "Complexe La Providence ERP — Production Grade School Management System (Prod RH)",
     "type": "project",
     "license": "proprietary",
+    "authors": [
+        {
+            "name": "Complexe La Providence — Prod RH",
+            "homepage": "https://complexelaprovidence.com",
+            "role": "Owner"
+        }
+    ],
     "require": {
         "php": "^8.2",
         "laravel/framework": "^11.0",

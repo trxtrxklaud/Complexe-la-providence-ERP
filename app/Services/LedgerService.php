@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\CashTransaction;
 use App\Models\EmployeeAdvance;
+use App\Models\EmployeeAdvanceRepayment;
 use App\Models\Expense;
 use App\Models\Payment;
 use App\Models\Salary;
@@ -14,7 +15,7 @@ use Illuminate\Database\Eloquent\Model;
 /**
  * طبقة الدفتر النقدي المركزي.
  *
- * كل مستند مالي في المنصة (دفعة، راتب، مصروف، سلفة، سحب) يُسقِط أثره النقدي هنا.
+ * كل مستند مالي في المنصة (دفعة، راتب، مصروف، سلفة، ردّ سلفة، سحب) يُسقِط أثره النقدي هنا.
  * التقارير لا تقرأ من الجداول المصدرية أبداً، بل من cash_transactions حصراً،
  * فتتطابق الأرقام في كل الشاشات دون احتساب مزدوج.
  *
@@ -221,7 +222,7 @@ class LedgerService
     /**
      * تسبقة أو سلفة إطار → خروج نقدي في بند مستقل عن الأجور.
      *
-     * البند في الدفتر واحد للنوعين لأنّ الأثر النقدي واحد، لكن البيان يفرّق بينهما:
+     * البند في الدفتر واحد للنوعين لأنّ الأثر النقدي واحد، لكن البيان يفرق بينهما:
      * التسبقة تُخصم من راتب الشهر نفسه، والسلفة دَين يُردّ لاحقاً. من يقرأ سجلّ
      * الخزينة يجب أن يعرف أيّهما أمامه دون فتح ملفّ الإطار.
      */
@@ -250,6 +251,36 @@ class LedgerService
     }
 
     /**
+     * ردّ سلفة → دخل في بند خلاص السلفة، ولكن للردّ النقدي وحده.
+     *
+     * الخصم من الراتب لا يمرّ بالصندوق إطلاقاً: الإطار لم يُخرج مالاً من جيبه،
+     * بل قبض راتباً أقل، والراتب أُسقِط صافياً أصلاً. إسقاط سطر دخل له ينفخ
+     * المداخيل بمبلغ لم يدخل الدرج، ويبقي الرصيد صحيحاً بالصدفة في المجموع
+     * بينما المداخيل والمصاريف كلتاهما منفوختان — وهذا تزوير للتقرير لا خطأ حساب.
+     */
+    public function recordAdvanceRepayment(EmployeeAdvanceRepayment $repayment): void
+    {
+        if ($repayment->cancelled_at !== null || !$repayment->affectsCash()) {
+            $this->cancelFor($repayment, $repayment->cancelled_by, $repayment->cancellation_reason);
+
+            return;
+        }
+
+        $repayment->loadMissing('employee');
+
+        $this->post(
+            source: $repayment,
+            category: CashTransaction::CATEGORY_ADVANCE_REPAYMENT,
+            direction: CashTransaction::DIRECTION_IN,
+            amount: (float) $repayment->amount,
+            date: $repayment->repaid_at?->toDateString() ?? now()->toDateString(),
+            academicYearId: $repayment->academic_year_id,
+            description: 'خلاص سلفة: ' . ($repayment->employee?->full_name ?? ('إطار #' . $repayment->employee_id)),
+            createdBy: $repayment->created_by,
+        );
+    }
+
+    /**
      * سحب من الخزينة → حركة مستقلة لا تدخل في الدخل الصافي.
      */
     public function recordWithdrawal(TreasuryWithdrawal $withdrawal): void
@@ -274,7 +305,7 @@ class LedgerService
 
     /**
      * تصنيف رسم التلميذ إلى بند مداخيل، بأولوية بنيوية لا نصّية:
-     *   1) خطة الرسوم (fee_plans.frequency) للرسوم المُولَّدة تلقائياً
+     *   1) خطة الرسوم (fee_plans.frequency) للرسوم المُولّدة تلقائياً
      *   2) نوع الرسم (fee_types.ledger_category) للرسوم المُستخلَصة يدوياً
      *   3) معاليم الأشهر كقيمة افتراضية للرسوم القديمة بلا رابط
      */

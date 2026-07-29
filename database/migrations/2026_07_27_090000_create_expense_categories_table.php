@@ -5,7 +5,7 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * أصناف المصاريف (إعدادات المصاريف في النظام القديم).
+ * أصناف المصاريف (الهيكل الرسمي للمؤسسة: بيانات المدرسة نفسها).
  * تُستعمل لتصنيف كل مصروف حتى تكون التقارير اليومية/الشهرية/السنوية قابلة للتجميع.
  */
 return new class extends Migration

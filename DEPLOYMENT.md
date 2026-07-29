@@ -1,4 +1,6 @@
-# School La Providence ERP - Production Deployment Guide
+# Complexe La Providence ERP — Production Deployment Guide
+
+> **Owner:** Complexe La Providence — Prod RH · Sidi Bouzid, Tunisie. Proprietary software, internal use only.
 
 ## 1. Server Requirements
 
@@ -15,7 +17,7 @@
 Key variables:
 
 ```env
-APP_NAME="School La Providence"
+APP_NAME="Complexe La Providence"
 APP_ENV=production
 APP_DEBUG=false
 APP_URL=https://erp.laprovidence.ma
@@ -34,6 +36,8 @@ SESSION_DOMAIN=.laprovidence.ma
 QUEUE_CONNECTION=redis
 CACHE_DRIVER=redis
 ```
+
+> Replace every `laprovidence.ma` occurrence below with the domain actually purchased for the school before going live.
 
 ## 3. Deployment Steps
 
@@ -63,6 +67,10 @@ cp .env.example .env
 php artisan key:generate
 php artisan migrate --force
 php artisan db:seed --class=SchoolSeeder --force
+php artisan db:seed --class=PermissionsSeeder --force
+php artisan db:seed --class=ProvidenceStructureSeeder --force
+php artisan db:seed --class=FeeTypeSeeder --force
+php artisan db:seed --class=ExpenseCategoriesSeeder --force
 
 php artisan storage:link
 chmod -R 775 storage bootstrap/cache
@@ -141,40 +149,39 @@ sudo supervisorctl update
 sudo supervisorctl start providence-worker:*
 ```
 
-## 4. Frontend Deployment (Separate)
+## 4. Frontend Deployment
 
-If deploying React frontend separately (recommended for performance):
+The React frontend is served by Laravel through Vite (`resources/views/app.blade.php`), so a single deployment is enough:
 
 ```bash
 npm run build
-# Upload `dist/` folder to your CDN or static hosting (Vercel, Cloudflare Pages, etc.)
 ```
 
-Update `VITE_API_URL` in frontend `.env` to point to your Laravel API.
+The build output goes to `public/build/` and must be present on the server.
 
 ## 5. Backup Strategy
 
 - Daily database backup using `mysqldump`
 - Daily file backup of `storage/app`
-- Consider using Laravel Backup package
+- Keep at least 30 daily backups: this database holds the school's financial ledger
 
 ## 6. Monitoring & Logging
 
 Recommended tools:
 - Sentry (error tracking)
-- Laravel Telescope (local) / Laravel Horizon (queues)
+- Laravel Horizon (queues)
 - UptimeRobot or Pingdom
 
 ## Security Checklist
 
 - [ ] `APP_DEBUG=false` in production
 - [ ] Strong database password
+- [ ] Default admin password changed after first login
 - [ ] Sanctum tokens properly configured
-- [ ] CORS properly restricted
+- [ ] CORS properly restricted (`CORS_ALLOWED_ORIGINS`)
 - [ ] Regular `composer audit` and `npm audit`
 - [ ] WAF / Cloudflare protection enabled
 
 ---
 
 **Last Updated**: July 2026
-**Version**: Phase 3 Complete

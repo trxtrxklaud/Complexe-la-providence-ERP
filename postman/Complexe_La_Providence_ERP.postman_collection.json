@@ -1,14 +1,14 @@
 {
   "info": {
-    "_postman_id": "school-la-providence-erp-2026",
-    "name": "School La Providence ERP - API Collection",
-    "description": "Complete API collection for testing School La Providence ERP backend",
+    "_postman_id": "complexe-la-providence-erp-2026",
+    "name": "Complexe La Providence ERP - API Collection",
+    "description": "Internal API collection for the Complexe La Providence ERP backend. Owner: Complexe La Providence — Prod RH.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
     {
       "key": "base_url",
-      "value": "http://localhost:8000/api",
+      "value": "http://127.0.0.1:8001/api",
       "type": "string"
     },
     {
@@ -31,7 +31,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"email\": \"admin@erp.com\",\n  \"password\": \"123456\"\n}"
+              "raw": "{\n  \"email\": \"admin@laprovidence.ma\",\n  \"password\": \"CHANGE_ME\"\n}"
             },
             "url": {
               "raw": "{{base_url}}/login",
@@ -128,21 +128,74 @@
               "formdata": [
                 { "key": "first_name", "value": "يوسف", "type": "text" },
                 { "key": "last_name", "value": "الأمين", "type": "text" },
+                { "key": "level_id", "value": "1", "type": "text" },
+                { "key": "section_name", "value": "أ", "type": "text" },
                 { "key": "dob", "value": "2015-05-15", "type": "text" },
                 { "key": "gender", "value": "male", "type": "text" },
                 { "key": "guardian_first_name", "value": "محمد", "type": "text" },
                 { "key": "guardian_last_name", "value": "الأمين", "type": "text" },
-                { "key": "guardian_phone", "value": "0612345678", "type": "text" },
-                { "key": "address", "value": "شارع الحسن الثاني، الرباط", "type": "text" },
-                { "key": "level_id", "value": "1", "type": "text" },
-                { "key": "section_name", "value": "أ", "type": "text" },
-                { "key": "notes", "value": "طالب جديد", "type": "text" }
+                { "key": "mother_name", "value": "فاطمة", "type": "text" },
+                { "key": "guardian_phone", "value": "76624400", "type": "text" },
+                { "key": "notes", "value": "تلميذ جديد", "type": "text" }
               ]
             },
             "url": {
               "raw": "{{base_url}}/students/enroll",
               "host": ["{{base_url}}"],
               "path": ["students", "enroll"]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Treasury & Reports",
+      "item": [
+        {
+          "name": "Treasury Balance",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "Accept", "value": "application/json" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/treasury/balance",
+              "host": ["{{base_url}}"],
+              "path": ["treasury", "balance"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Treasury Daybook (single day, with details)",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "Accept", "value": "application/json" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/treasury-daybook?date=2026-07-28&details=1",
+              "host": ["{{base_url}}"],
+              "path": ["treasury-daybook"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Net Income Report",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "Accept", "value": "application/json" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/reports/net-income?date=2026-07-28",
+              "host": ["{{base_url}}"],
+              "path": ["reports", "net-income"]
             }
           },
           "response": []

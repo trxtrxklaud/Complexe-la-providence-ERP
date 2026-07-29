@@ -49,6 +49,11 @@ Route::middleware(['auth:sanctum', 'active'])->group(function () {
             ->parameters(['employee-advances' => 'advance']);
         Route::post('/employee-advances/{advance}/settle', [EmployeeAdvanceController::class, 'settle']);
         Route::post('/employee-advances/{advance}/cancel', [EmployeeAdvanceController::class, 'cancel']);
+
+        // ردّيات السلفة: سجلّ مؤرّخ لكل دفعة، وإلغاء موثّق لردّ مفرد
+        // دون المساس ببقية الردّيات ولا بالسلفة نفسها.
+        Route::get('/employee-advances/{advance}/repayments', [EmployeeAdvanceController::class, 'repayments']);
+        Route::post('/advance-repayments/{repayment}/cancel', [EmployeeAdvanceController::class, 'cancelRepayment']);
     });
 
     // المصاريف وأصنافها — صلاحية مستقلة
