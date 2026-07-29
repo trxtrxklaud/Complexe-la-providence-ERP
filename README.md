@@ -1,6 +1,9 @@
 # Complexe La Providence ERP
 
-**مدرسة العناية - نظام إدارة المدرسة**
+**مدرسة العناية - نطام إدارة المدرسة**
+
+> **Owner / الملكية:** Complexe La Providence — Prod RH · Sidi Bouzid, Tunisie
+> © 2026 Complexe La Providence — Prod RH. Tous droits réservés. Logiciel propriétaire, usage interne à l'établissement.
 
 ## Architecture
 
@@ -16,4 +19,4 @@ php artisan key:generate
 php artisan migrate
 php artisan db:seed --class=SchoolSeeder
 php artisan serve
-
+```
