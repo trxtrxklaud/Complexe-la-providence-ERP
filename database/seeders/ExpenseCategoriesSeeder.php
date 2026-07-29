@@ -14,7 +14,7 @@ class ExpenseCategoriesSeeder extends Seeder
     public function run(): void
     {
         $categories = [
-            'مواد تنزيف',
+            'مواد تنظيف',
             'أدوات مكتبية',
             'صيانة وإصلاح',
             'كهرباء وماء',
