@@ -27,7 +27,7 @@ export function setToken(token: string | null): void {
   }
 }
 
-/** رؤوس موحّدة لكل طلبات الـ API. */
+/** رٔوس موحّدة لكل طلبات الـ API. */
 export function getHeaders(extra?: Record<string, string>): Record<string, string> {
   const token = getToken();
   return {
@@ -62,15 +62,21 @@ export class ApiError extends Error {
 
 export type QueryParams = Record<string, string | number | boolean | null | undefined>;
 
+/**
+ * يركّب المسار مع الاستعلام.
+ *
+ * القيم المنطقية تُرمّز إلى '1' و '0' وليس 'true' و 'false': قاعدة boolean
+ * في لارافيل تقبل true|false|1|0|"1"|"0" حصراً، وترفض النص "true" بـ422.
+ * ولأنّ كل الشاشات تمرّ من هنا، الترميز في موضع واحد يمنع تكرار العلّة.
+ */
 export function buildUrl(path: string, params?: QueryParams): string {
   const base = path.startsWith('/api') ? path : API_BASE + path;
   if (!params) return base;
 
   const search = new URLSearchParams();
   Object.entries(params).forEach(([key, value]) => {
-    if (value !== undefined && value !== null && value !== '') {
-      search.append(key, String(value));
-    }
+    if (value === undefined || value === null || value === '') return;
+    search.append(key, typeof value === 'boolean' ? (value ? '1' : '0') : String(value));
   });
 
   const query = search.toString();
@@ -86,7 +92,7 @@ type RequestOptions = {
 };
 
 /**
- * طلب موحّد: يركّب الرؤوس، يقرأ أخطاء Laravel (422/401)، ويرمي ApiError مفهوماً.
+ * طلب موحّد: يركّب الرٔوس، يقرأ أخطاء Laravel (422/401)، ويرمي ApiError مفهوماً.
  */
 export async function apiFetch<T>(path: string, options: RequestOptions = {}): Promise<T> {
   const { method = 'GET', body, params, fallbackMessage, signal } = options;
