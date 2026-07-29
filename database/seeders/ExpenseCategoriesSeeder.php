@@ -6,7 +6,7 @@ use App\Models\ExpenseCategory;
 use Illuminate\Database\Seeder;
 
 /**
- * أصناف المصاريف الافتراضية، مستخرَجة من الاستعمال الفعلي في النظام القديم.
+ * أصناف المصاريف الافتراضية كما تصرفها المؤسسة فعلاً في موسمها الدراسي.
  * التنفيذ: php artisan db:seed --class=ExpenseCategoriesSeeder
  */
 class ExpenseCategoriesSeeder extends Seeder
@@ -14,13 +14,13 @@ class ExpenseCategoriesSeeder extends Seeder
     public function run(): void
     {
         $categories = [
-            'مواد تنظيف',
+            'مواد تنزيف',
             'أدوات مكتبية',
             'صيانة وإصلاح',
             'كهرباء وماء',
             'اتصالات وإنترنت',
             'نقل وتنقّل',
-            'تغذية',
+            'تغدية',
             'معدات وتجهيزات',
             'خدمات خارجية',
             'متفرقات',
