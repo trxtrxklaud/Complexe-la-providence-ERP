@@ -53,7 +53,7 @@ class StudentController extends Controller
             'mother_email'        => 'nullable|email',
             'level_id'            => 'required|exists:levels,id',
             'section_name'        => 'nullable|string',
-            'photo'               => 'nullable|image|max:2048',
+            'photo'               => 'nullable|file|mimes:jpeg,jpg,png,webp|max:2048',
         ]);
 
         try {
@@ -84,7 +84,7 @@ class StudentController extends Controller
             'gender'     => 'sometimes|in:male,female',
             'notes'      => 'nullable|string',
             'status'     => 'sometimes|in:active,inactive,transferred',
-            'photo'      => 'nullable|image|max:2048',
+            'photo'      => 'nullable|file|mimes:jpeg,jpg,png,webp|max:2048',
         ]);
 
         if ($request->hasFile('photo')) {
