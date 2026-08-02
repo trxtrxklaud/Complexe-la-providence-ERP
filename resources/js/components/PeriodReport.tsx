@@ -3,6 +3,7 @@ import type { LucideIcon } from 'lucide-react';
 import { AlertCircle } from 'lucide-react';
 import { errorMessage, money } from '../lib/format';
 import type { Granularity, PeriodReportData } from '../api/reports';
+import { PageDataSkeleton } from './DataSkeleton';
 
 const C = {
   forest: '#3B4A36',
@@ -143,9 +144,7 @@ export function PeriodReport({
       )}
 
       {loading && (
-        <p className="text-sm py-6 text-center" style={{ color: C.muted }}>
-          جارٍ التحميل…
-        </p>
+        <PageDataSkeleton cards={3} />
       )}
 
       {!loading && data && (
@@ -210,7 +209,9 @@ export function PeriodReport({
                     </tr>
                   )}
                   {data.rows.map((row) => {
-                    const byCategory = new Map(row.by_category.map((line) => [line.category, line.total]));
+                    const byCategory = new Map<string, number>(
+                      row.by_category.map((line): [string, number] => [line.category, line.total]),
+                    );
                     return (
                       <tr key={row.period} style={{ borderTop: `1px solid ${C.line}` }}>
                         <td className="px-4 py-3 whitespace-nowrap" style={{ color: C.ink }}>

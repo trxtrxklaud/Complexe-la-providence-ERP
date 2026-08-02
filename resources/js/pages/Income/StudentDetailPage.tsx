@@ -3,6 +3,7 @@ import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { AlertCircle, ArrowRight, Ban, User } from 'lucide-react';
 import { fetchStudentDetail, type StudentDetail } from '../../api/reportDetails';
 import { errorMessage, money } from '../../lib/format';
+import { PageDataSkeleton } from '../../components/DataSkeleton';
 
 const C = {
   forest: '#3B4A36',
@@ -107,7 +108,7 @@ export function StudentDetailPage() {
         </div>
       )}
 
-      {loading && <p className="text-sm py-6 text-center" style={{ color: C.muted }}>جارٍ التحميل…</p>}
+      {loading && <PageDataSkeleton />}
 
       {!loading && data && (
         <>

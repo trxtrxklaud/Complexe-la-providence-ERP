@@ -6,6 +6,7 @@ import {
   GraduationCap
 } from 'lucide-react';
 import { getStudents } from '../../api/students';
+import { TableRowsSkeleton } from '../../components/DataSkeleton';
 
 export function StudentsDashboard() {
   const [students, setStudents] = useState<any[]>([]);
@@ -131,11 +132,7 @@ export function StudentsDashboard() {
             </thead>
             <tbody className="divide-y divide-slate-100">
               {isLoading ? (
-                <tr>
-                  <td colSpan={5} className="px-6 py-8 text-center text-slate-500">
-                    جاري التحميل...
-                  </td>
-                </tr>
+                <TableRowsSkeleton columns={5} />
               ) : students.length === 0 ? (
                 <tr>
                   <td colSpan={5} className="px-6 py-8 text-center text-slate-500">

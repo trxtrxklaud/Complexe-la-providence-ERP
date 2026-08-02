@@ -1,3 +1,5 @@
+import type { Student } from '../api/students';
+
 export interface Permission {
     id: number;
     name: string;
@@ -93,6 +95,8 @@ export interface StudentFee {
   updated_at:    string;
   allocated?:    number;
   remaining?:    number;
+  frequency?:    'monthly' | 'quarterly' | 'yearly' | null;
+  category?:     string | null;
 }
 
 export interface StudentFeesEnrollment {

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { AlertCircle } from 'lucide-react';
 import { fetchNetIncome, type NetIncomeReport } from '../../api/reports';
 import { errorMessage, today } from '../../lib/format';
+import { PageDataSkeleton } from '../../components/DataSkeleton';
 import {
   C,
   FilterBar,
@@ -92,9 +93,7 @@ export function NetIncomeDailyPage() {
       )}
 
       {loading && (
-        <p className="no-print text-sm py-6 text-center" style={{ color: C.muted }}>
-          جارٍ التحميل…
-        </p>
+        <div className="no-print"><PageDataSkeleton cards={2} rows={4} /></div>
       )}
 
       {!loading && data && (

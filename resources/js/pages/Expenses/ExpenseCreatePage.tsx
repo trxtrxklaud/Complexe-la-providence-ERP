@@ -12,6 +12,7 @@ import {
 } from '../../api/expenses';
 import { fetchYears, type AcademicYear } from '../../api/roster';
 import { errorMessage, money, personName, today } from '../../lib/format';
+import { ListSkeleton } from '../../components/DataSkeleton';
 
 const C = {
   forest: '#3B4A36',
@@ -237,7 +238,7 @@ export function ExpenseCreatePage() {
             </div>
 
             {loading ? (
-              <p className="px-5 py-8 text-sm text-center" style={{ color: C.muted }}>جارٍ التحميل…</p>
+              <ListSkeleton rows={4} />
             ) : recent.length === 0 ? (
               <p className="px-5 py-8 text-sm text-center" style={{ color: C.muted }}>لا مصاريف مسجّلة بعد.</p>
             ) : (

@@ -8,6 +8,7 @@ import {
   type TreasurySummary,
 } from '../../api/treasury';
 import { errorMessage, money, monthStart, personName, today } from '../../lib/format';
+import { ListSkeleton } from '../../components/DataSkeleton';
 
 const C = {
   forest: '#3B4A36',
@@ -131,7 +132,7 @@ export function TreasuryHistoryPage() {
                 style={{ backgroundColor: C.forest }}
               >
                 <Filter size={16} />
-                <span>{loading ? 'جارٍ التحميل…' : 'تطبيق'}</span>
+                <span>تطبيق</span>
               </button>
               <label className="flex items-center gap-1.5 text-sm" style={{ color: C.ink }}>
                 <input type="checkbox" checked={includeCancelled} onChange={(e) => setIncludeCancelled(e.target.checked)} />
@@ -195,7 +196,7 @@ export function TreasuryHistoryPage() {
             </div>
 
             {loading ? (
-              <p className="px-5 py-8 text-sm text-center" style={{ color: C.muted }}>جارٍ التحميل…</p>
+              <ListSkeleton rows={5} />
             ) : rows.length === 0 ? (
               <p className="px-5 py-8 text-sm text-center" style={{ color: C.muted }}>لا حركات في هذه المدّة.</p>
             ) : (

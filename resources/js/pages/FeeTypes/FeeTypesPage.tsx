@@ -10,6 +10,7 @@ import {
     FeeType,
     FeeTypePayload,
 } from '../../api/feeTypes';
+import { TableRowsSkeleton } from '../../components/DataSkeleton';
 
 const C = {
     forest: '#3B4A36',
@@ -168,11 +169,7 @@ export function FeeTypesPage() {
                         </thead>
                         <tbody>
                             {loading ? (
-                                <tr>
-                                    <td colSpan={6} className="px-6 py-12 text-center" style={{ color: C.muted }}>
-                                        جاري التحميل...
-                                    </td>
-                                </tr>
+                                <TableRowsSkeleton columns={6} />
                             ) : feeTypes.length === 0 ? (
                                 <tr>
                                     <td colSpan={6} className="px-6 py-12 text-center" style={{ color: C.muted }}>

@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { Search, ArrowRight, User, GraduationCap, CreditCard } from 'lucide-react';
 import { getStudents, reenrollStudent } from '../../api/students';
+import { ListSkeleton } from '../../components/DataSkeleton';
 
 const C = {
   forest: '#3B4A36',
@@ -232,7 +233,7 @@ export function OldStudentReenroll() {
 
       <div className="bg-white rounded-[22px] border overflow-hidden" style={{ borderColor: C.line }}>
         {loading ? (
-          <div className="p-10 text-center" style={{ color: C.muted }}>جاري التحميل...</div>
+          <ListSkeleton />
         ) : filtered.length === 0 ? (
           <div className="p-10 text-center" style={{ color: C.muted }}>لا يوجد تلاميذ</div>
         ) : (

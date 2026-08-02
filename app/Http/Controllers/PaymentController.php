@@ -149,6 +149,8 @@ class PaymentController extends Controller
                 // التوزيعات من الدفعات غير الملغاة فقط حتى تكون المبالغ المخصّصة دقيقة.
                 'studentFees.paymentAllocations' => fn ($q) =>
                     $q->whereHas('payment', fn ($p) => $p->whereNull('cancelled_at')),
+                'studentFees.feePlan:id,frequency',
+                'studentFees.feeType:id,name_ar,ledger_category',
                 'academicYear:id,name',
                 'level:id,name',
             ])
@@ -173,6 +175,8 @@ class PaymentController extends Controller
                     'status'      => $fee->status,
                     'allocated'   => $allocated,
                     'remaining'   => max(0, $fee->amount_due - $allocated),
+                    'frequency'   => $fee->feePlan?->frequency,
+                    'category'    => $fee->feeType?->resolveLedgerCategory(),
                 ];
             }),
         ]);

@@ -11,6 +11,7 @@ import {
   type Level,
   type Section,
 } from '../../api/classrooms';
+import { PageDataSkeleton } from '../../components/DataSkeleton';
 
 const C = {
   forest: '#3B4A36',
@@ -218,7 +219,7 @@ export function ClassroomsPage() {
       )}
 
       {loading ? (
-        <p className="text-sm" style={{ color: C.muted }}>جارٍ التحميل…</p>
+        <PageDataSkeleton cards={3} rows={4} />
       ) : levels.length === 0 ? (
         <div className="bg-white rounded-2xl p-10 text-center" style={{ border: '1px solid ' + C.line }}>
           <p style={{ color: C.muted }}>لا توجد مستويات بعد. ابدأ بإضافة مستوى.</p>

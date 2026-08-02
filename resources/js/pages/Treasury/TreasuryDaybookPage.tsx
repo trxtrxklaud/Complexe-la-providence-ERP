@@ -123,6 +123,7 @@ function DayCard({
   isPrintTarget,
   onPrintDay,
 }: {
+  key?: string | number;
   day: DaybookDay;
   showCumulative: boolean;
   isPrintTarget: boolean;

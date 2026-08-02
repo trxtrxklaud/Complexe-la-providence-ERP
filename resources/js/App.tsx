@@ -28,6 +28,9 @@ const UsersList = lazy(() => loadUsersList().then((module) => ({ default: module
 const UserForm = lazy(() => import('./pages/Users/UserForm').then((module) => ({ default: module.UserForm })));
 const NewStudentWizard = lazy(() => import('./pages/Students/NewStudentWizard').then((module) => ({ default: module.NewStudentWizard })));
 const OldStudentReenroll = lazy(() => import('./pages/Students/OldStudentReenroll').then((module) => ({ default: module.OldStudentReenroll })));
+const StudentSearchPage = lazy(() => import('./pages/Students/StudentSearchPage').then((module) => ({ default: module.StudentSearchPage })));
+const StudentDetailsPage = lazy(() => import('./pages/Students/StudentDetailsPage').then((module) => ({ default: module.StudentDetailsPage })));
+const StudentTransferPage = lazy(() => import('./pages/Students/StudentTransferPage').then((module) => ({ default: module.StudentTransferPage })));
 const FeeTypesPage = lazy(() => loadFeeTypesPage().then((module) => ({ default: module.FeeTypesPage })));
 const EmployeesPage = lazy(() => loadEmployeesPage().then((module) => ({ default: module.EmployeesPage })));
 const CollectionPage = lazy(() => loadCollectionPage().then((module) => ({ default: module.CollectionPage })));
@@ -123,6 +126,21 @@ export default function App() {
                     <Route path="/students/enroll/old" element={
                         <ProtectedRoute permission="manage_students">
                             <Layout><OldStudentReenroll /></Layout>
+                        </ProtectedRoute>
+                    } />
+                    <Route path="/students/search" element={
+                        <ProtectedRoute permission="manage_students">
+                            <Layout><StudentSearchPage /></Layout>
+                        </ProtectedRoute>
+                    } />
+                    <Route path="/students/search/:studentId" element={
+                        <ProtectedRoute permission="manage_students">
+                            <Layout><StudentDetailsPage /></Layout>
+                        </ProtectedRoute>
+                    } />
+                    <Route path="/students/transfer" element={
+                        <ProtectedRoute permission="manage_students">
+                            <Layout><StudentTransferPage /></Layout>
                         </ProtectedRoute>
                     } />
 

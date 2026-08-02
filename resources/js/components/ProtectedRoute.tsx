@@ -1,6 +1,7 @@
 import React from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
+import { PageDataSkeleton } from './DataSkeleton';
 
 interface ProtectedRouteProps {
   children: React.ReactNode;
@@ -23,8 +24,10 @@ export function ProtectedRoute({ children, permission, anyOf }: ProtectedRoutePr
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-screen bg-slate-50">
-        <div className="text-slate-500">جاري التحميل...</div>
+      <div className="min-h-screen bg-[#E9EEE3] p-6 md:p-8">
+        <div className="mx-auto max-w-6xl pt-16">
+          <PageDataSkeleton cards={4} rows={5} />
+        </div>
       </div>
     );
   }

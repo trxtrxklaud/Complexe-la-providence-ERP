@@ -3,6 +3,7 @@ import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { AlertCircle, ArrowRight, Layers } from 'lucide-react';
 import { fetchClassroomDetail, type ClassroomDetail } from '../../api/reportDetails';
 import { errorMessage, money } from '../../lib/format';
+import { PageDataSkeleton } from '../../components/DataSkeleton';
 
 const C = {
   forest: '#3B4A36',
@@ -92,7 +93,7 @@ export function ClassroomDetailPage() {
         </div>
       )}
 
-      {loading && <p className="text-sm py-6 text-center" style={{ color: C.muted }}>جارٍ التحميل…</p>}
+      {loading && <PageDataSkeleton />}
 
       {!loading && data && (
         <>
