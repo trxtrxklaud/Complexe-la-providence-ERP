@@ -1,0 +1,45 @@
+# توحيد نهايات الأسطر: LF داخل المستودع وفي نسخة العمل
+# يمنع أن يظهر الملف كلّه مُعدّلاً عند الانتقال بين ويندوز ولينكس/أندرويد
+* text=auto eol=lf
+
+# ملفات نصية صريحة
+*.php text eol=lf
+*.blade.php text eol=lf
+*.ts text eol=lf
+*.tsx text eol=lf
+*.js text eol=lf
+*.jsx text eol=lf
+*.css text eol=lf
+*.html text eol=lf
+*.json text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.md text eol=lf
+*.xml text eol=lf
+*.env.example text eol=lf
+.gitignore text eol=lf
+.gitattributes text eol=lf
+
+# سكربتات القشرة: LF إلزامي وإلا فشلت على الخوادم
+*.sh text eol=lf
+artisan text eol=lf
+
+# ملفات ثنائية: لا تُمسّ أبداً
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.svg binary
+*.pdf binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.eot binary
+*.zip binary
+*.sqlite binary
+*.sqlite3 binary
+
+# ملفات لا تفيد في مراجعة الفوارق
+composer.lock -diff
+package-lock.json -diff

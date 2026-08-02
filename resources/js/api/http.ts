@@ -111,6 +111,11 @@ export async function apiFetch<T>(path: string, options: RequestOptions = {}): P
   const payload = await response.json().catch(() => null);
 
   if (!response.ok) {
+    if (response.status === 401 && path !== '/api/login') {
+      setToken(null);
+      window.location.href = '/login';
+    }
+
     const message =
       (payload && typeof payload === 'object' && 'message' in payload
         ? String((payload as { message?: unknown }).message ?? '')

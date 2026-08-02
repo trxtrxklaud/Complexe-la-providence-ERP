@@ -1,5 +1,7 @@
 <?php
+
 namespace App\Services;
+
 use App\Models\User;
 use Illuminate\Support\Facades\Hash;
 
@@ -9,27 +11,47 @@ class UserService
     {
         return User::with('role')->latest()->paginate($perPage);
     }
+
     public function createUser(array $data): User
     {
         $data['password'] = Hash::make($data['password']);
+
         return User::create($data)->load('role');
     }
+
     public function getUser(User $user): User
     {
         return $user->load('role');
     }
+
     public function updateUser(User $user, array $data): User
     {
-        if (!empty($data['password'])) {
-            $data['password'] = Hash::make($data['password']);
+        $passwordChanged = false;
+        $deactivated = array_key_exists('is_active', $data) && ! (bool) $data['is_active'];
+
+        if (! empty($data['password'])) {
+            if (Hash::check($data['password'], $user->password)) {
+                unset($data['password']);
+            } else {
+                $data['password'] = Hash::make($data['password']);
+                $passwordChanged = true;
+            }
         } else {
             unset($data['password']);
         }
+
         $user->update($data);
+
+        if ($passwordChanged || $deactivated) {
+            $user->tokens()->delete();
+        }
+
         return $user->fresh('role');
     }
+
     public function deleteUser(User $user): void
     {
+        $user->tokens()->delete();
         $user->delete();
     }
 }

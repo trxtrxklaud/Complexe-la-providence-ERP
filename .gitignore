@@ -1,4 +1,4 @@
-# ── Environment ─────────────────────────────
+# ── Environment ────────────────────────
 .env
 .env.local
 .env.*.local
@@ -9,16 +9,20 @@
 .env.old
 auth.json
 
-# ── Dependencies ───────────────────────────
+# ── Dependencies ─────────────────────
 /node_modules
 /vendor
 
-# ── Build output ───────────────────────────
+# ── Build output ─────────────────────
 /public/build
 /public/hot
 /public/storage
 
-# ── Storage / runtime ───────────────────────
+# ── Framework cache (مولّدة محليّاً — لا تُلتزم أبداً) ──────────
+# إن التُزِمت، وجد أي جهاز قائمة مزوّدين مطبوخة على جهاز آخر فأخفق الإقلاع
+/bootstrap/cache/*.php
+
+# ── Storage / runtime ───────────────────
 /storage/*.key
 /storage/framework/cache/*
 /storage/framework/sessions/*
@@ -39,18 +43,18 @@ auth.json
 /database/backup-*.sqlite
 /providence
 
-# ── Archives ──────────────────────────────
+# ── Archives ────────────────────────
 *.zip
 *.tar.gz
 
-# ── IDE / OS ──────────────────────────────
+# ── IDE / OS ────────────────────────
 .idea
 .vscode
 *.swp
 .DS_Store
 Thumbs.db
 
-# ── Logs / misc ────────────────────────────
+# ── Logs / misc ───────────────────────
 npm-debug.log
 yarn-error.log
 *.log
