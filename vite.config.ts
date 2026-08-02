@@ -22,6 +22,30 @@ export default defineConfig({
             '@': '/resources/js',
         },
     },
+    build: {
+        rollupOptions: {
+            output: {
+                manualChunks(id) {
+                    if (!id.includes('node_modules')) return;
+
+                    if (
+                        id.includes('/react/')
+                        || id.includes('/react-dom/')
+                        || id.includes('/react-router-dom/')
+                        || id.includes('/react-router/')
+                    ) {
+                        return 'react-vendor';
+                    }
+
+                    if (id.includes('/lucide-react/')) {
+                        return 'icons-vendor';
+                    }
+
+                    return 'vendor';
+                },
+            },
+        },
+    },
     server: {
         host: devHost,
         watch: {
