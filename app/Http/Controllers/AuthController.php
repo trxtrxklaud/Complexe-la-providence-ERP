@@ -26,7 +26,7 @@ class AuthController extends Controller
         ], 401);
     }
 
-    if (isset($user->is_active) && !$user->is_active) {
+    if (! $user->is_active) {
         return response()->json([
             'message' => 'هذا الحساب موقوف، تواصل مع المسؤول'
         ], 403);
