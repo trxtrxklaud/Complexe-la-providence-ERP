@@ -61,6 +61,37 @@ class UserPrivilegeEscalationTest extends TestCase
             ->assertCreated();
     }
 
+    public function test_last_active_super_user_cannot_be_disabled(): void
+    {
+        $adminRole = $this->createRole('admin');
+        $admin = $this->createUser($adminRole, 'admin');
+        $manager = $this->createManager();
+        Sanctum::actingAs($manager);
+
+        $payload = $this->userPayload($manager->role_id, $admin);
+        $payload['is_active'] = false;
+
+        $this->putJson("/api/users/{$admin->id}", $payload)
+            ->assertUnprocessable()
+            ->assertJsonPath('message', 'لا يمكن حذف أو تعطيل آخر حساب مدير في النظام.');
+
+        $this->assertTrue($admin->fresh()->is_active);
+    }
+
+    public function test_last_active_super_user_cannot_be_deleted(): void
+    {
+        $adminRole = $this->createRole('admin');
+        $admin = $this->createUser($adminRole, 'admin');
+        $manager = $this->createManager();
+        Sanctum::actingAs($manager);
+
+        $this->deleteJson("/api/users/{$admin->id}")
+            ->assertUnprocessable()
+            ->assertJsonPath('message', 'لا يمكن حذف أو تعطيل آخر حساب مدير في النظام.');
+
+        $this->assertDatabaseHas('users', ['id' => $admin->id]);
+    }
+
     private function createManager(): User
     {
         $role = $this->createRole('manager');
