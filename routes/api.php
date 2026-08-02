@@ -25,7 +25,7 @@ use App\Http\Controllers\TreasuryWithdrawalController;
 Route::middleware('throttle:5,1')->post('/login', [AuthController::class, 'login']);
 
 // كل المسارات المصادَق عليها تمرّ بـ active فيمنع أي حساب معطَل من الوصول.
-Route::middleware(['auth:sanctum', 'active'])->group(function () {
+Route::middleware(['auth:sanctum', 'active', 'throttle:120,1'])->group(function () {
     Route::post('/logout', [AuthController::class, 'logout']);
     Route::get('/user',    [AuthController::class, 'user']);
     Route::get('/dashboard', [DashboardController::class, 'index']);
