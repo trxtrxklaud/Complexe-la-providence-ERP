@@ -61,6 +61,21 @@ class UserPrivilegeEscalationTest extends TestCase
             ->assertCreated();
     }
 
+    public function test_user_password_requires_ten_characters_with_letters_and_numbers(): void
+    {
+        $adminRole = $this->createRole('admin');
+        $admin = $this->createUser($adminRole, 'admin');
+        Sanctum::actingAs($admin);
+
+        $payload = $this->userPayload($adminRole->id);
+        $payload['password'] = 'short123';
+        $payload['password_confirmation'] = 'short123';
+
+        $this->postJson('/api/users', $payload)
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['password']);
+    }
+
     public function test_last_active_super_user_cannot_be_disabled(): void
     {
         $adminRole = $this->createRole('admin');
@@ -134,8 +149,8 @@ class UserPrivilegeEscalationTest extends TestCase
             'username' => $user?->username ?? 'new_user',
             'email' => $user?->email ?? 'new@example.test',
             'phone' => null,
-            'password' => $user ? null : 'secret123',
-            'password_confirmation' => $user ? null : 'secret123',
+            'password' => $user ? null : 'Secret12345',
+            'password_confirmation' => $user ? null : 'Secret12345',
             'role_id' => $roleId,
             'is_active' => true,
         ];

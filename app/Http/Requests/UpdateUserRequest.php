@@ -5,6 +5,7 @@ namespace App\Http\Requests;
 use App\Models\Role;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\Rules\Password;
 use Illuminate\Validation\Validator;
 
 class UpdateUserRequest extends FormRequest
@@ -24,7 +25,7 @@ class UpdateUserRequest extends FormRequest
             'username' => ['required', 'string', 'max:255', Rule::unique('users')->ignore($userId)],
             'email' => ['required', 'string', 'email', 'max:255', Rule::unique('users')->ignore($userId)],
             'phone' => 'nullable|string|max:20',
-            'password' => 'nullable|string|min:8|confirmed',
+            'password' => ['nullable', 'string', Password::min(10)->letters()->numbers(), 'confirmed'],
             'role_id' => 'required|exists:roles,id',
             'is_active' => 'boolean',
         ];
