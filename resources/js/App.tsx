@@ -1,44 +1,43 @@
-import React from 'react';
+import React, { lazy, Suspense } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { Sidebar } from './components/Sidebar';
-import { UsersList } from './pages/Users/UsersList';
-import { UserForm } from './pages/Users/UserForm';
 import { Login } from './pages/Login';
 import { AuthProvider } from './contexts/AuthContext';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { StudentsDashboard } from './pages/Students/StudentsDashboard';
 import { EnrollWizard } from './pages/Students/EnrollWizard';
-import { NewStudentWizard } from './pages/Students/NewStudentWizard';
-import { OldStudentReenroll } from './pages/Students/OldStudentReenroll';
 import Dashboard from './pages/Dashboard/Dashboard';
-import { FeeTypesPage } from './pages/FeeTypes/FeeTypesPage';
-import { EmployeesPage } from './pages/Employees/EmployeesPage';
-import { CollectionPage } from './pages/Payments/CollectionPage';
-import { HistoriquePage } from './pages/Payments/HistoriquePage';
-import { ClassroomsPage } from './pages/Classrooms/ClassroomsPage';
-import { RosterPage } from './pages/Classrooms/RosterPage';
-// ─── الأقسام المالية ───
-import { IncomeLayout } from './pages/Income/IncomeLayout';
-import { IncomeByDatePage } from './pages/Income/IncomeByDatePage';
-import { StudentRevenuePage } from './pages/Income/StudentRevenuePage';
-import { StudentDetailPage } from './pages/Income/StudentDetailPage';
-import { RevenueByClassroomPage } from './pages/Income/RevenueByClassroomPage';
-import { ClassroomDetailPage } from './pages/Income/ClassroomDetailPage';
-import { RevenueByYearPage } from './pages/Income/RevenueByYearPage';
-import { ExpensesLayout } from './pages/Expenses/ExpensesLayout';
-import { ExpenseCreatePage } from './pages/Expenses/ExpenseCreatePage';
-import { ExpenseDailyReportPage } from './pages/Expenses/ExpenseDailyReportPage';
-import { ExpenseMonthlyReportPage } from './pages/Expenses/ExpenseMonthlyReportPage';
-import { ExpenseYearlyReportPage } from './pages/Expenses/ExpenseYearlyReportPage';
-import { TreasuryLayout } from './pages/Treasury/TreasuryLayout';
-import { TreasuryDaybookPage } from './pages/Treasury/TreasuryDaybookPage';
-import { TreasuryHistoryPage } from './pages/Treasury/TreasuryHistoryPage';
-import { TreasuryWithdrawalsPage } from './pages/Treasury/TreasuryWithdrawalsPage';
-// ─── الدخل الصافي — موديول مستقل ───
-import { NetIncomeLayout } from './pages/NetIncome/NetIncomeLayout';
-import { NetIncomeDailyPage } from './pages/NetIncome/NetIncomeDailyPage';
-import { NetRevenueMonthlyPage } from './pages/NetIncome/NetRevenueMonthlyPage';
-import { NetRevenueYearlyPage } from './pages/NetIncome/NetRevenueYearlyPage';
+
+const UsersList = lazy(() => import('./pages/Users/UsersList').then((module) => ({ default: module.UsersList })));
+const UserForm = lazy(() => import('./pages/Users/UserForm').then((module) => ({ default: module.UserForm })));
+const NewStudentWizard = lazy(() => import('./pages/Students/NewStudentWizard').then((module) => ({ default: module.NewStudentWizard })));
+const OldStudentReenroll = lazy(() => import('./pages/Students/OldStudentReenroll').then((module) => ({ default: module.OldStudentReenroll })));
+const FeeTypesPage = lazy(() => import('./pages/FeeTypes/FeeTypesPage').then((module) => ({ default: module.FeeTypesPage })));
+const EmployeesPage = lazy(() => import('./pages/Employees/EmployeesPage').then((module) => ({ default: module.EmployeesPage })));
+const CollectionPage = lazy(() => import('./pages/Payments/CollectionPage').then((module) => ({ default: module.CollectionPage })));
+const HistoriquePage = lazy(() => import('./pages/Payments/HistoriquePage').then((module) => ({ default: module.HistoriquePage })));
+const ClassroomsPage = lazy(() => import('./pages/Classrooms/ClassroomsPage').then((module) => ({ default: module.ClassroomsPage })));
+const RosterPage = lazy(() => import('./pages/Classrooms/RosterPage').then((module) => ({ default: module.RosterPage })));
+const IncomeLayout = lazy(() => import('./pages/Income/IncomeLayout').then((module) => ({ default: module.IncomeLayout })));
+const IncomeByDatePage = lazy(() => import('./pages/Income/IncomeByDatePage').then((module) => ({ default: module.IncomeByDatePage })));
+const StudentRevenuePage = lazy(() => import('./pages/Income/StudentRevenuePage').then((module) => ({ default: module.StudentRevenuePage })));
+const StudentDetailPage = lazy(() => import('./pages/Income/StudentDetailPage').then((module) => ({ default: module.StudentDetailPage })));
+const RevenueByClassroomPage = lazy(() => import('./pages/Income/RevenueByClassroomPage').then((module) => ({ default: module.RevenueByClassroomPage })));
+const ClassroomDetailPage = lazy(() => import('./pages/Income/ClassroomDetailPage').then((module) => ({ default: module.ClassroomDetailPage })));
+const RevenueByYearPage = lazy(() => import('./pages/Income/RevenueByYearPage').then((module) => ({ default: module.RevenueByYearPage })));
+const ExpensesLayout = lazy(() => import('./pages/Expenses/ExpensesLayout').then((module) => ({ default: module.ExpensesLayout })));
+const ExpenseCreatePage = lazy(() => import('./pages/Expenses/ExpenseCreatePage').then((module) => ({ default: module.ExpenseCreatePage })));
+const ExpenseDailyReportPage = lazy(() => import('./pages/Expenses/ExpenseDailyReportPage').then((module) => ({ default: module.ExpenseDailyReportPage })));
+const ExpenseMonthlyReportPage = lazy(() => import('./pages/Expenses/ExpenseMonthlyReportPage').then((module) => ({ default: module.ExpenseMonthlyReportPage })));
+const ExpenseYearlyReportPage = lazy(() => import('./pages/Expenses/ExpenseYearlyReportPage').then((module) => ({ default: module.ExpenseYearlyReportPage })));
+const TreasuryLayout = lazy(() => import('./pages/Treasury/TreasuryLayout').then((module) => ({ default: module.TreasuryLayout })));
+const TreasuryDaybookPage = lazy(() => import('./pages/Treasury/TreasuryDaybookPage').then((module) => ({ default: module.TreasuryDaybookPage })));
+const TreasuryHistoryPage = lazy(() => import('./pages/Treasury/TreasuryHistoryPage').then((module) => ({ default: module.TreasuryHistoryPage })));
+const TreasuryWithdrawalsPage = lazy(() => import('./pages/Treasury/TreasuryWithdrawalsPage').then((module) => ({ default: module.TreasuryWithdrawalsPage })));
+const NetIncomeLayout = lazy(() => import('./pages/NetIncome/NetIncomeLayout').then((module) => ({ default: module.NetIncomeLayout })));
+const NetIncomeDailyPage = lazy(() => import('./pages/NetIncome/NetIncomeDailyPage').then((module) => ({ default: module.NetIncomeDailyPage })));
+const NetRevenueMonthlyPage = lazy(() => import('./pages/NetIncome/NetRevenueMonthlyPage').then((module) => ({ default: module.NetRevenueMonthlyPage })));
+const NetRevenueYearlyPage = lazy(() => import('./pages/NetIncome/NetRevenueYearlyPage').then((module) => ({ default: module.NetRevenueYearlyPage })));
 
 function Layout({ children }: { children: React.ReactNode }) {
     return (
@@ -58,7 +57,8 @@ export default function App() {
     return (
         <AuthProvider>
             <BrowserRouter>
-                <Routes>
+                <Suspense fallback={<div className="p-6 text-center text-slate-500">جاري تحميل الصفحة...</div>}>
+                    <Routes>
                     <Route path="/login" element={<Login />} />
 
                     <Route path="/" element={
@@ -208,7 +208,8 @@ export default function App() {
                     } />
 
                     <Route path="*" element={<Navigate to="/" replace />} />
-                </Routes>
+                    </Routes>
+                </Suspense>
             </BrowserRouter>
         </AuthProvider>
     );

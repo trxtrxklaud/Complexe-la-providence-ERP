@@ -9,9 +9,12 @@
     <title>{{ config('app.name', 'مدرسة العناية') }}</title>
     
     <!-- Vite -->
+    @viteReactRefresh
     @vite(['resources/js/main.tsx', 'resources/css/app.css'])
 </head>
 <body>
     <div id="root"></div>
 </body>
 </html>
+
+
