@@ -123,8 +123,8 @@ export function Sidebar() {
                     </>
                 )}
 
-                {/* أنواع المعاليم — manage_payments مطابقةً للـ backend لا manage_users */}
-                {hasPermission('manage_payments') && (
+                {/* أنواع المعاليم — القراءة للاستخلاص، والتعديل لإدارة المستخدمين */}
+                {hasPermission('manage_users') && (
                     <NavLink
                         to="/fee-types"
                         className={({ isActive }) => linkClass(isActive || startsWith('/fee-types'))}

@@ -99,6 +99,7 @@ Route::middleware(['auth:sanctum', 'active'])->group(function () {
     Route::middleware('permission:manage_users')->group(function () {
         Route::get('/roles', [UserController::class, 'roles']);
         Route::apiResource('/users', UserController::class);
+        Route::apiResource('/fee-types', FeeTypeController::class)->except(['index']);
     });
 
     // School structure — المستويات والأقسام
@@ -137,7 +138,7 @@ Route::middleware(['auth:sanctum', 'active'])->group(function () {
     Route::middleware('permission:manage_payments')->group(function () {
         Route::apiResource('/payments', PaymentController::class)->except(['update', 'destroy']);
         Route::post('/payments/{payment}/cancel', [PaymentController::class, 'cancel']);
-        Route::apiResource('/fee-types', FeeTypeController::class);
+        Route::get('/fee-types', [FeeTypeController::class, 'index']);
 
         Route::get('/collection/years', [CollectionController::class, 'years']);
         Route::get('/collection/years/{year}/sections', [CollectionController::class, 'sectionsByYear']);
