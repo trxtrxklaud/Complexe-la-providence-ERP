@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { AlertCircle } from 'lucide-react';
+import { AlertCircle, RefreshCw } from 'lucide-react';
 import { fetchNetIncome, type NetIncomeReport } from '../../api/reports';
 import { errorMessage, today } from '../../lib/format';
 import { PageDataSkeleton } from '../../components/DataSkeleton';
@@ -14,17 +14,21 @@ import {
 
 /**
  * الدخل الصافي اليومي — كشف يومي بتراكمي من بداية السجل حتّى التاريخ المختار
- * (تاريخ + خانة «عرض التفاصيل» + طباعة، ثم جدول بعمودين).
+ * (تاريخ + خانة «عرض التفاصيل» + تحديث + طباعة، ثم جدول بعمودين).
  *
  * الكشف التراكمي موضوع أسفل كشف اليوم لأنّ الإدارة تحتاج رقم اليوم ورصيد
  * الصندوق المتراكم في نفس النظرة، وفصلهما في صفحتين يُخفي الأثر الفوري لحركة اليوم.
  *
  * العمودان قراءتان لنفس دالة الخادم: الأولى ليوم واحد والثانية من بداية
  * السجلّ إلى ذلك اليوم، فيستحيل أن يختلف منطق اليومي عن منطق التراكمي.
+ *
+ * زرّ التحديث ليس زينة: الكشف لا يُعيد الجلب إلا عند تغيّر التاريخ أو الخانة،
+ * فمن ترك الصفحة مفتوحة ثم سجّل دفعة في نافذة أخرى كان يرى أرقاماً قديمة ويظنّ المال ضائعاً.
  */
 export function NetIncomeDailyPage() {
   const [date, setDate] = useState(today());
   const [showDetails, setShowDetails] = useState(true);
+  const [reloadKey, setReloadKey] = useState(0);
   const [data, setData] = useState<NetIncomeReport | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -49,11 +53,12 @@ export function NetIncomeDailyPage() {
       });
 
     return () => controller.abort();
-  }, [date, showDetails]);
+  }, [date, showDetails, reloadKey]);
 
   const details = (data?.details ?? []) as DetailLine[];
   const incomeDetails = details.filter((line) => line.direction === 'in');
   const expenseDetails = details.filter((line) => line.direction === 'out');
+  const isToday = date === today();
 
   return (
     <div className="px-6 pb-10" dir="rtl">
@@ -61,25 +66,58 @@ export function NetIncomeDailyPage() {
 
       <FilterBar>
         <div>
-          <label className="block text-sm mb-1" style={{ color: C.muted }}>
+          <label htmlFor="net_daily_date" className="block text-sm mb-1" style={{ color: C.muted }}>
             التاريخ
           </label>
           <input
+            id="net_daily_date"
+            name="net_daily_date"
             type="date"
+            autoComplete="off"
             value={date}
             onChange={(e) => setDate(e.target.value)}
+            aria-describedby="net_daily_date_hint"
             className="rounded-xl px-3 py-2 text-sm"
             style={{ border: `1px solid ${C.line}`, color: C.ink }}
           />
         </div>
-        <label className="flex items-center gap-2 text-sm pb-2" style={{ color: C.ink }}>
+
+        <label htmlFor="net_daily_details" className="flex items-center gap-2 text-sm pb-2" style={{ color: C.ink }}>
           <input
+            id="net_daily_details"
+            name="net_daily_details"
             type="checkbox"
             checked={showDetails}
             onChange={(e) => setShowDetails(e.target.checked)}
           />
           عرض التفاصيل
         </label>
+
+        <button
+          type="button"
+          onClick={() => setReloadKey((key) => key + 1)}
+          disabled={loading}
+          className="flex items-center gap-2 rounded-xl px-4 py-2 text-sm disabled:opacity-60"
+          style={{ border: `1px solid ${C.line}`, color: C.ink, backgroundColor: '#FFFFFF' }}
+        >
+          <RefreshCw size={16} />
+          تحديث
+        </button>
+
+        {!isToday && (
+          <button
+            type="button"
+            onClick={() => setDate(today())}
+            className="rounded-xl px-4 py-2 text-sm"
+            style={{ border: `1px solid ${C.line}`, color: C.forest, backgroundColor: C.sage }}
+          >
+            اليوم
+          </button>
+        )}
+
+        <p id="net_daily_date_hint" className="w-full text-xs" style={{ color: C.muted }}>
+          الكشف يتبع تاريخ الدفع المُدوّن في الوصل، لا تاريخ إدخاله في المنصة. بعد تسجيل دفعة جديدة اضغط «تحديث».
+        </p>
       </FilterBar>
 
       {error && (
