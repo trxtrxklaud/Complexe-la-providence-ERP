@@ -7,43 +7,83 @@ import { ProtectedRoute } from './components/ProtectedRoute';
 import { StudentsDashboard } from './pages/Students/StudentsDashboard';
 import { EnrollWizard } from './pages/Students/EnrollWizard';
 import Dashboard from './pages/Dashboard/Dashboard';
+import { IncomeLayout } from './pages/Income/IncomeLayout';
+import { ExpensesLayout } from './pages/Expenses/ExpensesLayout';
+import { TreasuryLayout } from './pages/Treasury/TreasuryLayout';
+import { NetIncomeLayout } from './pages/NetIncome/NetIncomeLayout';
+import {
+    loadClassroomsPage,
+    loadCollectionPage,
+    loadEmployeesPage,
+    loadExpenseCreatePage,
+    loadFeeTypesPage,
+    loadHistoriquePage,
+    loadNetIncomeDailyPage,
+    loadRosterPage,
+    loadTreasuryDaybookPage,
+    loadUsersList,
+} from './routeLoaders';
 
-const UsersList = lazy(() => import('./pages/Users/UsersList').then((module) => ({ default: module.UsersList })));
+const UsersList = lazy(() => loadUsersList().then((module) => ({ default: module.UsersList })));
 const UserForm = lazy(() => import('./pages/Users/UserForm').then((module) => ({ default: module.UserForm })));
 const NewStudentWizard = lazy(() => import('./pages/Students/NewStudentWizard').then((module) => ({ default: module.NewStudentWizard })));
 const OldStudentReenroll = lazy(() => import('./pages/Students/OldStudentReenroll').then((module) => ({ default: module.OldStudentReenroll })));
-const FeeTypesPage = lazy(() => import('./pages/FeeTypes/FeeTypesPage').then((module) => ({ default: module.FeeTypesPage })));
-const EmployeesPage = lazy(() => import('./pages/Employees/EmployeesPage').then((module) => ({ default: module.EmployeesPage })));
-const CollectionPage = lazy(() => import('./pages/Payments/CollectionPage').then((module) => ({ default: module.CollectionPage })));
-const HistoriquePage = lazy(() => import('./pages/Payments/HistoriquePage').then((module) => ({ default: module.HistoriquePage })));
-const ClassroomsPage = lazy(() => import('./pages/Classrooms/ClassroomsPage').then((module) => ({ default: module.ClassroomsPage })));
-const RosterPage = lazy(() => import('./pages/Classrooms/RosterPage').then((module) => ({ default: module.RosterPage })));
-const IncomeLayout = lazy(() => import('./pages/Income/IncomeLayout').then((module) => ({ default: module.IncomeLayout })));
+const StudentSearchPage = lazy(() => import('./pages/Students/StudentSearchPage').then((module) => ({ default: module.StudentSearchPage })));
+const StudentDetailsPage = lazy(() => import('./pages/Students/StudentDetailsPage').then((module) => ({ default: module.StudentDetailsPage })));
+const StudentTransferPage = lazy(() => import('./pages/Students/StudentTransferPage').then((module) => ({ default: module.StudentTransferPage })));
+const FeeTypesPage = lazy(() => loadFeeTypesPage().then((module) => ({ default: module.FeeTypesPage })));
+const EmployeesPage = lazy(() => loadEmployeesPage().then((module) => ({ default: module.EmployeesPage })));
+const CollectionPage = lazy(() => loadCollectionPage().then((module) => ({ default: module.CollectionPage })));
+const HistoriquePage = lazy(() => loadHistoriquePage().then((module) => ({ default: module.HistoriquePage })));
+const ClassroomsPage = lazy(() => loadClassroomsPage().then((module) => ({ default: module.ClassroomsPage })));
+const RosterPage = lazy(() => loadRosterPage().then((module) => ({ default: module.RosterPage })));
 const IncomeByDatePage = lazy(() => import('./pages/Income/IncomeByDatePage').then((module) => ({ default: module.IncomeByDatePage })));
 const StudentRevenuePage = lazy(() => import('./pages/Income/StudentRevenuePage').then((module) => ({ default: module.StudentRevenuePage })));
 const StudentDetailPage = lazy(() => import('./pages/Income/StudentDetailPage').then((module) => ({ default: module.StudentDetailPage })));
 const RevenueByClassroomPage = lazy(() => import('./pages/Income/RevenueByClassroomPage').then((module) => ({ default: module.RevenueByClassroomPage })));
 const ClassroomDetailPage = lazy(() => import('./pages/Income/ClassroomDetailPage').then((module) => ({ default: module.ClassroomDetailPage })));
 const RevenueByYearPage = lazy(() => import('./pages/Income/RevenueByYearPage').then((module) => ({ default: module.RevenueByYearPage })));
-const ExpensesLayout = lazy(() => import('./pages/Expenses/ExpensesLayout').then((module) => ({ default: module.ExpensesLayout })));
-const ExpenseCreatePage = lazy(() => import('./pages/Expenses/ExpenseCreatePage').then((module) => ({ default: module.ExpenseCreatePage })));
+const UnpaidMonthlyReportPage = lazy(() => import('./pages/Income/UnpaidMonthlyReportPage').then((module) => ({ default: module.UnpaidMonthlyReportPage })));
+const ExpenseCreatePage = lazy(() => loadExpenseCreatePage().then((module) => ({ default: module.ExpenseCreatePage })));
 const ExpenseDailyReportPage = lazy(() => import('./pages/Expenses/ExpenseDailyReportPage').then((module) => ({ default: module.ExpenseDailyReportPage })));
 const ExpenseMonthlyReportPage = lazy(() => import('./pages/Expenses/ExpenseMonthlyReportPage').then((module) => ({ default: module.ExpenseMonthlyReportPage })));
 const ExpenseYearlyReportPage = lazy(() => import('./pages/Expenses/ExpenseYearlyReportPage').then((module) => ({ default: module.ExpenseYearlyReportPage })));
-const TreasuryLayout = lazy(() => import('./pages/Treasury/TreasuryLayout').then((module) => ({ default: module.TreasuryLayout })));
-const TreasuryDaybookPage = lazy(() => import('./pages/Treasury/TreasuryDaybookPage').then((module) => ({ default: module.TreasuryDaybookPage })));
+const TreasuryDaybookPage = lazy(() => loadTreasuryDaybookPage().then((module) => ({ default: module.TreasuryDaybookPage })));
 const TreasuryHistoryPage = lazy(() => import('./pages/Treasury/TreasuryHistoryPage').then((module) => ({ default: module.TreasuryHistoryPage })));
 const TreasuryWithdrawalsPage = lazy(() => import('./pages/Treasury/TreasuryWithdrawalsPage').then((module) => ({ default: module.TreasuryWithdrawalsPage })));
-const NetIncomeLayout = lazy(() => import('./pages/NetIncome/NetIncomeLayout').then((module) => ({ default: module.NetIncomeLayout })));
-const NetIncomeDailyPage = lazy(() => import('./pages/NetIncome/NetIncomeDailyPage').then((module) => ({ default: module.NetIncomeDailyPage })));
+const NetIncomeDailyPage = lazy(() => loadNetIncomeDailyPage().then((module) => ({ default: module.NetIncomeDailyPage })));
 const NetRevenueMonthlyPage = lazy(() => import('./pages/NetIncome/NetRevenueMonthlyPage').then((module) => ({ default: module.NetRevenueMonthlyPage })));
 const NetRevenueYearlyPage = lazy(() => import('./pages/NetIncome/NetRevenueYearlyPage').then((module) => ({ default: module.NetRevenueYearlyPage })));
+
+function RouteContentSkeleton() {
+    return (
+        <div className="p-6 md:p-8 animate-pulse" aria-label="جاري تحميل المحتوى" role="status">
+            <div className="max-w-6xl mx-auto space-y-6">
+                <div className="flex items-center gap-4">
+                    <div className="h-12 w-12 rounded-2xl bg-[#DCE5D5]" />
+                    <div className="space-y-2">
+                        <div className="h-5 w-44 rounded bg-slate-300/70" />
+                        <div className="h-3 w-64 rounded bg-slate-200" />
+                    </div>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div className="h-28 rounded-2xl bg-white/80 border border-white" />
+                    <div className="h-28 rounded-2xl bg-white/80 border border-white" />
+                    <div className="h-28 rounded-2xl bg-white/80 border border-white" />
+                </div>
+                <div className="h-72 rounded-2xl bg-white/80 border border-white" />
+            </div>
+        </div>
+    );
+}
 
 function Layout({ children }: { children: React.ReactNode }) {
     return (
         <div className="flex min-h-screen" style={{ backgroundColor: '#E9EEE3' }}>
             <Sidebar />
-            <main className="flex-1 overflow-x-hidden">{children}</main>
+            <main className="flex-1 overflow-x-hidden">
+                <Suspense fallback={<RouteContentSkeleton />}>{children}</Suspense>
+            </main>
         </div>
     );
 }
@@ -57,8 +97,7 @@ export default function App() {
     return (
         <AuthProvider>
             <BrowserRouter>
-                <Suspense fallback={<div className="p-6 text-center text-slate-500">جاري تحميل الصفحة...</div>}>
-                    <Routes>
+                <Routes>
                     <Route path="/login" element={<Login />} />
 
                     <Route path="/" element={
@@ -88,6 +127,21 @@ export default function App() {
                     <Route path="/students/enroll/old" element={
                         <ProtectedRoute permission="manage_students">
                             <Layout><OldStudentReenroll /></Layout>
+                        </ProtectedRoute>
+                    } />
+                    <Route path="/students/search" element={
+                        <ProtectedRoute permission="manage_students">
+                            <Layout><StudentSearchPage /></Layout>
+                        </ProtectedRoute>
+                    } />
+                    <Route path="/students/search/:studentId" element={
+                        <ProtectedRoute permission="manage_students">
+                            <Layout><StudentDetailsPage /></Layout>
+                        </ProtectedRoute>
+                    } />
+                    <Route path="/students/transfer" element={
+                        <ProtectedRoute permission="manage_students">
+                            <Layout><StudentTransferPage /></Layout>
                         </ProtectedRoute>
                     } />
 
@@ -145,6 +199,7 @@ export default function App() {
                         {/* صفحة قسم واحد — حفر من جدول الأقسام */}
                         <Route path="by-classroom/:sectionId" element={<ClassroomDetailPage />} />
                         <Route path="by-year" element={<RevenueByYearPage />} />
+                        <Route path="unpaid-monthly" element={<ProtectedRoute permission="view_reports"><UnpaidMonthlyReportPage /></ProtectedRoute>} />
                     </Route>
 
                     {/* ═══ المصاريف ═══
@@ -208,8 +263,7 @@ export default function App() {
                     } />
 
                     <Route path="*" element={<Navigate to="/" replace />} />
-                    </Routes>
-                </Suspense>
+                </Routes>
             </BrowserRouter>
         </AuthProvider>
     );

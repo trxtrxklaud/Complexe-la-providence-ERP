@@ -1,0 +1,10 @@
+export const loadUsersList = () => import('./pages/Users/UsersList');
+export const loadClassroomsPage = () => import('./pages/Classrooms/ClassroomsPage');
+export const loadRosterPage = () => import('./pages/Classrooms/RosterPage');
+export const loadFeeTypesPage = () => import('./pages/FeeTypes/FeeTypesPage');
+export const loadCollectionPage = () => import('./pages/Payments/CollectionPage');
+export const loadExpenseCreatePage = () => import('./pages/Expenses/ExpenseCreatePage');
+export const loadTreasuryDaybookPage = () => import('./pages/Treasury/TreasuryDaybookPage');
+export const loadNetIncomeDailyPage = () => import('./pages/NetIncome/NetIncomeDailyPage');
+export const loadHistoriquePage = () => import('./pages/Payments/HistoriquePage');
+export const loadEmployeesPage = () => import('./pages/Employees/EmployeesPage');

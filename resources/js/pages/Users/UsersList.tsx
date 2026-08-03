@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { fetchUsers, deleteUser, User } from '../../api/users';
 import { useAuth } from '../../contexts/AuthContext';
 import { Plus, Edit2, Trash2, AlertCircle } from 'lucide-react';
+import { TableRowsSkeleton } from '../../components/DataSkeleton';
 
 const C = {
     forest: '#3B4A36',
@@ -97,11 +98,7 @@ export function UsersList() {
                         </thead>
                         <tbody>
                             {loading ? (
-                                <tr>
-                                    <td colSpan={colSpan} className="px-6 py-12 text-center" style={{ color: C.muted }}>
-                                        جاري التحميل...
-                                    </td>
-                                </tr>
+                                <TableRowsSkeleton columns={colSpan} />
                             ) : users.length === 0 ? (
                                 <tr>
                                     <td colSpan={colSpan} className="px-6 py-12 text-center" style={{ color: C.muted }}>

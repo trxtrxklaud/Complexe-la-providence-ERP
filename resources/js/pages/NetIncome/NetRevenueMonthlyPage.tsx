@@ -6,6 +6,7 @@ import {
   type NetPeriodReport,
 } from '../../api/netIncome';
 import { errorMessage, today } from '../../lib/format';
+import { PageDataSkeleton } from '../../components/DataSkeleton';
 import { C, FilterBar, NetReportTable, PrintHeader, PrintStyles } from './NetPeriodPanels';
 
 /** أسماء الأشهر بالاستعمال التونسي، مطابقة لما يستعمله CollectionService. */
@@ -136,9 +137,7 @@ export function NetRevenueMonthlyPage() {
       )}
 
       {loading && (
-        <p className="no-print text-sm py-6 text-center" style={{ color: C.muted }}>
-          جارٍ التحميل…
-        </p>
+        <div className="no-print"><PageDataSkeleton cards={2} rows={4} /></div>
       )}
 
       {!loading && !error && (

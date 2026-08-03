@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { AlertCircle, ChevronLeft, Layers } from 'lucide-react';
 import { fetchClassroomRevenue, type ClassroomRevenueReport } from '../../api/reports';
 import { errorMessage, money } from '../../lib/format';
+import { PageDataSkeleton } from '../../components/DataSkeleton';
 
 const C = {
   forest: '#3B4A36',
@@ -95,7 +96,7 @@ export function RevenueByClassroomPage() {
         </div>
       )}
 
-      {loading && <p className="text-sm py-6 text-center" style={{ color: C.muted }}>جارٍ التحميل…</p>}
+      {loading && <PageDataSkeleton />}
 
       {!loading && data && (
         <>

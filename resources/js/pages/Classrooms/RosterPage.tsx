@@ -12,6 +12,7 @@ import {
   type RosterStudent,
   type StudentEntry,
 } from '../../api/roster';
+import { PageDataSkeleton } from '../../components/DataSkeleton';
 
 const C = {
   forest: '#3B4A36',
@@ -430,7 +431,7 @@ export function RosterPage() {
 
         {/* Roster table */}
         {loading ? (
-          <p className="text-sm" style={{ color: C.muted }}>جارٍ التحميل…</p>
+          <PageDataSkeleton cards={2} />
         ) : !roster ? (
           <div className="bg-white rounded-2xl p-10 text-center" style={{ border: '1px solid ' + C.line }}>
             <p style={{ color: C.muted }}>اختر السنة والمستوى والقسم لعرض القائمة.</p>

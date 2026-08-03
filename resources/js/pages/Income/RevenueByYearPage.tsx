@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { AlertCircle, CalendarRange } from 'lucide-react';
 import { fetchYearRevenue, type YearRevenueReport } from '../../api/reports';
 import { errorMessage, money } from '../../lib/format';
+import { PageDataSkeleton } from '../../components/DataSkeleton';
 
 const C = {
   forest: '#3B4A36',
@@ -56,7 +57,7 @@ export function RevenueByYearPage() {
         </div>
       )}
 
-      {loading && <p className="text-sm py-6 text-center" style={{ color: C.muted }}>جارٍ التحميل…</p>}
+      {loading && <PageDataSkeleton cards={4} rows={4} />}
 
       {!loading && data && (
         <>

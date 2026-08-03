@@ -10,8 +10,10 @@ import {
   UserRound,
   Users,
 } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 import { fetchDashboard, type DashboardData } from '../../api/dashboard';
 import { errorMessage } from '../../lib/format';
+import { PageDataSkeleton } from '../../components/DataSkeleton';
 
 const C = {
   forest: '#3B4A36',
@@ -92,7 +94,7 @@ function KpiCard({
 }: {
   label: string;
   value: string | number;
-  icon: React.ComponentType<{ size?: number }>;
+  icon: LucideIcon;
   tint: string;
   iconColor: string;
   hint?: string;
@@ -178,9 +180,7 @@ export default function Dashboard() {
       )}
 
       {loading && (
-        <p className="text-sm py-6" style={{ color: C.muted }}>
-          جارٍ التحميل…
-        </p>
+        <PageDataSkeleton cards={4} rows={4} />
       )}
 
       {!loading && data && (

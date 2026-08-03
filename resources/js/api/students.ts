@@ -1,5 +1,5 @@
 import type { User } from '../types';
-import { API_BASE, getToken } from './http';
+import { apiFetch, API_BASE, getToken } from './http';
 
 export interface Guardian {
     first_name: string;
@@ -10,21 +10,94 @@ export interface Guardian {
 
 export interface Enrollment {
     id: number;
-    level: { name: string };
-    section: { name: string };
-    academicYear: { name: string };
+    level: { name: string } | null;
+    section: { name: string } | null;
+    academic_year?: { name: string } | null;
+    status?: string | null;
+}
+
+export interface EnrollmentResponse {
+    message: string;
+    enrollment: Enrollment;
 }
 
 export interface Student {
     id: number;
-    student_code: string;
+    student_code: string | null;
     first_name: string;
     last_name: string;
     gender: 'male' | 'female';
-    dob: string;
+    dob: string | null;
+    photo?: string | null;
+    notes?: string | null;
+    status?: string | null;
+    guardian_first_name?: string | null;
+    guardian_last_name?: string | null;
+    mother_name?: string | null;
+    guardian_phone?: string | null;
+    mother_phone?: string | null;
+    guardian_email?: string | null;
+    mother_email?: string | null;
+    address?: string | null;
     guardians: Guardian[];
     enrollments: Enrollment[];
 }
+
+export interface StudentPaymentHistoryEntry {
+    id: number;
+    amount: number | string;
+    payment_date: string | null;
+    months: string[];
+    method: string;
+    reference: string | null;
+    cancelled_at: string | null;
+    cancellation_reason: string | null;
+    enrollment: Enrollment | null;
+    allocations: Array<{
+        amount: number | string;
+        fee: {
+            id: number;
+            description: string | null;
+            amount_due: number | string;
+            due_date: string;
+            status: string;
+        } | null;
+    }>;
+}
+
+export type StudentSearchFilters = {
+    level?: string;
+    student_name?: string;
+    phone?: string;
+    birthday?: string;
+    year?: string;
+    cnte?: string;
+    per_page?: number;
+};
+
+export type StudentSearchOptions = {
+    levels: Array<{ id: number; label: string }>;
+    years: Array<{ id: number; name: string }>;
+};
+
+export type TransferStudent = {
+    id: number;
+    student_code: string | null;
+    first_name: string;
+    last_name: string;
+    dob: string | null;
+    gender: 'male' | 'female';
+    guardian_name: string;
+    mother_name: string | null;
+    phone: string | null;
+};
+
+export type TransferStudentsPayload = {
+    academic_year_id: number;
+    source_section_id: number;
+    destination_section_id: number;
+    student_ids: number[];
+};
 
 /** رؤوس بدون Content-Type: مطلوبة لطلبات FormData. */
 function authHeaders(): Record<string, string> {
@@ -35,12 +108,37 @@ function authHeaders(): Record<string, string> {
     };
 }
 
-export async function getStudents(): Promise<Student[]> {
-    const res = await fetch(`${API_BASE}/students`, { headers: authHeaders() });
-    if (!res.ok) throw new Error('حدث خطأ أثناء جلب قائمة التلاميذ');
-    const data = await res.json();
-    return data.data ?? data;
+export async function getStudents(filters: StudentSearchFilters = {}, signal?: AbortSignal): Promise<Student[]> {
+    const data = await apiFetch<Student[] | { data: Student[] }>('/students', {
+        params: filters,
+        signal,
+        fallbackMessage: 'حدث خطأ أثناء جلب قائمة التلاميذ',
+    });
+    return Array.isArray(data) ? data : data.data;
 }
+
+export const getStudentSearchOptions = (signal?: AbortSignal) =>
+    apiFetch<StudentSearchOptions>('/students/search-options', {
+        signal,
+        fallbackMessage: 'تعذّر تحميل خيارات البحث',
+    });
+
+export const getTransferStudents = (
+    academicYearId: number,
+    sectionId: number,
+    signal?: AbortSignal,
+) => apiFetch<{ students: TransferStudent[] }>('/students/transfer-roster', {
+    params: { academic_year_id: academicYearId, section_id: sectionId },
+    signal,
+    fallbackMessage: 'تعذّر تحميل تلاميذ القسم المصدر',
+});
+
+export const transferStudents = (payload: TransferStudentsPayload) =>
+    apiFetch<{ transferred: number; message: string }>('/students/transfer', {
+        method: 'POST',
+        body: payload,
+        fallbackMessage: 'تعذّر نقل التلاميذ',
+    });
 
 export async function getStudent(id: number): Promise<Student> {
     const res = await fetch(`${API_BASE}/students/${id}`, { headers: authHeaders() });
@@ -48,7 +146,13 @@ export async function getStudent(id: number): Promise<Student> {
     return res.json();
 }
 
-export async function enrollStudent(formData: FormData): Promise<Student> {
+export async function getStudentPaymentHistory(id: number): Promise<StudentPaymentHistoryEntry[]> {
+    const res = await fetch(`${API_BASE}/students/${id}/payments`, { headers: authHeaders() });
+    if (!res.ok) throw new Error('تعذّر تحميل سجل دفعات التلميذ');
+    return res.json();
+}
+
+export async function enrollStudent(formData: FormData): Promise<EnrollmentResponse> {
     const res = await fetch(`${API_BASE}/students/enroll`, {
         method: 'POST',
         headers: authHeaders(), // بدون Content-Type — browser يضبطه تلقائياً مع FormData
@@ -65,7 +169,7 @@ export async function reenrollStudent(studentId: number, data: {
     level_id: number;
     section_name?: string;
     notes?: string;
-}): Promise<Student> {
+}): Promise<EnrollmentResponse> {
     const res = await fetch(`${API_BASE}/students/${studentId}/reenroll`, {
         method: 'POST',
         headers: { ...authHeaders(), 'Content-Type': 'application/json' },

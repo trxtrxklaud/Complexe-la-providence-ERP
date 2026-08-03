@@ -22,6 +22,7 @@ function Line({
   strong = false,
   color,
 }: {
+  key?: string | number;
   label: string;
   value: number;
   strong?: boolean;

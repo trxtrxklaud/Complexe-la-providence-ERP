@@ -834,7 +834,10 @@ export function EmployeesPage() {
                 <p className="text-xs font-bold mb-2" style={{ color: C.ink }}>التسبقات القائمة</p>
 
                 {advancesLoading ? (
-                  <p className="text-xs" style={{ color: C.muted }}>جارٍ التحميل…</p>
+                  <div className="animate-pulse space-y-2" role="status" aria-label="تحميل التسبقات">
+                    <div className="h-3 w-3/4 rounded bg-white/70" />
+                    <div className="h-3 w-1/2 rounded bg-white/70" />
+                  </div>
                 ) : advances.length === 0 ? (
                   <p className="text-xs" style={{ color: C.muted }}>لا توجد تسبقات قائمة لهذا الإطار.</p>
                 ) : (

@@ -6,6 +6,7 @@ import {
   type NetPeriodReport,
 } from '../../api/netIncome';
 import { errorMessage } from '../../lib/format';
+import { PageDataSkeleton } from '../../components/DataSkeleton';
 import { C, FilterBar, NetReportTable, PrintHeader, PrintStyles } from './NetPeriodPanels';
 
 type YearOption = { id: number | string; name: string };
@@ -101,9 +102,7 @@ export function NetRevenueYearlyPage() {
       )}
 
       {loading && (
-        <p className="no-print text-sm py-6 text-center" style={{ color: C.muted }}>
-          جارٍ التحميل…
-        </p>
+        <div className="no-print"><PageDataSkeleton cards={2} rows={4} /></div>
       )}
 
       {!loading && !error && summary && (

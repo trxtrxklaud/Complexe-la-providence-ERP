@@ -5,6 +5,18 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { setToken } from '../api/http';
+import {
+    loadClassroomsPage,
+    loadCollectionPage,
+    loadEmployeesPage,
+    loadExpenseCreatePage,
+    loadFeeTypesPage,
+    loadHistoriquePage,
+    loadNetIncomeDailyPage,
+    loadRosterPage,
+    loadTreasuryDaybookPage,
+    loadUsersList,
+} from '../routeLoaders';
 
 export function Sidebar() {
     const { logout, user, hasPermission } = useAuth();
@@ -32,6 +44,7 @@ export function Sidebar() {
         }`;
 
     const startsWith = (prefix: string) => location.pathname.startsWith(prefix);
+    const prefetch = (loader: () => Promise<unknown>) => () => { void loader(); };
 
     /** يكفي امتلاك واحدة — مطابق لـ anyOf في ProtectedRoute. */
     const canAny = (...names: string[]) => names.some((name) => hasPermission(name));
@@ -91,6 +104,8 @@ export function Sidebar() {
 
                         <NavLink
                             to="/classrooms"
+                            onMouseEnter={prefetch(loadClassroomsPage)}
+                            onFocus={prefetch(loadClassroomsPage)}
                             className={({ isActive }) => linkClass(isActive || startsWith('/classrooms'))}
                         >
                             <Layers size={20} />
@@ -99,6 +114,8 @@ export function Sidebar() {
 
                         <NavLink
                             to="/rosters"
+                            onMouseEnter={prefetch(loadRosterPage)}
+                            onFocus={prefetch(loadRosterPage)}
                             className={({ isActive }) => linkClass(isActive || startsWith('/rosters'))}
                         >
                             <ClipboardList size={20} />
@@ -107,6 +124,8 @@ export function Sidebar() {
 
                         <NavLink
                             to="/users"
+                            onMouseEnter={prefetch(loadUsersList)}
+                            onFocus={prefetch(loadUsersList)}
                             className={({ isActive }) => linkClass(isActive || startsWith('/users'))}
                         >
                             <Users size={20} />
@@ -127,6 +146,8 @@ export function Sidebar() {
                 {hasPermission('manage_users') && (
                     <NavLink
                         to="/fee-types"
+                        onMouseEnter={prefetch(loadFeeTypesPage)}
+                        onFocus={prefetch(loadFeeTypesPage)}
                         className={({ isActive }) => linkClass(isActive || startsWith('/fee-types'))}
                     >
                         <Tags size={20} />
@@ -137,16 +158,30 @@ export function Sidebar() {
                 {canAny('manage_payments', 'view_reports') && (
                     <NavLink
                         to="/income"
-                        className={({ isActive }) => linkClass(isActive || startsWith('/income'))}
+                        onMouseEnter={prefetch(loadCollectionPage)}
+                        onFocus={prefetch(loadCollectionPage)}
+                        className={() => linkClass(startsWith('/income') && !startsWith('/income/unpaid-monthly'))}
                     >
                         <Wallet size={20} />
                         <span>المداخيل</span>
                     </NavLink>
                 )}
 
+                {hasPermission('view_reports') && (
+                    <NavLink
+                        to="/income/unpaid-monthly"
+                        className={() => linkClass(startsWith('/income/unpaid-monthly'))}
+                    >
+                        <ClipboardList size={20} />
+                        <span>المتخلفون شهريًا</span>
+                    </NavLink>
+                )}
+
                 {canAny('manage_expenses', 'view_reports') && (
                     <NavLink
                         to="/expenses"
+                        onMouseEnter={prefetch(loadExpenseCreatePage)}
+                        onFocus={prefetch(loadExpenseCreatePage)}
                         className={({ isActive }) => linkClass(isActive || startsWith('/expenses'))}
                     >
                         <Receipt size={20} />
@@ -157,6 +192,8 @@ export function Sidebar() {
                 {canAny('manage_treasury', 'view_reports') && (
                     <NavLink
                         to="/treasury"
+                        onMouseEnter={prefetch(loadTreasuryDaybookPage)}
+                        onFocus={prefetch(loadTreasuryDaybookPage)}
                         className={({ isActive }) => linkClass(isActive || startsWith('/treasury'))}
                     >
                         <Landmark size={20} />
@@ -168,6 +205,8 @@ export function Sidebar() {
                 {hasPermission('view_reports') && (
                     <NavLink
                         to="/net-income"
+                        onMouseEnter={prefetch(loadNetIncomeDailyPage)}
+                        onFocus={prefetch(loadNetIncomeDailyPage)}
                         className={({ isActive }) => linkClass(isActive || startsWith('/net-income'))}
                     >
                         <TrendingUp size={20} />
@@ -178,6 +217,8 @@ export function Sidebar() {
                 {hasPermission('manage_payments') && (
                     <NavLink
                         to="/historique"
+                        onMouseEnter={prefetch(loadHistoriquePage)}
+                        onFocus={prefetch(loadHistoriquePage)}
                         className={({ isActive }) => linkClass(isActive || startsWith('/historique'))}
                     >
                         <History size={20} />
@@ -193,6 +234,8 @@ export function Sidebar() {
 
                         <NavLink
                             to="/employees"
+                            onMouseEnter={prefetch(loadEmployeesPage)}
+                            onFocus={prefetch(loadEmployeesPage)}
                             className={({ isActive }) => linkClass(isActive || startsWith('/employees'))}
                         >
                             <Users size={20} />
