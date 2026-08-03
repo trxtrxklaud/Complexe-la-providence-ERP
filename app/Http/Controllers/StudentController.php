@@ -8,6 +8,7 @@ use App\Models\Enrollment;
 use App\Models\Section;
 use App\Models\Student;
 use App\Services\EnrollmentService;
+use App\Services\RegistrationPaymentService;
 use App\Services\StudentService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -18,7 +19,7 @@ use Illuminate\Validation\ValidationException;
 class StudentController extends Controller
 {
     /**
-     * رسائل التحقّق العربية لحقل القسم.
+     * رسائل التحقّق العربية لحقل القسم ومعلوم الترسيم.
      *
      * مكتوبة هنا وليس في lang/ar لأن المشروع لا يزال يعتمد رسائل لارافيل الإنجليزية؛
      * تركها للافتراض يعني أن يرى القابض "The section id field is required."
@@ -28,11 +29,18 @@ class StudentController extends Controller
         'section_id.integer' => 'القسم المختار غير صالح.',
         'section_id.exists' => 'القسم المختار غير موجود في قائمة الأقسام.',
         'notes.max' => 'الملاحظات طويلة جداً (1000 حرف كحدّ أقصى).',
+        'registration_amount.numeric' => 'مبلغ الترسيم يجب أن يكون رقماً.',
+        'registration_amount.min' => 'مبلغ الترسيم يجب أن يكون أكبر من صفر.',
+        'payment_method.in' => 'طريقة الدفع غير معروفة.',
+        'payment_method.required_with' => 'اختر طريقة الدفع الموافقة للمبلغ المقبوض.',
+        'payment_date.required_with' => 'تاريخ الدفع إجباري مع وجود مبلغ مقبوض.',
+        'payment_date.date' => 'تاريخ الدفع غير صالح.',
     ];
 
     public function __construct(
         protected StudentService $studentService,
         protected EnrollmentService $enrollmentService,
+        protected RegistrationPaymentService $registrationPaymentService,
     ) {}
 
     public function index(Request $request): JsonResponse
@@ -204,7 +212,15 @@ class StudentController extends Controller
         return response()->json($payments);
     }
 
-    // store() = create new student + immediate enrollment (one-step for new students)
+    /**
+     * تسجيل تلميذ جديد + ترسيمه في قسم + قبض معلوم الترسيم، في معاملة واحدة.
+     *
+     * القسم إجباري والمستوى يُشتقّ منه داخل EnrollmentService؛ level_id يُقبل اختيارايًا
+     * للتوافق مع أي مستهلك قديم، ويُرفض إن ناقض القسم بدل أن يُتجاهل بصمت.
+     *
+     * معلوم الترسيم يُسقط في الدفتر النقدي داخل نفس المعاملة: إمّا أن يُرسّم التلميذ
+     * ويدخل ماله الخزينة معاً، أو لا يحدث شيء. لا حالة ثالثة.
+     */
     public function store(Request $request): JsonResponse
     {
         $validated = $request->validate([
@@ -212,7 +228,7 @@ class StudentController extends Controller
             'last_name' => 'required|string|max:255',
             'dob' => 'required|date',
             'gender' => 'required|in:male,female',
-            'notes' => 'nullable|string',
+            'notes' => 'nullable|string|max:1000',
             'guardian_first_name' => 'required|string|max:255',
             'guardian_last_name' => 'required|string|max:255',
             'guardian_phone' => 'required|string|max:20',
@@ -220,17 +236,31 @@ class StudentController extends Controller
             'address' => 'required|string',
             'mother_phone' => 'nullable|string|max:20',
             'mother_email' => 'nullable|email',
-            'level_id' => 'required|exists:levels,id',
-            'section_id' => 'nullable|integer|exists:sections,id',
+            'section_id' => 'required|integer|exists:sections,id',
+            'level_id' => 'nullable|exists:levels,id',
             'section_name' => 'nullable|string',
             'photo' => 'nullable|file|mimes:jpeg,jpg,png,webp|max:2048',
+            'registration_amount' => 'nullable|numeric|min:0.01',
+            'payment_method' => 'nullable|required_with:registration_amount|in:cash,bank_transfer,check,card',
+            'payment_date' => 'nullable|required_with:registration_amount|date',
+            'payment_notes' => 'nullable|string|max:1000',
         ], self::SECTION_MESSAGES);
 
         try {
-            $enrollment = $this->enrollmentService->enrollStudent(
-                $validated,
-                $request->file('photo')
-            );
+            $enrollment = DB::transaction(function () use ($validated, $request) {
+                $enrollment = $this->enrollmentService->enrollStudent(
+                    $validated,
+                    $request->file('photo')
+                );
+
+                $this->registrationPaymentService->record(
+                    $enrollment,
+                    $validated,
+                    $request->user()?->id,
+                );
+
+                return $enrollment;
+            });
 
             return response()->json([
                 'message' => 'تم تسجيل التلميذ بنجاح',
@@ -296,7 +326,7 @@ class StudentController extends Controller
      * NEW: enroll existing student in current academic year.
      *
      * يقبل الطريقين: section_id (المعتمد) أو level_id + section_name (القديم)،
-     * حتى لا تنكسر أيّ شاشة لم تُحوَّل بعد. reenroll() وحده صار صارماً.
+     * حتى لا تنكسر أيّ شاشة لم تُحوّل بعد. reenroll() وحده صار صارماً.
      */
     public function enroll(Request $request, Student $student): JsonResponse
     {
