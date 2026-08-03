@@ -17,6 +17,19 @@ use Illuminate\Validation\ValidationException;
 
 class StudentController extends Controller
 {
+    /**
+     * رسائل التحقّق العربية لحقل القسم.
+     *
+     * مكتوبة هنا وليس في lang/ar لأن المشروع لا يزال يعتمد رسائل لارافيل الإنجليزية؛
+     * تركها للافتراض يعني أن يرى القابض "The section id field is required."
+     */
+    private const SECTION_MESSAGES = [
+        'section_id.required' => 'القسم إجباري: اختر قسم التلميذ لهذه السنة الدراسية.',
+        'section_id.integer' => 'القسم المختار غير صالح.',
+        'section_id.exists' => 'القسم المختار غير موجود في قائمة الأقسام.',
+        'notes.max' => 'الملاحظات طويلة جداً (1000 حرف كحدّ أقصى).',
+    ];
+
     public function __construct(
         protected StudentService $studentService,
         protected EnrollmentService $enrollmentService,
@@ -46,11 +59,13 @@ class StudentController extends Controller
             ->get(['id', 'level_id', 'name'])
             ->map(fn (Section $section) => [
                 'id' => $section->id,
+                'level_id' => $section->level_id,
                 'label' => trim(($section->level?->name ? $section->level->name.' ' : '').$section->name),
             ]);
 
         return response()->json([
             'levels' => $sections,
+            'sections' => $sections,
             'years' => AcademicYear::orderByDesc('start_date')->get(['id', 'name']),
         ]);
     }
@@ -206,9 +221,10 @@ class StudentController extends Controller
             'mother_phone' => 'nullable|string|max:20',
             'mother_email' => 'nullable|email',
             'level_id' => 'required|exists:levels,id',
+            'section_id' => 'nullable|integer|exists:sections,id',
             'section_name' => 'nullable|string',
             'photo' => 'nullable|file|mimes:jpeg,jpg,png,webp|max:2048',
-        ]);
+        ], self::SECTION_MESSAGES);
 
         try {
             $enrollment = $this->enrollmentService->enrollStudent(
@@ -280,10 +296,9 @@ class StudentController extends Controller
     public function enroll(Request $request, Student $student): JsonResponse
     {
         $validated = $request->validate([
-            'level_id' => 'required|exists:levels,id',
-            'section_name' => 'nullable|string',
-            'notes' => 'nullable|string',
-        ]);
+            'section_id' => ['required', 'integer', 'exists:sections,id'],
+            'notes' => ['nullable', 'string', 'max:1000'],
+        ], self::SECTION_MESSAGES);
 
         try {
             $enrollment = $this->enrollmentService->reenrollStudent($student->id, $validated);
@@ -304,11 +319,11 @@ class StudentController extends Controller
     // FIX: was int $id — now Route Model Binding
     public function reenroll(Request $request, Student $student): JsonResponse
     {
+        // القسم إجباري، والمستوى يُشتقّ منه داخل EnrollmentService.
         $validated = $request->validate([
-            'level_id' => 'required|exists:levels,id',
-            'section_name' => 'nullable|string',
-            'notes' => 'nullable|string',
-        ]);
+            'section_id' => ['required', 'integer', 'exists:sections,id'],
+            'notes' => ['nullable', 'string', 'max:1000'],
+        ], self::SECTION_MESSAGES);
 
         try {
             $enrollment = $this->enrollmentService->reenrollStudent($student->id, $validated);
