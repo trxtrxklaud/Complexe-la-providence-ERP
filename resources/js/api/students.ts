@@ -19,6 +19,13 @@ export interface Enrollment {
 export interface EnrollmentResponse {
     message: string;
     enrollment: Enrollment;
+    /** يرجع معبّأً فقط حين ُقبض مبلغ مع الترسيم؛ null يعني ترسيماً بلا دفع. */
+    payment?: {
+        id: number;
+        amount: number | string;
+        payment_date: string | null;
+        method: string;
+    } | null;
 }
 
 export interface Student {
@@ -197,15 +204,24 @@ export async function enrollStudent(formData: FormData): Promise<EnrollmentRespo
     return res.json();
 }
 
+/** معلوم التجديد المقبوض لحظة الترسيم؛ الثلاثة معاً أو لا شيء منها. */
+export type ReenrollPayment = {
+    registration_amount: number;
+    payment_method: 'cash' | 'bank_transfer' | 'check' | 'card';
+    payment_date: string;
+    payment_notes?: string;
+};
+
 /**
- * ترسيم تلميذ قديم في السنة النشطة.
+ * ترسيم تلميذ قديم في السنة النشطة، مع معلوم التجديد إن قُبض.
  *
  * section_id إجباري: الخادم يشتقّ level_id من القسم، فلا يمكن أن يقع تناقض بينهما.
+ * حقول الدفع اختيارية، وإن أُرسل المبلغ وجب معه الطريقة والتاريخ (يفرضه الخادم أيضاً).
  */
 export async function reenrollStudent(studentId: number, data: {
     section_id: number;
     notes?: string;
-}): Promise<EnrollmentResponse> {
+} & Partial<ReenrollPayment>): Promise<EnrollmentResponse> {
     const res = await fetch(`${API_BASE}/students/${studentId}/reenroll`, {
         method: 'POST',
         headers: { ...authHeaders(), 'Content-Type': 'application/json' },
