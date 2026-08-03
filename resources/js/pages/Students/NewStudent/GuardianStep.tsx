@@ -21,12 +21,14 @@ export function GuardianStep({ data, onChange }: Props) {
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-6">
         <div className="space-y-2.5">
-          <label className={LABEL_CLASS}>
+          <label className={LABEL_CLASS} htmlFor="guardian_first_name">
             الاسم الأول للولي <span className="text-red-500">*</span>
           </label>
           <input
             type="text"
+            id="guardian_first_name"
             name="guardian_first_name"
+            autoComplete="off"
             value={data.guardian_first_name}
             onChange={onChange}
             className={FIELD_CLASS}
@@ -34,12 +36,14 @@ export function GuardianStep({ data, onChange }: Props) {
         </div>
 
         <div className="space-y-2.5">
-          <label className={LABEL_CLASS}>
+          <label className={LABEL_CLASS} htmlFor="guardian_last_name">
             لقب الولي <span className="text-red-500">*</span>
           </label>
           <input
             type="text"
+            id="guardian_last_name"
             name="guardian_last_name"
+            autoComplete="off"
             value={data.guardian_last_name}
             onChange={onChange}
             className={FIELD_CLASS}
@@ -47,13 +51,16 @@ export function GuardianStep({ data, onChange }: Props) {
         </div>
 
         <div className="space-y-2.5">
-          <label className={LABEL_CLASS}>
+          <label className={LABEL_CLASS} htmlFor="guardian_phone">
             رقم هاتف الولي <span className="text-red-500">*</span>
           </label>
           <input
             type="tel"
             dir="ltr"
+            id="guardian_phone"
             name="guardian_phone"
+            autoComplete="tel"
+            inputMode="tel"
             value={data.guardian_phone}
             onChange={onChange}
             className={`${FIELD_CLASS} text-right`}
@@ -61,11 +68,13 @@ export function GuardianStep({ data, onChange }: Props) {
         </div>
 
         <div className="space-y-2.5">
-          <label className={LABEL_CLASS}>البريد الإلكتروني للولي</label>
+          <label className={LABEL_CLASS} htmlFor="guardian_email">البريد الإلكتروني للولي</label>
           <input
             type="email"
             dir="ltr"
+            id="guardian_email"
             name="guardian_email"
+            autoComplete="email"
             value={data.guardian_email}
             onChange={onChange}
             className={`${FIELD_CLASS} text-right`}
@@ -73,12 +82,14 @@ export function GuardianStep({ data, onChange }: Props) {
         </div>
 
         <div className="md:col-span-2 space-y-2.5">
-          <label className={LABEL_CLASS}>
+          <label className={LABEL_CLASS} htmlFor="address">
             العنوان <span className="text-red-500">*</span>
           </label>
           <input
             type="text"
+            id="address"
             name="address"
+            autoComplete="street-address"
             value={data.address}
             onChange={onChange}
             className={FIELD_CLASS}
@@ -86,11 +97,14 @@ export function GuardianStep({ data, onChange }: Props) {
         </div>
 
         <div className="space-y-2.5">
-          <label className={LABEL_CLASS}>رقم هاتف الأم</label>
+          <label className={LABEL_CLASS} htmlFor="mother_phone">رقم هاتف الأم</label>
           <input
             type="tel"
             dir="ltr"
+            id="mother_phone"
             name="mother_phone"
+            autoComplete="off"
+            inputMode="tel"
             value={data.mother_phone}
             onChange={onChange}
             className={`${FIELD_CLASS} text-right`}
@@ -98,11 +112,13 @@ export function GuardianStep({ data, onChange }: Props) {
         </div>
 
         <div className="space-y-2.5">
-          <label className={LABEL_CLASS}>البريد الإلكتروني للأم</label>
+          <label className={LABEL_CLASS} htmlFor="mother_email">البريد الإلكتروني للأم</label>
           <input
             type="email"
             dir="ltr"
+            id="mother_email"
             name="mother_email"
+            autoComplete="off"
             value={data.mother_email}
             onChange={onChange}
             className={`${FIELD_CLASS} text-right`}
