@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { Search, ArrowRight, User, GraduationCap, CreditCard } from 'lucide-react';
-import { getStudents, reenrollStudent } from '../../api/students';
+import { Search, ArrowRight, User, GraduationCap, CreditCard, AlertCircle, CheckCircle } from 'lucide-react';
+import { getStudents, getSectionOptions, reenrollStudent, type SectionOption } from '../../api/students';
 import { ListSkeleton } from '../../components/DataSkeleton';
 
 const C = {
@@ -12,6 +12,8 @@ const C = {
   muted: '#7C8677',
   line: '#EDF1E8',
   beige: '#EFEAE0',
+  danger: '#A03434',
+  dangerBg: '#FDECEC',
 };
 
 export function OldStudentReenroll() {
@@ -19,14 +21,26 @@ export function OldStudentReenroll() {
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
   const [selectedStudent, setSelectedStudent] = useState<any>(null);
-  const [levelId, setLevelId] = useState('');
+
+  // الأقسام: تُحمّل مرّة واحدة عند فتح الشاشة وتُعاد عند الفشل بطلب المستخدم.
+  const [sections, setSections] = useState<SectionOption[]>([]);
+  const [sectionsLoading, setSectionsLoading] = useState(true);
+  const [sectionsError, setSectionsError] = useState('');
+
+  const [sectionId, setSectionId] = useState('');
+  const [submitted, setSubmitted] = useState(false);
+
   const [paymentMethod, setPaymentMethod] = useState('');
   const [amount, setAmount] = useState('');
   const [paymentDate, setPaymentDate] = useState('');
+
   const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
 
   useEffect(() => {
     loadStudents();
+    loadSections();
   }, []);
 
   async function loadStudents() {
@@ -41,31 +55,71 @@ export function OldStudentReenroll() {
     }
   }
 
+  async function loadSections() {
+    try {
+      setSectionsLoading(true);
+      setSectionsError('');
+      const data = await getSectionOptions();
+      setSections(data || []);
+      if (!data || data.length === 0) {
+        setSectionsError('لا توجد أقسام مسجّلة. أضفها من شاشة المستويات والأقسام قبل الترسيم.');
+      }
+    } catch (err: any) {
+      setSectionsError(err?.message || 'تعذّر تحميل قائمة الأقسام');
+    } finally {
+      setSectionsLoading(false);
+    }
+  }
+
   const filtered = students.filter((s) => {
     const fullName = `${s.first_name || ''} ${s.last_name || ''}`.toLowerCase();
     return fullName.includes(search.toLowerCase()) || 
            (s.student_code || '').toLowerCase().includes(search.toLowerCase());
   });
 
+  // التحقّق في الواجهة يطابق قاعدة الخادم: required|exists:sections,id
+  const sectionError = sectionId === '' ? 'القسم إجباري: اختر قسم التلميذ لهذه السنة الدراسية.' : '';
+  const showSectionError = submitted && sectionError !== '';
+
+  function openStudent(student: any) {
+    setSelectedStudent(student);
+    setSectionId('');
+    setSubmitted(false);
+    setError('');
+    setSuccess('');
+  }
+
+  function closeStudent() {
+    setSelectedStudent(null);
+    setSectionId('');
+    setSubmitted(false);
+    setError('');
+  }
 
   async function handleSave() {
-    if (!selectedStudent || !levelId) {
-      alert('الرجاء اختيار المستوى');
-      return;
-    }
+    setSubmitted(true);
+    setError('');
+
+    if (!selectedStudent || sectionError) return;
+
     setSaving(true);
     try {
-      await reenrollStudent(selectedStudent.id, {
-        level_id: parseInt(levelId, 10),
+      const response = await reenrollStudent(selectedStudent.id, {
+        section_id: Number(sectionId),
       });
-      alert('تم تجديد الترسيم بنجاح');
+      const student = `${selectedStudent.first_name || ''} ${selectedStudent.last_name || ''}`.trim();
+      const placed = response?.enrollment?.section?.name
+        ? ` — القسم: ${response.enrollment.level?.name || ''} ${response.enrollment.section.name}`.trimEnd()
+        : '';
+      setSuccess(`تم تجديد ترسيم ${student} بنجاح${placed}`);
       setSelectedStudent(null);
-      setLevelId('');
+      setSectionId('');
+      setSubmitted(false);
       setPaymentMethod('');
       setAmount('');
       setPaymentDate('');
     } catch (err: any) {
-      alert(err.message || 'حدث خطأ');
+      setError(err?.message || 'حدث خطأ أثناء الترسيم');
     } finally {
       setSaving(false);
     }
@@ -76,7 +130,7 @@ export function OldStudentReenroll() {
       <div className="p-6 md:p-8" dir="rtl">
         <div className="flex items-center gap-4 mb-6">
           <button
-            onClick={() => setSelectedStudent(null)}
+            onClick={closeStudent}
             className="flex h-10 w-10 items-center justify-center rounded-full bg-white border"
             style={{ borderColor: C.line, color: C.muted }}
           >
@@ -91,6 +145,16 @@ export function OldStudentReenroll() {
             </p>
           </div>
         </div>
+
+        {error && (
+          <div
+            className="mb-5 flex items-start gap-2 rounded-xl border px-4 py-3 text-sm"
+            style={{ borderColor: C.danger, backgroundColor: C.dangerBg, color: C.danger }}
+          >
+            <AlertCircle size={18} className="mt-0.5 shrink-0" />
+            <span>{error}</span>
+          </div>
+        )}
 
         <div className="bg-white rounded-[22px] p-6 mb-5 border" style={{ borderColor: C.line }}>
           <div className="flex items-center gap-4 mb-4">
@@ -139,35 +203,73 @@ export function OldStudentReenroll() {
         <div className="bg-white rounded-[22px] p-6 border" style={{ borderColor: C.line }}>
           <h3 className="font-bold text-lg mb-4 flex items-center gap-2" style={{ color: C.ink }}>
             <GraduationCap size={20} />
-            تجديد الترسيم — 2025/2026
+            تجديد الترسيم — السنة الدراسية النشطة
           </h3>
 
           <div className="space-y-4">
             <div>
-              <label className="block text-sm font-medium mb-1.5" style={{ color: C.muted }}>
-                القسم / المستوى الدراسي الجديد
+              <label htmlFor="section_id" className="block text-sm font-medium mb-1.5" style={{ color: C.muted }}>
+                القسم <span style={{ color: C.danger }}>*</span>
               </label>
-              <select value={levelId} onChange={(e) => setLevelId(e.target.value)} className="w-full p-3 rounded-xl border bg-slate-50 outline-none" style={{ borderColor: C.line }}>
-                <option value="">اختر القسم الجديد</option>
-                <option value="1">السنة الأولى</option>
-                <option value="2">السنة الثانية</option>
-                <option value="3">السنة الثالثة</option>
-                <option value="4">السنة الرابعة</option>
-                <option value="5">السنة الخامسة</option>
-                <option value="6">السنة السادسة</option>
+
+              <select
+                id="section_id"
+                value={sectionId}
+                onChange={(e) => { setSectionId(e.target.value); setError(''); }}
+                disabled={sectionsLoading || sections.length === 0}
+                aria-invalid={showSectionError}
+                aria-describedby={showSectionError ? 'section_id_error' : 'section_id_hint'}
+                className="w-full p-3 rounded-xl border bg-slate-50 outline-none disabled:opacity-60"
+                style={{ borderColor: showSectionError ? C.danger : C.line }}
+              >
+                <option value="">
+                  {sectionsLoading ? 'جارٍ تحميل الأقسام…' : 'اختر القسم'}
+                </option>
+                {sections.map((section) => (
+                  <option key={section.id} value={section.id}>{section.label}</option>
+                ))}
               </select>
+
+              {showSectionError ? (
+                <p id="section_id_error" className="mt-1.5 flex items-center gap-1.5 text-sm" style={{ color: C.danger }}>
+                  <AlertCircle size={15} />
+                  {sectionError}
+                </p>
+              ) : (
+                <p id="section_id_hint" className="mt-1.5 text-xs" style={{ color: C.muted }}>
+                  المستوى يُحدَّد تلقائياً من القسم المختار.
+                </p>
+              )}
+
+              {sectionsError && (
+                <div className="mt-2 flex items-center justify-between gap-3 rounded-xl border px-3 py-2 text-sm"
+                     style={{ borderColor: C.danger, backgroundColor: C.dangerBg, color: C.danger }}>
+                  <span>{sectionsError}</span>
+                  <button
+                    type="button"
+                    onClick={loadSections}
+                    className="shrink-0 rounded-lg px-3 py-1 text-white"
+                    style={{ backgroundColor: C.danger }}
+                  >
+                    إعادة المحاولة
+                  </button>
+                </div>
+              )}
             </div>
 
             <div className="pt-4 border-t" style={{ borderColor: C.line }}>
-              <h4 className="font-medium mb-3 flex items-center gap-2" style={{ color: C.ink }}>
+              <h4 className="font-medium mb-1 flex items-center gap-2" style={{ color: C.ink }}>
                 <CreditCard size={18} />
                 معلومات الدفع
               </h4>
+              <p className="mb-3 text-xs" style={{ color: C.danger }}>
+                غير مفعّل بعد: هذه الحقول لا تُرسَل إلى الخزينة. سجّل الدفع من شاشة الاستخلاص بعد الترسيم.
+              </p>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm mb-1.5" style={{ color: C.muted }}>صيغة الدفع</label>
-                  <select value={paymentMethod} onChange={(e) => setPaymentMethod(e.target.value)} className="w-full p-3 rounded-xl border bg-slate-50 outline-none" style={{ borderColor: C.line }}>
+                  <select disabled value={paymentMethod} onChange={(e) => setPaymentMethod(e.target.value)} className="w-full p-3 rounded-xl border bg-slate-50 outline-none disabled:opacity-60" style={{ borderColor: C.line }}>
                     <option value="">اختر صيغة الدفع</option>
                     <option value="cash">نقداً</option>
                     <option value="check">شيك</option>
@@ -176,22 +278,22 @@ export function OldStudentReenroll() {
                 </div>
                 <div>
                   <label className="block text-sm mb-1.5" style={{ color: C.muted }}>مبلغ التسجيل</label>
-                  <input type="number" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0.00" className="w-full p-3 rounded-xl border bg-slate-50 outline-none" style={{ borderColor: C.line }} />
+                  <input disabled type="number" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0.00" className="w-full p-3 rounded-xl border bg-slate-50 outline-none disabled:opacity-60" style={{ borderColor: C.line }} />
                 </div>
                 <div>
                   <label className="block text-sm mb-1.5" style={{ color: C.muted }}>تاريخ الدفع</label>
-                  <input type="date" value={paymentDate} onChange={(e) => setPaymentDate(e.target.value)} className="w-full p-3 rounded-xl border bg-slate-50 outline-none" style={{ borderColor: C.line }} />
+                  <input disabled type="date" value={paymentDate} onChange={(e) => setPaymentDate(e.target.value)} className="w-full p-3 rounded-xl border bg-slate-50 outline-none disabled:opacity-60" style={{ borderColor: C.line }} />
                 </div>
               </div>
             </div>
 
             <button
               onClick={handleSave}
-              disabled={saving}
+              disabled={saving || sectionsLoading}
               className="w-full mt-6 py-3.5 rounded-xl text-white font-medium transition hover:opacity-90 disabled:opacity-70"
               style={{ backgroundColor: C.forest }}
             >
-              {saving ? 'جاري الحفظ...' : 'حفظ الترسيم'}
+              {saving ? 'جارٍ الحفظ…' : 'حفظ الترسيم'}
             </button>
           </div>
         </div>
@@ -219,6 +321,16 @@ export function OldStudentReenroll() {
         </div>
       </div>
 
+      {success && (
+        <div
+          className="mb-5 flex items-start gap-2 rounded-xl border px-4 py-3 text-sm"
+          style={{ borderColor: C.forest, backgroundColor: C.sage, color: C.forest }}
+        >
+          <CheckCircle size={18} className="mt-0.5 shrink-0" />
+          <span>{success}</span>
+        </div>
+      )}
+
       <div className="relative mb-6">
         <Search className="absolute right-4 top-1/2 -translate-y-1/2" size={18} style={{ color: C.muted }} />
         <input
@@ -241,7 +353,7 @@ export function OldStudentReenroll() {
             {filtered.map((student) => (
               <button
                 key={student.id}
-                onClick={() => setSelectedStudent(student)}
+                onClick={() => openStudent(student)}
                 className="w-full flex items-center gap-4 p-4 text-right hover:bg-[#FAFBF8] transition"
               >
                 <div className="w-11 h-11 rounded-full flex items-center justify-center text-white font-semibold"
