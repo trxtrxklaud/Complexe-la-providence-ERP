@@ -142,14 +142,14 @@ export async function getAdvances(params?: {
   return res?.data ?? [];
 }
 
-/**
- * التسبقات القائمة لإطار واحد: غير ملغاة، ولم تُخلّص بعد.
- * السلف (loan) مستثناة لأنّها تُردّ على مهل ولا تُخصم من الراتب.
- */
-export async function getOutstandingAdvances(employeeId: number): Promise<EmployeeAdvance[]> {
+/** الجذع المشترك لجلب ديون إطار واحد القائمة، تسبقةً كانت أو سلفة. */
+async function outstandingOf(
+  employeeId: number,
+  type: 'advance' | 'loan',
+): Promise<EmployeeAdvance[]> {
   const q = new URLSearchParams({
     employee_id: String(employeeId),
-    type: 'advance',
+    type,
     outstanding: '1',
     exclude_cancelled: '1',
     per_page: '100',
@@ -157,6 +157,24 @@ export async function getOutstandingAdvances(employeeId: number): Promise<Employ
   const res = await parse(await fetch(`${API_BASE}/employee-advances?${q}`, { headers: getHeaders() }));
 
   return res?.data ?? [];
+}
+
+/**
+ * التسبقات القائمة لإطار واحد: غير ملغاة، ولم تُخلّص بعد.
+ * تُخصم كاملة في شهرها، فلا مبلغ يُختار لها.
+ */
+export async function getOutstandingAdvances(employeeId: number): Promise<EmployeeAdvance[]> {
+  return outstandingOf(employeeId, 'advance');
+}
+
+/**
+ * السلف القائمة لإطار واحد.
+ *
+ * السلفة دَين يُردّ على أقساط، فتُعرض في نموذج الراتب ليختار القابض
+ * قسط هذا الشهر وحده لا الدَّين كلّه.
+ */
+export async function getOutstandingLoans(employeeId: number): Promise<EmployeeAdvance[]> {
+  return outstandingOf(employeeId, 'loan');
 }
 
 export async function createAdvance(data: {
@@ -209,17 +227,29 @@ export async function cancelAdvance(id: number, reason: string): Promise<Employe
   }));
 }
 
+/** قسط سلفة يُخصم ضمن راتب هذا الشهر. */
+export interface LoanDeductionInput {
+  id: number;
+  amount: number;
+}
+
 /**
  * خلاص راتب.
  *
- * يُرسَل الراتب الخام وقائمة التسبقات المراد خصمها، والخادم وحده
- * يحسب الصافي. لا تُحتسب المبالغ في الواجهة.
+ * يُرسَل الراتب الخام وقائمة ما يُخصم منه، والخادم وحده يحسب الصافي.
+ * لا تُحتسب المبالغ في الواجهة.
+ *
+ * - advance_ids: تسبقات تُخصم كاملة، لا مبلغ يُختار لها.
+ * - loan_deductions: أقساط سلف، لكلّ سلفة مبلغ مستقلّ يقرّره القابض.
+ *   يرفض الخادم القسط المتجاوز للمتبقّي، ويرفض قسطَين من سلفة واحدة
+ *   في راتب واحد.
  */
 export async function createSalary(data: {
   employee_id: number;
   academic_year_id: number;
   gross_amount: number;
   advance_ids?: number[];
+  loan_deductions?: LoanDeductionInput[];
   period_from: string;
   period_to: string;
   paid_at?: string;
@@ -233,7 +263,8 @@ export async function createSalary(data: {
 
 /**
  * الرواتب لا تُحذف: تُلغى بسبب موثّق، فيُسحب أثرها من الدفتر
- * وتعود التسبقات المخصومة بها قائمة من جديد.
+ * وتعود التسبقات المخصومة بها قائمة من جديد، وتُلغى أقساط السلف
+ * المرتبطة بها فيعود الدَّين كما كان.
  */
 export async function cancelSalary(id: number, reason: string): Promise<Salary> {
   return parse(await fetch(`${API_BASE}/salaries/${id}/cancel`, {

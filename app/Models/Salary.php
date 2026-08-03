@@ -11,7 +11,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  *
  * ثلاثة أرقام لا يجوز خلطها:
  *   gross_amount      الراتب الخام المستحقّ (يظهر في قسيمة الأجر)
- *   advance_deduction ما خُصِم من تسبقات قائمة
+ *   advance_deduction ما خُصِم من تسبقات قائمة وأقساط سلف
  *   amount            الصافي المدفوع نقداً — وهو وحده ما يُسقَط في الدفتر
  *
  * إسقاط الخام في الدفتر مع إسقاط التسبقة يوم منحها يُخرج المال مرّتين،
@@ -61,6 +61,27 @@ class Salary extends Model
     public function settledAdvances(): HasMany
     {
         return $this->hasMany(EmployeeAdvance::class, 'settled_by_salary_id');
+    }
+
+    /**
+     * أقساط السلف التي خُصمت بهذا الراتب.
+     *
+     * التسبقة تُختم بـ settled_by_salary_id لأنّها تُخصم كاملة مرّة واحدة؛
+     * أمّا السلفة فتُردّ على أقساط من رواتب شتّى، فلا يمكن ختمها براتب واحد.
+     * الرابط بينهما هو سطر الردّ نفسه، وهذه العلاقة تكشفه.
+     *
+     * لا تُستثنى الملغاة هنا عمداً: قسيمة راتب ملغى يجب أن تُري ما أُلغي معه.
+     * من أراد القائم وحده فليستعمل activeRepayments().
+     */
+    public function repayments(): HasMany
+    {
+        return $this->hasMany(EmployeeAdvanceRepayment::class, 'salary_id');
+    }
+
+    /** أقساط السلف السارية دون الملغاة — وهي وحدها التي تُنقِص الدَين فعلاً. */
+    public function activeRepayments(): HasMany
+    {
+        return $this->repayments()->whereNull('cancelled_at');
     }
 
     public function isCancelled(): bool
