@@ -95,8 +95,11 @@ function StatementPanel({
  *
  * العمودان ليسا تقريرين منفصلين بل قراءتان لنفس الدالة على الخادم:
  * الأول ليوم واحد والثاني من بداية السجل حتّى ذلك اليوم، فيستحيل أن يختلف منطق
- * اليومي عن منطق التراكمي. والسحب لا يُحتسب مصروفاً لأنه نقل أموال لا استهلاك،
+ * اليومي عن منطق التراكمي. والسحب لا يُحتسب مصروفاً لأنّه نقل أموال لا استهلاك،
  * لكنّه يُنقِص الرصيد النهائي.
+ *
+ * التاريخ المعروض هو تاريخ الدفع المُدوّن في الحركة، لا تاريخ إدخال البيانات:
+ * دفعة سُجّلت اليوم بتاريخ أمس تظهر في كشف أمس.
  */
 export function NetIncomeReportPage() {
   const [date, setDate] = useState(today());
@@ -147,19 +150,29 @@ export function NetIncomeReportPage() {
         style={{ border: `1px solid ${C.line}` }}
       >
         <div>
-          <label className="block text-sm mb-1" style={{ color: C.muted }}>
+          <label htmlFor="net_income_date" className="block text-sm mb-1" style={{ color: C.muted }}>
             التاريخ
           </label>
           <input
+            id="net_income_date"
+            name="net_income_date"
             type="date"
+            autoComplete="off"
             value={date}
             onChange={(e) => setDate(e.target.value)}
+            aria-describedby="net_income_date_hint"
             className="rounded-xl px-3 py-2 text-sm"
             style={{ border: `1px solid ${C.line}`, color: C.ink }}
           />
         </div>
-        <label className="flex items-center gap-2 text-sm" style={{ color: C.ink }}>
-          <input type="checkbox" checked={showDetails} onChange={(e) => setShowDetails(e.target.checked)} />
+        <label htmlFor="net_income_details" className="flex items-center gap-2 text-sm" style={{ color: C.ink }}>
+          <input
+            id="net_income_details"
+            name="net_income_details"
+            type="checkbox"
+            checked={showDetails}
+            onChange={(e) => setShowDetails(e.target.checked)}
+          />
           إظهار الحركات التفصيلية لليوم
         </label>
         <button
@@ -171,6 +184,9 @@ export function NetIncomeReportPage() {
           <Printer size={16} />
           طباعة
         </button>
+        <p id="net_income_date_hint" className="w-full text-xs" style={{ color: C.muted }}>
+          الكشف يتبع تاريخ الدفع المُدوّن في الوصل، لا تاريخ إدخاله في المنصة.
+        </p>
       </div>
 
       {error && (
