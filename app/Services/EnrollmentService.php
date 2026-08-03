@@ -52,12 +52,12 @@ class EnrollmentService
             ]);
 
             $academicYear = AcademicYear::where('is_active', true)->firstOrFail();
-            $section      = $this->resolveSection($data['level_id'], $data['section_name'] ?? 'أ');
+            $section      = $this->resolveEnrollmentSection($data);
 
             $enrollment = Enrollment::create([
                 'student_id'       => $student->id,
                 'academic_year_id' => $academicYear->id,
-                'level_id'         => $data['level_id'],
+                'level_id'         => $section->level_id,
                 'section_id'       => $section->id,
                 'enrollment_date'  => now(),
                 'status'           => 'active',
@@ -91,12 +91,12 @@ class EnrollmentService
                                             ->latest()
                                             ->first();
 
-            $section = $this->resolveSection($data['level_id'], $data['section_name'] ?? 'أ');
+            $section = $this->resolveEnrollmentSection($data);
 
             $enrollment = Enrollment::create([
                 'student_id'             => $student->id,
                 'academic_year_id'       => $academicYear->id,
-                'level_id'               => $data['level_id'],
+                'level_id'               => $section->level_id,
                 'section_id'             => $section->id,
                 'enrollment_date'        => now(),
                 'status'                 => 'active',
@@ -108,6 +108,38 @@ class EnrollmentService
 
             return $enrollment;
         });
+    }
+
+    /**
+     * القسم هو مصدر الحقيقة، والمستوى يُشتقّ منه.
+     *
+     * سبب هذا الاتجاه: القسم ينتمي إلى مستوى واحد لا غير (sections.level_id)، فإذا
+     * أرسلت الواجهة الاثنين معاً أمكن أن يتناقضا ويُسجَّل تلميذ في مستوى لا يحوي قسمه.
+     * لذلك نقبل section_id ونستخرج منه level_id، ونرفض أي level_id مخالف بدل تجاهله.
+     *
+     * يبقى المسار القديم (level_id + section_name) مقبولاً حتى تُحوَّل بقيّة الشاشات.
+     */
+    private function resolveEnrollmentSection(array $data): Section
+    {
+        if (! empty($data['section_id'])) {
+            $section = Section::find((int) $data['section_id']);
+
+            if (! $section) {
+                throw new \InvalidArgumentException('القسم المختار غير موجود');
+            }
+
+            if (! empty($data['level_id']) && (int) $data['level_id'] !== (int) $section->level_id) {
+                throw new \InvalidArgumentException('القسم المختار لا ينتمي إلى المستوى المحدَّد');
+            }
+
+            return $section;
+        }
+
+        if (empty($data['level_id'])) {
+            throw new \InvalidArgumentException('يجب اختيار القسم');
+        }
+
+        return $this->resolveSection((int) $data['level_id'], $data['section_name'] ?? 'أ');
     }
 
     private function resolveSection(int $levelId, string $sectionName): Section
