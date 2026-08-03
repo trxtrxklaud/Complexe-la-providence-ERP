@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { Search, ArrowRight, User, GraduationCap, CreditCard, AlertCircle, CheckCircle } from 'lucide-react';
+import { Search, ArrowRight, GraduationCap, CreditCard, AlertCircle, CheckCircle } from 'lucide-react';
 import { getStudents, getSectionOptions, reenrollStudent, type SectionOption } from '../../api/students';
 import { ListSkeleton } from '../../components/DataSkeleton';
 
@@ -19,6 +19,10 @@ const C = {
 export function OldStudentReenroll() {
   const [students, setStudents] = useState<any[]>([]);
   const [search, setSearch] = useState('');
+  // فلتر القسم: يُرسل إلى الخادم باسم level لأنّ StudentController يقرأ منه section_id
+  // (نفس السلوك المعتمد في شاشة البحث)؛ الفلترة في الخادم لا في المتصفّح
+  // حتى لا تتوقّف النتيجة على عدد الصفوف المُحمّلة.
+  const [sectionFilter, setSectionFilter] = useState('');
   const [loading, setLoading] = useState(true);
   const [selectedStudent, setSelectedStudent] = useState<any>(null);
 
@@ -39,14 +43,19 @@ export function OldStudentReenroll() {
   const [success, setSuccess] = useState('');
 
   useEffect(() => {
-    loadStudents();
     loadSections();
   }, []);
 
-  async function loadStudents() {
+  useEffect(() => {
+    loadStudents(sectionFilter);
+  }, [sectionFilter]);
+
+  async function loadStudents(section: string) {
     try {
       setLoading(true);
-      const data = await getStudents();
+      const data = section
+        ? await getStudents({ level: section, student_name: '', phone: '', birthday: '', year: '', cnte: '', per_page: 100 })
+        : await getStudents();
       setStudents(data || []);
     } catch (err) {
       console.error(err);
@@ -73,7 +82,7 @@ export function OldStudentReenroll() {
 
   const filtered = students.filter((s) => {
     const fullName = `${s.first_name || ''} ${s.last_name || ''}`.toLowerCase();
-    return fullName.includes(search.toLowerCase()) || 
+    return fullName.includes(search.toLowerCase()) ||
            (s.student_code || '').toLowerCase().includes(search.toLowerCase());
   });
 
@@ -83,7 +92,8 @@ export function OldStudentReenroll() {
 
   function openStudent(student: any) {
     setSelectedStudent(student);
-    setSectionId('');
+    // القسم المختار في البحث اقتراح أوّلي لا أكثر؛ يبقى قابلاً للتغيير قبل الحفظ.
+    setSectionId(sectionFilter);
     setSubmitted(false);
     setError('');
     setSuccess('');
@@ -214,6 +224,7 @@ export function OldStudentReenroll() {
 
               <select
                 id="section_id"
+                name="section_id"
                 value={sectionId}
                 onChange={(e) => { setSectionId(e.target.value); setError(''); }}
                 disabled={sectionsLoading || sections.length === 0}
@@ -268,8 +279,8 @@ export function OldStudentReenroll() {
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm mb-1.5" style={{ color: C.muted }}>صيغة الدفع</label>
-                  <select disabled value={paymentMethod} onChange={(e) => setPaymentMethod(e.target.value)} className="w-full p-3 rounded-xl border bg-slate-50 outline-none disabled:opacity-60" style={{ borderColor: C.line }}>
+                  <label htmlFor="reenroll_payment_method" className="block text-sm mb-1.5" style={{ color: C.muted }}>صيغة الدفع</label>
+                  <select id="reenroll_payment_method" name="reenroll_payment_method" disabled value={paymentMethod} onChange={(e) => setPaymentMethod(e.target.value)} className="w-full p-3 rounded-xl border bg-slate-50 outline-none disabled:opacity-60" style={{ borderColor: C.line }}>
                     <option value="">اختر صيغة الدفع</option>
                     <option value="cash">نقداً</option>
                     <option value="check">شيك</option>
@@ -277,12 +288,12 @@ export function OldStudentReenroll() {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-sm mb-1.5" style={{ color: C.muted }}>مبلغ التسجيل</label>
-                  <input disabled type="number" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0.00" className="w-full p-3 rounded-xl border bg-slate-50 outline-none disabled:opacity-60" style={{ borderColor: C.line }} />
+                  <label htmlFor="reenroll_amount" className="block text-sm mb-1.5" style={{ color: C.muted }}>مبلغ التسجيل</label>
+                  <input id="reenroll_amount" name="reenroll_amount" disabled type="number" inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0.00" className="w-full p-3 rounded-xl border bg-slate-50 outline-none disabled:opacity-60" style={{ borderColor: C.line }} />
                 </div>
                 <div>
-                  <label className="block text-sm mb-1.5" style={{ color: C.muted }}>تاريخ الدفع</label>
-                  <input disabled type="date" value={paymentDate} onChange={(e) => setPaymentDate(e.target.value)} className="w-full p-3 rounded-xl border bg-slate-50 outline-none disabled:opacity-60" style={{ borderColor: C.line }} />
+                  <label htmlFor="reenroll_payment_date" className="block text-sm mb-1.5" style={{ color: C.muted }}>تاريخ الدفع</label>
+                  <input id="reenroll_payment_date" name="reenroll_payment_date" disabled type="date" value={paymentDate} onChange={(e) => setPaymentDate(e.target.value)} className="w-full p-3 rounded-xl border bg-slate-50 outline-none disabled:opacity-60" style={{ borderColor: C.line }} />
                 </div>
               </div>
             </div>
@@ -316,7 +327,7 @@ export function OldStudentReenroll() {
             ترسيم تلميذ قديم
           </h1>
           <p className="text-sm" style={{ color: C.muted }}>
-            ابحث عن التلميذ لتجديد ترسيمه
+            ابحث عن التلميذ بالقسم أو بالاسم لتجديد ترسيمه
           </p>
         </div>
       </div>
@@ -331,28 +342,65 @@ export function OldStudentReenroll() {
         </div>
       )}
 
-      <div className="relative mb-6">
-        <Search className="absolute right-4 top-1/2 -translate-y-1/2" size={18} style={{ color: C.muted }} />
-        <input
-          type="text"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="ابحث بالاسم أو رقم التلميذ..."
-          className="w-full pr-12 pl-4 py-3.5 rounded-xl border bg-white outline-none"
-          style={{ borderColor: C.line }}
-        />
+      <div className="mb-6 grid grid-cols-1 gap-4 md:grid-cols-2">
+        <div>
+          <label htmlFor="search_section" className="mb-1.5 block text-sm font-medium" style={{ color: C.muted }}>
+            القسم
+          </label>
+          <select
+            id="search_section"
+            name="search_section"
+            value={sectionFilter}
+            onChange={(e) => setSectionFilter(e.target.value)}
+            disabled={sectionsLoading || sections.length === 0}
+            className="w-full rounded-xl border bg-white p-3.5 outline-none disabled:opacity-60"
+            style={{ borderColor: C.line }}
+          >
+            <option value="">
+              {sectionsLoading ? 'جارٍ تحميل الأقسام…' : 'كل الأقسام'}
+            </option>
+            {sections.map((section) => (
+              <option key={section.id} value={section.id}>{section.label}</option>
+            ))}
+          </select>
+        </div>
+
+        <div>
+          <label htmlFor="search_student" className="mb-1.5 block text-sm font-medium" style={{ color: C.muted }}>
+            الاسم أو رقم التلميذ
+          </label>
+          <div className="relative">
+            <Search className="absolute right-4 top-1/2 -translate-y-1/2" size={18} style={{ color: C.muted }} />
+            <input
+              id="search_student"
+              name="search_student"
+              type="text"
+              autoComplete="off"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="ابحث بالاسم أو رقم التلميذ..."
+              className="w-full rounded-xl border bg-white py-3.5 pr-12 pl-4 outline-none"
+              style={{ borderColor: C.line }}
+            />
+          </div>
+        </div>
       </div>
 
       <div className="bg-white rounded-[22px] border overflow-hidden" style={{ borderColor: C.line }}>
+        <div className="flex items-center justify-between border-b px-5 py-3 text-sm" style={{ borderColor: C.line, color: C.muted }}>
+          <span>نتائج البحث</span>
+          {!loading && <span>{filtered.length} تلميذ</span>}
+        </div>
         {loading ? (
           <ListSkeleton />
         ) : filtered.length === 0 ? (
-          <div className="p-10 text-center" style={{ color: C.muted }}>لا يوجد تلاميذ</div>
+          <div className="p-10 text-center" style={{ color: C.muted }}>لا يوجد تلاميذ مطابقون للبحث</div>
         ) : (
           <div className="divide-y" style={{ borderColor: C.line }}>
             {filtered.map((student) => (
               <button
                 key={student.id}
+                type="button"
                 onClick={() => openStudent(student)}
                 className="w-full flex items-center gap-4 p-4 text-right hover:bg-[#FAFBF8] transition"
               >
@@ -366,6 +414,7 @@ export function OldStudentReenroll() {
                   </p>
                   <p className="text-sm" style={{ color: C.muted }}>
                     {student.student_code || `ID: ${student.id}`}
+                    {student.enrollments?.[0]?.section?.name ? ` — ${student.enrollments[0].section.name}` : ''}
                   </p>
                 </div>
                 <span className="text-xs px-3 py-1 rounded-full" style={{ backgroundColor: C.sage, color: C.forest }}>
