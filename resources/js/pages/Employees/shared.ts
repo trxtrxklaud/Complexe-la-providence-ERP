@@ -65,24 +65,24 @@ export async function fetchYears(): Promise<AcademicYearOption[]> {
 }
 
 /**
- * طلب سبب إلغاء موثّق.
+ * ما يُطلب إلغاؤه من شاشة الإطارات.
  *
- * كان هذا التحقّق مكرّراً في أربعة مواضع، واختلاف أحدها عن بقيّتها
- * يعني ثغرة في مسار التدقيق.
- *
- * @returns السبب بعد التشذيب، أو null إن تراجع المستخدم.
- * @throws إن كان السبب أقصر من ثلاثة أحرف.
+ * لا شيء يُحذف هنا: كل مستند مالي يُلغى بسبب مكتوب يبقى في السجلّ.
+ * وحدة النوع هذه تجعل نافذة واحدة تخدم الثلاثة دون تكرار.
  */
-export function promptCancelReason(label: string): string | null {
-  const reason = window.prompt(label);
+export type CancelTarget =
+  | { kind: 'salary'; id: number }
+  | { kind: 'advance'; id: number }
+  | { kind: 'repayment'; id: number; advanceId: number };
 
-  if (reason === null) return null;
+export const CANCEL_TITLES: Record<CancelTarget['kind'], string> = {
+  salary: 'إلغاء راتب',
+  advance: 'إلغاء تسبقة أو سلفة',
+  repayment: 'إلغاء ردّ قسط',
+};
 
-  const trimmed = reason.trim();
-
-  if (trimmed.length < 3) {
-    throw new Error('سبب الإلغاء مطلوب (ثلاثة أحرف على الأقلّ)');
-  }
-
-  return trimmed;
-}
+export const CANCEL_DESCRIPTIONS: Record<CancelTarget['kind'], string> = {
+  salary: 'يُسحَب الراتب من الدفتر النقدي، وتعود التسبقات وأقساط السلف المخصومة به إلى ذمّة الإطار.',
+  advance: 'يُسحَب أثرها من الخزينة، وتبقى ظاهرة في السجلّ مع سبب إلغائها.',
+  repayment: 'يعود المبلغ دَيناً على الإطار، ويُسحَب من الدفتر إن كان ردّاً نقديّاً.',
+};
