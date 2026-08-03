@@ -37,6 +37,24 @@ class StudentController extends Controller
         'payment_date.date' => 'تاريخ الدفع غير صالح.',
     ];
 
+    /**
+     * قواعد معلوم الترسيم المقبوض لحظة التسجيل.
+     *
+     * مشتركة بين التسجيل الجديد وتجديد الترسيم عمداً: قاعدتان متفرقتان تنحرفان
+     * عند أوّل تعديل، فيقبل مسار ما يرفضه الآخر دون سبب مفهوم للقابض.
+     *
+     * @return array<string,mixed>
+     */
+    private static function paymentRules(): array
+    {
+        return [
+            'registration_amount' => ['nullable', 'numeric', 'min:0.01'],
+            'payment_method' => ['nullable', 'required_with:registration_amount', 'in:cash,bank_transfer,check,card'],
+            'payment_date' => ['nullable', 'required_with:registration_amount', 'date'],
+            'payment_notes' => ['nullable', 'string', 'max:1000'],
+        ];
+    }
+
     public function __construct(
         protected StudentService $studentService,
         protected EnrollmentService $enrollmentService,
@@ -223,7 +241,7 @@ class StudentController extends Controller
      */
     public function store(Request $request): JsonResponse
     {
-        $validated = $request->validate([
+        $validated = $request->validate(array_merge([
             'first_name' => 'required|string|max:255',
             'last_name' => 'required|string|max:255',
             'dob' => 'required|date',
@@ -240,11 +258,7 @@ class StudentController extends Controller
             'level_id' => 'nullable|exists:levels,id',
             'section_name' => 'nullable|string',
             'photo' => 'nullable|file|mimes:jpeg,jpg,png,webp|max:2048',
-            'registration_amount' => 'nullable|numeric|min:0.01',
-            'payment_method' => 'nullable|required_with:registration_amount|in:cash,bank_transfer,check,card',
-            'payment_date' => 'nullable|required_with:registration_amount|date',
-            'payment_notes' => 'nullable|string|max:1000',
-        ], self::SECTION_MESSAGES);
+        ], self::paymentRules()), self::SECTION_MESSAGES);
 
         try {
             $enrollment = DB::transaction(function () use ($validated, $request) {
@@ -354,21 +368,51 @@ class StudentController extends Controller
     }
 
     /**
-     * ترسيم تلميذ قديم — القسم إجباري، والمستوى يُشتقّ منه داخل EnrollmentService.
+     * ترسيم تلميذ قديم — القسم إجباري، ومعلوم التجديد يدخل الخزينة في نفس المعاملة.
+     *
+     * الدفع ليس خطوة لاحقة اختيارية: تجديد بلا وصل يعني تلميذاً مُرسّماً بلا أثر
+     * مالي، ولا يُكتشف إلا بجرد يدوي في آخر السنة. لذلك العمليتان في معاملة واحدة:
+     * إمّا ترسيم مع مدخول، أو لا شيء.
+     *
+     * المبلغ اختياري: تلميذ يُجدّد اليوم ويدفع لاحقاً حالة واقعية، ومنعها يدفع القابض
+     * إلى تسجيل مبلغ وهمي ليتجاوز الشاشة — وهذا أفسد للدفتر من فراغ مؤقّت.
      */
     public function reenroll(Request $request, Student $student): JsonResponse
     {
-        $validated = $request->validate([
+        $validated = $request->validate(array_merge([
             'section_id' => ['required', 'integer', 'exists:sections,id'],
             'notes' => ['nullable', 'string', 'max:1000'],
-        ], self::SECTION_MESSAGES);
+        ], self::paymentRules()), self::SECTION_MESSAGES);
 
         try {
-            $enrollment = $this->enrollmentService->reenrollStudent($student->id, $validated);
+            $result = DB::transaction(function () use ($student, $validated, $request) {
+                $enrollment = $this->enrollmentService->reenrollStudent($student->id, $validated);
+
+                $payload = $validated;
+                $payload['payment_notes'] = $validated['payment_notes'] ?? 'معلوم تجديد الترسيم';
+
+                $payment = $this->registrationPaymentService->record(
+                    $enrollment,
+                    $payload,
+                    $request->user()?->id,
+                );
+
+                return [$enrollment, $payment];
+            });
+
+            [$enrollment, $payment] = $result;
 
             return response()->json([
-                'message' => 'تم الترسيم بنجاح',
+                'message' => $payment
+                    ? 'تم الترسيم وتسجيل المبلغ في الخزينة بنجاح'
+                    : 'تم الترسيم بنجاح',
                 'enrollment' => $enrollment->load(['student', 'level', 'section']),
+                'payment' => $payment ? [
+                    'id' => $payment->id,
+                    'amount' => $payment->amount,
+                    'payment_date' => $payment->payment_date?->toDateString(),
+                    'method' => $payment->method,
+                ] : null,
             ], 201);
         } catch (\InvalidArgumentException $e) {
             return response()->json(['message' => $e->getMessage()], 422);
