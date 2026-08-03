@@ -2,20 +2,25 @@
 
 namespace App\Services;
 
+use App\Models\CashTransaction;
 use App\Models\Enrollment;
+use App\Models\FeeType;
 use App\Models\Payment;
 use App\Models\StudentFee;
 
 /**
  * معلوم الترسيم المقبوض لحظة تسجيل تلميذ جديد.
  *
- * كان هذا المبلغ يُجمع في الواجهة ثمّ يُرمى: المتحكّم لم يكن يتحقّق منه أصلاً،
- * فلا يظهر في الخزينة ولا في المداخيل ولا في الدخل الصافي، ويبقى رسم الترسيم مفتوحاً
- * على التلميذ رغم دفع وليّه. هذه الخدمة تغلق الثغرة.
+ * التصنيف ليس تفصيلاً تجميلياً: LedgerService لا يعرف أنّ الدفعة معلوم ترسيم، بل
+ * يستنتج البند من الرسم المُخصّص لها. دفعة بلا تخصيص تسقط في «مداخيل أخرى»،
+ * فيدخل المال الخزينة ويغيب عن معاليم التسجيل وعن كل تقرير يفصّل حسب البند.
  *
- * التخصيص مقصود: المبلغ يُوزّع أوّلاً على الرسوم السنوية (معلوم الترسيم)،
- * لأنّ LedgerService يشتقّ بند المدخول من خطة الرسم: yearly ← registration_fee.
- * دفعة بلا توزيع تسقط في «مداخيل أخرى» — رقم صحيح في خانة خاطئة.
+ * لذلك نضمن وجود رسم يُخصّص له المبلغ، بترتيب أولوية واضح:
+ *   1) رسوم خطة سنوية (yearly) إن وُلّدت للمستوى — وهي الحالة المثلى
+ *   2) وإلا فرسم مربوط بنوع رسم مُصنّف registration_fee يُنشَأ عند الحاجة
+ *
+ * لماذا نُنشئ رسماً؟ لأنّ المدرسة قبضت مالاً مقابل الترسيم، فوجب أن يظهر في
+ * ملفّ التلميذ ما قُبض ومقابل ماذا. دفعة بلا رسم هي مال بلا سبب في دفتر محاسبي.
  */
 class RegistrationPaymentService
 {
@@ -46,16 +51,13 @@ class RegistrationPaymentService
     }
 
     /**
-     * توزيع المبلغ على الرسوم السنوية المفتوحة دون تجاوز المتبقّي.
+     * توزيع المبلغ على رسوم الترسيم المفتوحة دون تجاوز المتبقّي.
      *
      * @return array<int,array{student_fee_id:int,amount:float}>
      */
     private function allocations(Enrollment $enrollment, float $amount): array
     {
-        $fees = StudentFee::where('enrollment_id', $enrollment->id)
-            ->whereHas('feePlan', fn ($query) => $query->where('frequency', 'yearly'))
-            ->orderBy('due_date')
-            ->get();
+        $fees = $this->registrationFees($enrollment, $amount);
 
         $allocations = [];
         $remaining   = $amount;
@@ -86,5 +88,68 @@ class RegistrationPaymentService
         }
 
         return $allocations;
+    }
+
+    /**
+     * رسوم الترسيم المتاحة لهذا الترسيم، مع إنشاء رسم عند الحاجة.
+     *
+     * @return \Illuminate\Support\Collection<int,StudentFee>
+     */
+    private function registrationFees(Enrollment $enrollment, float $amount)
+    {
+        $planned = StudentFee::where('enrollment_id', $enrollment->id)
+            ->whereHas('feePlan', fn ($query) => $query->where('frequency', 'yearly'))
+            ->orderBy('due_date')
+            ->get();
+
+        if ($planned->isNotEmpty()) {
+            return $planned;
+        }
+
+        $feeType = $this->registrationFeeType();
+
+        if (! $feeType) {
+            // لا نوع رسم مصنّف للترسيم: نترك المبلغ يدخل الخزينة كمدخول آخر
+            // بدل رفض الترسيم. إخفاء مال مقبوض أخطر من تصنيفه تصنيفاً عامّاً.
+            return collect();
+        }
+
+        $price = (float) $feeType->price;
+
+        $fee = StudentFee::firstOrCreate(
+            [
+                'enrollment_id' => $enrollment->id,
+                'fee_type_id'   => $feeType->id,
+            ],
+            [
+                'description' => $feeType->name_ar ?: 'معلوم الترسيم',
+                'amount_due'  => $price > 0 ? $price : $amount,
+                'due_date'    => $enrollment->enrollment_date ?? now()->toDateString(),
+                'status'      => 'pending',
+            ]
+        );
+
+        return collect([$fee]);
+    }
+
+    /**
+     * نوع الرسم المعتمد للترسيم: المُصرّح بـ ledger_category أوّلاً،
+     * ثمّ أي نوع يستنتج من اسمه أنّه ترسيم (للأنواع القديمة قبل إضافة العمود).
+     */
+    private function registrationFeeType(): ?FeeType
+    {
+        $declared = FeeType::where('is_active', true)
+            ->where('ledger_category', CashTransaction::CATEGORY_REGISTRATION_FEE)
+            ->orderBy('id')
+            ->first();
+
+        if ($declared) {
+            return $declared;
+        }
+
+        return FeeType::where('is_active', true)
+            ->orderBy('id')
+            ->get()
+            ->first(fn (FeeType $type) => $type->resolveLedgerCategory() === CashTransaction::CATEGORY_REGISTRATION_FEE);
     }
 }
