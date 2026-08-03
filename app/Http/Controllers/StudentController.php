@@ -292,11 +292,18 @@ class StudentController extends Controller
         return response()->json(null, 204);
     }
 
-    // NEW: enroll existing student in current academic year
+    /**
+     * NEW: enroll existing student in current academic year.
+     *
+     * يقبل الطريقين: section_id (المعتمد) أو level_id + section_name (القديم)،
+     * حتى لا تنكسر أيّ شاشة لم تُحوَّل بعد. reenroll() وحده صار صارماً.
+     */
     public function enroll(Request $request, Student $student): JsonResponse
     {
         $validated = $request->validate([
-            'section_id' => ['required', 'integer', 'exists:sections,id'],
+            'section_id' => ['nullable', 'integer', 'exists:sections,id'],
+            'level_id' => ['required_without:section_id', 'nullable', 'exists:levels,id'],
+            'section_name' => ['nullable', 'string'],
             'notes' => ['nullable', 'string', 'max:1000'],
         ], self::SECTION_MESSAGES);
 
@@ -316,10 +323,11 @@ class StudentController extends Controller
         }
     }
 
-    // FIX: was int $id — now Route Model Binding
+    /**
+     * ترسيم تلميذ قديم — القسم إجباري، والمستوى يُشتقّ منه داخل EnrollmentService.
+     */
     public function reenroll(Request $request, Student $student): JsonResponse
     {
-        // القسم إجباري، والمستوى يُشتقّ منه داخل EnrollmentService.
         $validated = $request->validate([
             'section_id' => ['required', 'integer', 'exists:sections,id'],
             'notes' => ['nullable', 'string', 'max:1000'],
