@@ -107,6 +107,26 @@ export type YearRevenueReport = {
   summary: { income: number; expenses: number; net_income: number; balance: number };
 };
 
+export type UnpaidMonthlyOptions = {
+  years: Array<{ id: number; name: string; start_date: string; end_date: string; is_active: boolean }>;
+  selected_year_id: number | null;
+  months: Array<{ value: string; label: string }>;
+  sections: Array<{ id: number; name: string; level: string | null; label: string }>;
+};
+
+export type UnpaidMonthlyReport = {
+  school_name: string;
+  title: string;
+  academic_year: { id: number; name: string };
+  month: { value: string; label: string };
+  section: { id: number; name: string; level: string | null; label: string };
+  generated_at: string;
+  report_date: string;
+  report_time: string;
+  rows: Array<{ enrollment_id: number; student_id: number; student_code: string | null; student_name: string; guardian_name: string; phone: string | null; enrollment_date: string | null }>;
+  summary: { unpaid_students_count: number };
+};
+
 export type PeriodParams = {
   granularity?: Granularity;
   date_from?: string;
@@ -170,4 +190,12 @@ export function fetchYearRevenue(signal?: AbortSignal): Promise<YearRevenueRepor
     signal,
     fallbackMessage: 'فشل تحميل مداخيل السنوات',
   });
+}
+
+export function fetchUnpaidMonthlyOptions(academicYearId?: number | null, signal?: AbortSignal): Promise<UnpaidMonthlyOptions> {
+  return apiFetch<UnpaidMonthlyOptions>('/reports/unpaid-monthly/options', { params: { academic_year_id: academicYearId }, signal, fallbackMessage: 'فشل تحميل خيارات تقرير المتخلفين الشهري' });
+}
+
+export function fetchUnpaidMonthlyReport(params: { academic_year_id: number; month: string; section_id: number }, signal?: AbortSignal): Promise<UnpaidMonthlyReport> {
+  return apiFetch<UnpaidMonthlyReport>('/reports/unpaid-monthly', { params, signal, fallbackMessage: 'فشل تحميل تقرير المتخلفين الشهري' });
 }

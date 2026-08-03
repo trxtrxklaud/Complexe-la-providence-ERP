@@ -160,10 +160,20 @@ export function Sidebar() {
                         to="/income"
                         onMouseEnter={prefetch(loadCollectionPage)}
                         onFocus={prefetch(loadCollectionPage)}
-                        className={({ isActive }) => linkClass(isActive || startsWith('/income'))}
+                        className={() => linkClass(startsWith('/income') && !startsWith('/income/unpaid-monthly'))}
                     >
                         <Wallet size={20} />
                         <span>المداخيل</span>
+                    </NavLink>
+                )}
+
+                {hasPermission('view_reports') && (
+                    <NavLink
+                        to="/income/unpaid-monthly"
+                        className={() => linkClass(startsWith('/income/unpaid-monthly'))}
+                    >
+                        <ClipboardList size={20} />
+                        <span>المتخلفون شهريًا</span>
                     </NavLink>
                 )}
 

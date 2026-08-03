@@ -21,6 +21,7 @@ use App\Http\Controllers\FinancialReportController;
 use App\Http\Controllers\TreasuryController;
 use App\Http\Controllers\TreasuryDaybookController;
 use App\Http\Controllers\TreasuryWithdrawalController;
+use App\Http\Controllers\UnpaidMonthlyReportController;
 
 Route::middleware('throttle:5,1')->post('/login', [AuthController::class, 'login']);
 
@@ -89,6 +90,8 @@ Route::middleware(['auth:sanctum', 'active', 'throttle:120,1'])->group(function 
         Route::get('/reports/revenue/students',   [FinancialReportController::class, 'revenueByStudent']);
         Route::get('/reports/revenue/classrooms', [FinancialReportController::class, 'revenueByClassroom']);
         Route::get('/reports/revenue/years',      [FinancialReportController::class, 'revenueByYear']);
+        Route::get('/reports/unpaid-monthly/options', [UnpaidMonthlyReportController::class, 'options']);
+        Route::get('/reports/unpaid-monthly', [UnpaidMonthlyReportController::class, 'index']);
 
         // صفحات التفصيل: قسم واحد أو تلميذ واحد
         Route::get('/reports/revenue/classrooms/{section}', [FinancialReportController::class, 'classroomDetail']);
@@ -135,6 +138,7 @@ Route::middleware(['auth:sanctum', 'active', 'throttle:120,1'])->group(function 
         Route::post('/students/{student}/reenroll', [StudentController::class, 'reenroll']);
         Route::get('/students/{student}/balance',   [PaymentController::class, 'studentBalance']);
         Route::get('/students/{student}/fees',      [PaymentController::class, 'studentFees']);
+        Route::get('/students/{student}/payments',  [StudentController::class, 'paymentHistory']);
     });
 
     // Payments

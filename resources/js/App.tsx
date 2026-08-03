@@ -43,6 +43,7 @@ const StudentDetailPage = lazy(() => import('./pages/Income/StudentDetailPage').
 const RevenueByClassroomPage = lazy(() => import('./pages/Income/RevenueByClassroomPage').then((module) => ({ default: module.RevenueByClassroomPage })));
 const ClassroomDetailPage = lazy(() => import('./pages/Income/ClassroomDetailPage').then((module) => ({ default: module.ClassroomDetailPage })));
 const RevenueByYearPage = lazy(() => import('./pages/Income/RevenueByYearPage').then((module) => ({ default: module.RevenueByYearPage })));
+const UnpaidMonthlyReportPage = lazy(() => import('./pages/Income/UnpaidMonthlyReportPage').then((module) => ({ default: module.UnpaidMonthlyReportPage })));
 const ExpenseCreatePage = lazy(() => loadExpenseCreatePage().then((module) => ({ default: module.ExpenseCreatePage })));
 const ExpenseDailyReportPage = lazy(() => import('./pages/Expenses/ExpenseDailyReportPage').then((module) => ({ default: module.ExpenseDailyReportPage })));
 const ExpenseMonthlyReportPage = lazy(() => import('./pages/Expenses/ExpenseMonthlyReportPage').then((module) => ({ default: module.ExpenseMonthlyReportPage })));
@@ -198,6 +199,7 @@ export default function App() {
                         {/* صفحة قسم واحد — حفر من جدول الأقسام */}
                         <Route path="by-classroom/:sectionId" element={<ClassroomDetailPage />} />
                         <Route path="by-year" element={<RevenueByYearPage />} />
+                        <Route path="unpaid-monthly" element={<ProtectedRoute permission="view_reports"><UnpaidMonthlyReportPage /></ProtectedRoute>} />
                     </Route>
 
                     {/* ═══ المصاريف ═══

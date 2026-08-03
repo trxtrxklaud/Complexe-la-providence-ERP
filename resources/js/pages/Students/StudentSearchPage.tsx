@@ -166,17 +166,23 @@ export function StudentSearchPage() {
               <tr>
                 <th className="px-5 py-3 font-semibold">CNTE</th>
                 <th className="px-5 py-3 font-semibold">الاسم الكامل</th>
-                <th className="px-5 py-3 font-semibold">القسم</th>
+                <th className="px-5 py-3 font-semibold">الجنس</th>
                 <th className="px-5 py-3 font-semibold">تاريخ الولادة</th>
-                <th className="px-5 py-3 font-semibold">الهاتف</th>
+                <th className="px-5 py-3 font-semibold">الأب / الولي</th>
+                <th className="px-5 py-3 font-semibold">الأم</th>
+                <th className="px-5 py-3 font-semibold">الاتصال</th>
+                <th className="px-5 py-3 font-semibold">العنوان</th>
+                <th className="px-5 py-3 font-semibold">القسم والسنة</th>
+                <th className="px-5 py-3 font-semibold">الحالة</th>
+                <th className="px-5 py-3 font-semibold">ملاحظات</th>
                 <th className="px-5 py-3 font-semibold">التفاصيل</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {loading ? (
-                <TableRowsSkeleton columns={6} />
+                <TableRowsSkeleton columns={12} />
               ) : students.length === 0 ? (
-                <tr><td colSpan={6} className="px-5 py-10 text-center text-slate-500">لا توجد نتائج مطابقة.</td></tr>
+                <tr><td colSpan={12} className="px-5 py-10 text-center text-slate-500">لا توجد نتائج مطابقة.</td></tr>
               ) : students.map((student) => {
                 const enrollment = student.enrollments?.[0];
                 const section = enrollment?.section?.name;
@@ -192,9 +198,18 @@ export function StudentSearchPage() {
                         {student.first_name} {student.last_name}
                       </Link>
                     </td>
-                    <td className="px-5 py-3 text-slate-600">{[level, section].filter(Boolean).join(' ') || '—'}</td>
+                    <td className="px-5 py-3 text-slate-600">{student.gender === 'female' ? 'أنثى' : 'ذكر'}</td>
                     <td className="px-5 py-3 text-slate-600">{student.dob ? new Date(student.dob).toLocaleDateString('ar-TN') : '—'}</td>
-                    <td className="px-5 py-3 text-slate-600" dir="ltr">{student.guardians?.[0]?.phone || student.guardian_phone || student.mother_phone || '—'}</td>
+                    <td className="px-5 py-3 text-slate-600">{[student.guardians?.[0]?.first_name || student.guardian_first_name, student.guardians?.[0]?.last_name || student.guardian_last_name].filter(Boolean).join(' ') || '—'}</td>
+                    <td className="px-5 py-3 text-slate-600">{student.mother_name || '—'}</td>
+                    <td className="px-5 py-3 text-slate-600" dir="ltr">
+                      <div>{student.guardians?.[0]?.phone || student.guardian_phone || student.mother_phone || '—'}</div>
+                      <div className="text-xs text-slate-400">{student.guardian_email || student.mother_email || '—'}</div>
+                    </td>
+                    <td className="max-w-xs px-5 py-3 text-slate-600">{student.address || '—'}</td>
+                    <td className="px-5 py-3 text-slate-600">{[level, section, enrollment?.academic_year?.name].filter(Boolean).join(' — ') || '—'}</td>
+                    <td className="px-5 py-3 text-slate-600">{student.status || enrollment?.status || '—'}</td>
+                    <td className="max-w-xs px-5 py-3 text-slate-600">{student.notes || '—'}</td>
                     <td className="px-5 py-3">
                       <Link to={`/students/search/${student.id}${queryString ? `?${queryString}` : ''}`} className="inline-flex rounded-lg bg-[#E3EBDB] px-3 py-1.5 text-xs font-semibold text-[#3B4A36] hover:bg-[#D5E1CC]">
                         عرض التفاصيل

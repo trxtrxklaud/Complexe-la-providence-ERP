@@ -1,6 +1,7 @@
 import { Outlet } from 'react-router-dom';
-import { Wallet, CreditCard, CalendarDays, TrendingUp, Layers, CalendarRange } from 'lucide-react';
+import { Wallet, CreditCard, CalendarDays, TrendingUp, Layers, CalendarRange, ClipboardList } from 'lucide-react';
 import { SectionTabs } from '../../components/SectionTabs';
+import { useAuth } from '../../contexts/AuthContext';
 
 const C = { forest: '#3B4A36', sage: '#E3EBDB', ink: '#1F261C', muted: '#7C8677' };
 
@@ -8,6 +9,18 @@ const C = { forest: '#3B4A36', sage: '#E3EBDB', ink: '#1F261C', muted: '#7C8677'
  * موديول المداخيل — تخطيط أب مع تبويب فرعي و Outlet للصفحات الداخلية.
  */
 export function IncomeLayout() {
+  const { hasPermission } = useAuth();
+  const tabs = [
+    ...(hasPermission('manage_payments') ? [{ to: 'billing', label: 'الفوترة والاستخلاص', icon: CreditCard }] : []),
+    ...(hasPermission('view_reports') ? [
+      { to: 'by-date', label: 'المداخيل حسب التاريخ', icon: CalendarDays },
+      { to: 'revenue', label: 'مداخيل التلاميذ', icon: TrendingUp },
+      { to: 'by-classroom', label: 'المداخيل حسب القسم', icon: Layers },
+      { to: 'by-year', label: 'المداخيل حسب السنة', icon: CalendarRange },
+      { to: 'unpaid-monthly', label: 'المتخلفون شهريًا', icon: ClipboardList },
+    ] : []),
+  ];
+
   return (
     <div dir="rtl">
       <div className="px-6 pt-6 max-w-6xl mx-auto">
@@ -20,15 +33,7 @@ export function IncomeLayout() {
             <p className="text-sm" style={{ color: C.muted }}>إدارة مداخيل التلاميذ والاستخلاص والتقارير</p>
           </div>
         </div>
-        <SectionTabs
-          tabs={[
-            { to: 'billing', label: 'الفوترة والاستخلاص', icon: CreditCard },
-            { to: 'by-date', label: 'المداخيل حسب التاريخ', icon: CalendarDays },
-            { to: 'revenue', label: 'مداخيل التلاميذ', icon: TrendingUp },
-            { to: 'by-classroom', label: 'المداخيل حسب القسم', icon: Layers },
-            { to: 'by-year', label: 'المداخيل حسب السنة', icon: CalendarRange },
-          ]}
-        />
+        <SectionTabs tabs={tabs} />
       </div>
       <Outlet />
     </div>

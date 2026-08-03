@@ -13,6 +13,7 @@ export interface Enrollment {
     level: { name: string } | null;
     section: { name: string } | null;
     academic_year?: { name: string } | null;
+    status?: string | null;
 }
 
 export interface EnrollmentResponse {
@@ -22,17 +23,46 @@ export interface EnrollmentResponse {
 
 export interface Student {
     id: number;
-    student_code: string;
+    student_code: string | null;
     first_name: string;
     last_name: string;
     gender: 'male' | 'female';
-    dob: string;
+    dob: string | null;
+    photo?: string | null;
+    notes?: string | null;
+    status?: string | null;
     guardian_first_name?: string | null;
     guardian_last_name?: string | null;
+    mother_name?: string | null;
     guardian_phone?: string | null;
     mother_phone?: string | null;
+    guardian_email?: string | null;
+    mother_email?: string | null;
+    address?: string | null;
     guardians: Guardian[];
     enrollments: Enrollment[];
+}
+
+export interface StudentPaymentHistoryEntry {
+    id: number;
+    amount: number | string;
+    payment_date: string | null;
+    months: string[];
+    method: string;
+    reference: string | null;
+    cancelled_at: string | null;
+    cancellation_reason: string | null;
+    enrollment: Enrollment | null;
+    allocations: Array<{
+        amount: number | string;
+        fee: {
+            id: number;
+            description: string | null;
+            amount_due: number | string;
+            due_date: string;
+            status: string;
+        } | null;
+    }>;
 }
 
 export type StudentSearchFilters = {
@@ -113,6 +143,12 @@ export const transferStudents = (payload: TransferStudentsPayload) =>
 export async function getStudent(id: number): Promise<Student> {
     const res = await fetch(`${API_BASE}/students/${id}`, { headers: authHeaders() });
     if (!res.ok) throw new Error('حدث خطأ أثناء جلب بيانات التلميذ');
+    return res.json();
+}
+
+export async function getStudentPaymentHistory(id: number): Promise<StudentPaymentHistoryEntry[]> {
+    const res = await fetch(`${API_BASE}/students/${id}/payments`, { headers: authHeaders() });
+    if (!res.ok) throw new Error('تعذّر تحميل سجل دفعات التلميذ');
     return res.json();
 }
 

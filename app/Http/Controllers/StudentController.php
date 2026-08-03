@@ -155,8 +155,38 @@ class StudentController extends Controller
     public function show(Student $student): JsonResponse
     {
         return response()->json(
-            $student->load(['enrollments.level', 'enrollments.section', 'guardians'])
+            $student->load(['enrollments.level', 'enrollments.section', 'enrollments.academicYear', 'guardians'])
         );
+    }
+
+    public function paymentHistory(Student $student): JsonResponse
+    {
+        $payments = $student->payments()
+            ->with([
+                'enrollment.academicYear:id,name',
+                'enrollment.level:id,name',
+                'paymentAllocations.studentFee:id,description,amount_due,due_date,status',
+            ])
+            ->orderByDesc('payment_date')
+            ->orderByDesc('id')
+            ->get()
+            ->map(fn ($payment) => [
+                'id' => $payment->id,
+                'amount' => $payment->amount,
+                'payment_date' => $payment->payment_date?->toDateString(),
+                'months' => $payment->months ?? [],
+                'method' => $payment->method,
+                'reference' => $payment->reference,
+                'cancelled_at' => $payment->cancelled_at?->toISOString(),
+                'cancellation_reason' => $payment->cancellation_reason,
+                'enrollment' => $payment->enrollment,
+                'allocations' => $payment->paymentAllocations->map(fn ($allocation) => [
+                    'amount' => $allocation->amount_allocated,
+                    'fee' => $allocation->studentFee,
+                ]),
+            ]);
+
+        return response()->json($payments);
     }
 
     // store() = create new student + immediate enrollment (one-step for new students)
