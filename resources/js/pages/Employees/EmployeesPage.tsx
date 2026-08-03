@@ -7,9 +7,10 @@ import {
   getRepayments, cancelRepayment,
   type Employee, type Salary, type EmployeeAdvance, type AdvanceRepayment,
 } from '../../api/employees';
+import { CancelReasonModal } from '../../components/CancelReasonModal';
 import {
-  C, fetchYears, promptCancelReason,
-  type Tab, type AcademicYearOption,
+  C, fetchYears, CANCEL_TITLES, CANCEL_DESCRIPTIONS,
+  type Tab, type AcademicYearOption, type CancelTarget,
 } from './shared';
 import { SalariesTab } from './SalariesTab';
 import { AdvancesTab } from './AdvancesTab';
@@ -55,6 +56,10 @@ export function EmployeesPage() {
   const [showEmpForm, setShowEmpForm] = useState(false);
   const [showAdvForm, setShowAdvForm] = useState(false);
   const [showSalForm, setShowSalForm] = useState(false);
+
+  // الإلغاء الثلاثي مجموع في حالة واحدة لتخدمه نافذة واحدة.
+  const [cancelTarget, setCancelTarget] = useState<CancelTarget | null>(null);
+  const [cancelBusy, setCancelBusy] = useState(false);
 
   async function loadBase() {
     setLoading(true);
@@ -200,33 +205,6 @@ export function EmployeesPage() {
     await loadRepayments(advance.id);
   }
 
-  async function onCancelRepayment(repayment: AdvanceRepayment) {
-    setError('');
-    try {
-      const reason = promptCancelReason('سبب إلغاء الردّ (إجباري):');
-      if (reason === null) return;
-
-      await cancelRepayment(repayment.id, reason);
-      await loadRepayments(repayment.employee_advance_id);
-      await loadAdvances();
-    } catch (err: any) {
-      setError(err.message || 'فشل إلغاء الردّ');
-    }
-  }
-
-  async function onCancelAdvance(advance: EmployeeAdvance) {
-    setError('');
-    try {
-      const reason = promptCancelReason('سبب الإلغاء (إجباري):');
-      if (reason === null) return;
-
-      await cancelAdvance(advance.id, reason);
-      await loadAdvances();
-    } catch (err: any) {
-      setError(err.message || 'فشل الإلغاء');
-    }
-  }
-
   async function onCreateSalary(values: SalaryFormValues) {
     setSaving(true); setError('');
     try {
@@ -240,18 +218,38 @@ export function EmployeesPage() {
     }
   }
 
-  async function onCancelSalary(salary: Salary) {
-    setError('');
-    try {
-      const reason = promptCancelReason('سبب إلغاء الراتب (إجباري):');
-      if (reason === null) return;
+  /**
+   * تنفيذ الإلغاء بعد كتابة السبب.
+   *
+   * النافذة تفرض ثلاثة أحرف كما يفرضها الخادم، فلا حاجة لتحقّق ثانٍ هنا.
+   * تبقى النافذة مفتوحة عند الفشل حتّى لا يضيع ما كتبه القابض.
+   */
+  async function confirmCancel(reason: string) {
+    if (!cancelTarget) return;
 
-      await cancelSalary(salary.id, reason);
-      await loadSalaries();
-      // إلغاء الراتب يردّ التسبقات وأقساط السلف إلى الذمّة، فيجب تحيين القائمة.
-      if (tab === 'advances') await loadAdvances();
+    setCancelBusy(true);
+    setError('');
+
+    try {
+      if (cancelTarget.kind === 'salary') {
+        await cancelSalary(cancelTarget.id, reason);
+        await loadSalaries();
+        // إلغاء الراتب يردّ التسبقات وأقساط السلف إلى الذمّة، فيجب تحيين القائمة.
+        if (tab === 'advances') await loadAdvances();
+      } else if (cancelTarget.kind === 'advance') {
+        await cancelAdvance(cancelTarget.id, reason);
+        await loadAdvances();
+      } else {
+        await cancelRepayment(cancelTarget.id, reason);
+        await loadRepayments(cancelTarget.advanceId);
+        await loadAdvances();
+      }
+
+      setCancelTarget(null);
     } catch (err: any) {
-      setError(err.message || 'فشل إلغاء الراتب');
+      setError(err.message || 'فشل الإلغاء');
+    } finally {
+      setCancelBusy(false);
     }
   }
 
@@ -293,7 +291,7 @@ export function EmployeesPage() {
           salaries={salaries}
           loading={loading}
           onNewSalary={() => setShowSalForm(true)}
-          onCancelSalary={onCancelSalary}
+          onCancelSalary={(salary) => setCancelTarget({ kind: 'salary', id: salary.id })}
         />
       )}
 
@@ -310,8 +308,12 @@ export function EmployeesPage() {
           onNewAdvance={() => setShowAdvForm(true)}
           onSettle={(advance) => { setError(''); setSettleTarget(advance); }}
           onToggleRepayments={onToggleRepayments}
-          onCancelAdvance={onCancelAdvance}
-          onCancelRepayment={onCancelRepayment}
+          onCancelAdvance={(advance) => setCancelTarget({ kind: 'advance', id: advance.id })}
+          onCancelRepayment={(repayment) => setCancelTarget({
+            kind: 'repayment',
+            id: repayment.id,
+            advanceId: repayment.employee_advance_id,
+          })}
         />
       )}
 
@@ -359,6 +361,16 @@ export function EmployeesPage() {
           onClose={() => setShowSalForm(false)}
           onError={setError}
           onSubmit={onCreateSalary}
+        />
+      )}
+
+      {cancelTarget && (
+        <CancelReasonModal
+          title={CANCEL_TITLES[cancelTarget.kind]}
+          description={CANCEL_DESCRIPTIONS[cancelTarget.kind]}
+          busy={cancelBusy}
+          onConfirm={confirmCancel}
+          onClose={() => setCancelTarget(null)}
         />
       )}
     </div>
