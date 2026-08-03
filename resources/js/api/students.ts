@@ -75,8 +75,17 @@ export type StudentSearchFilters = {
     per_page?: number;
 };
 
+/** قسم واحد من جدول sections، مع عنوان جاهز للعرض مثل «السنة الثالثة ب». */
+export type SectionOption = {
+    id: number;
+    level_id?: number;
+    label: string;
+};
+
 export type StudentSearchOptions = {
-    levels: Array<{ id: number; label: string }>;
+    /** اسم تاريخي: المحتوى أقسام لا مستويات. استعمل sections في الكود الجديد. */
+    levels: SectionOption[];
+    sections?: SectionOption[];
     years: Array<{ id: number; name: string }>;
 };
 
@@ -108,6 +117,18 @@ function authHeaders(): Record<string, string> {
     };
 }
 
+/** يستخرج أول رسالة تحقّق من ردّ 422، وإلا فرسالة الخطأ العامة. */
+function firstValidationMessage(payload: any, fallback: string): string {
+    const errors = payload?.errors;
+    if (errors && typeof errors === 'object') {
+        for (const key of Object.keys(errors)) {
+            const list = errors[key];
+            if (Array.isArray(list) && typeof list[0] === 'string') return list[0];
+        }
+    }
+    return payload?.message || fallback;
+}
+
 export async function getStudents(filters: StudentSearchFilters = {}, signal?: AbortSignal): Promise<Student[]> {
     const data = await apiFetch<Student[] | { data: Student[] }>('/students', {
         params: filters,
@@ -122,6 +143,17 @@ export const getStudentSearchOptions = (signal?: AbortSignal) =>
         signal,
         fallbackMessage: 'تعذّر تحميل خيارات البحث',
     });
+
+/**
+ * كلّ الأقسام من جدول sections مرتّبة حسب المستوى ثم الاسم.
+ *
+ * تعتمد على /students/search-options لا على /levels، لأنّ الثاني محميّ بـ manage_users
+ * فيما الأوّل محميّ بـ manage_students؛ والقابض الذي يرسّم لا يملك manage_users.
+ */
+export const getSectionOptions = async (signal?: AbortSignal): Promise<SectionOption[]> => {
+    const options = await getStudentSearchOptions(signal);
+    return options.sections ?? options.levels ?? [];
+};
 
 export const getTransferStudents = (
     academicYearId: number,
@@ -160,14 +192,18 @@ export async function enrollStudent(formData: FormData): Promise<EnrollmentRespo
     });
     if (!res.ok) {
         const err = await res.json().catch(() => ({}));
-        throw new Error(err.message || 'حدث خطأ أثناء التسجيل');
+        throw new Error(firstValidationMessage(err, 'حدث خطأ أثناء التسجيل'));
     }
     return res.json();
 }
 
+/**
+ * ترسيم تلميذ قديم في السنة النشطة.
+ *
+ * section_id إجباري: الخادم يشتقّ level_id من القسم، فلا يمكن أن يقع تناقض بينهما.
+ */
 export async function reenrollStudent(studentId: number, data: {
-    level_id: number;
-    section_name?: string;
+    section_id: number;
     notes?: string;
 }): Promise<EnrollmentResponse> {
     const res = await fetch(`${API_BASE}/students/${studentId}/reenroll`, {
@@ -177,7 +213,7 @@ export async function reenrollStudent(studentId: number, data: {
     });
     if (!res.ok) {
         const err = await res.json().catch(() => ({}));
-        throw new Error(err.message || 'حدث خطأ أثناء إعادة التسجيل');
+        throw new Error(firstValidationMessage(err, 'حدث خطأ أثناء إعادة التسجيل'));
     }
     return res.json();
 }
