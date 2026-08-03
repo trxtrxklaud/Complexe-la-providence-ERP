@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\EmployeeAdvance;
+use App\Models\EmployeeAdvanceRepayment;
 use App\Models\Salary;
 use App\Services\LedgerService;
 use Illuminate\Http\JsonResponse;
@@ -37,11 +38,26 @@ class SalaryController extends Controller
     }
 
     /**
-     * خلاص راتب مع خصم التسبقات القائمة في معاملة واحدة.
+     * خلاص راتب مع خصم ما على الإطار من تسبقات وأقساط سلف، في معاملة واحدة.
      *
-     * القابض يدخل الراتب الخام (500) ويختار التسبقات المراد خصمها (100)،
-     * فيدفع فعليّاً 400 ويُسقِط الدفتر 400 وحدها. المائة خرجت من الدرج يوم
-     * منح التسبقة وسُجّلت هناك، فإسقاطها ثانية كان سيُخرج المال مرّتين.
+     * الفرق بين النوعين ليس تسمية بل سلوك محاسبي مختلف:
+     *
+     *   التسبقة (advance) — advance_ids
+     *     تُخصم كاملة من راتب الشهر نفسه. الإطار طلب 100 من 500، فيقبض 400.
+     *     تُخلَّص دفعة واحدة وتُختم بـ settled_by_salary_id.
+     *
+     *   السلفة (loan) — loan_deductions
+     *     دَين يُردّ على مهل، فيُخصم منه قسط بمبلغ يختاره القابض لا المتبقّي كلّه.
+     *     كل قسط يُسجَّل ردّاً مؤرّخاً بطريقة salary_deduction مربوطاً بـ salary_id.
+     *
+     * لماذا الربط بـ salary_id ضروري: قبله كان بالإمكان تسجيل ردّ بطريقة
+     * «خصم من الراتب» دون وجود راتب أصلاً، فيُطفأ الدَّين بلا أن ينقص راتب
+     * ولا أن يدخل الصندوق مليم — أي أن المال يتبخّر من الدفاتر. والآن الردّ
+     * لا يولد إلّا من راتب حقيقي، وإلغاء ذلك الراتب يُلغيه معه.
+     *
+     * الدفتر النقدي يُسقِط الصافي وحده. مبلغ التسبقة خرج من الدرج يوم منحها
+     * وسُجّل هناك، وقسط السلفة لم يخرج اليوم أصلاً؛ فإسقاط الخام كان سيُخرج
+     * المال مرّتين.
      *
      * يُقبَل amount وحده للتوافق مع النداءات القديمة: يُعامَل خاماً بلا خصم.
      */
@@ -54,6 +70,12 @@ class SalaryController extends Controller
             'amount'           => ['nullable', 'numeric', 'min:0.01'],
             'advance_ids'      => ['nullable', 'array'],
             'advance_ids.*'    => ['integer', 'exists:employee_advances,id'],
+
+            // أقساط السلف: لكل سلفة مبلغ مستقلّ يختاره القابض.
+            'loan_deductions'          => ['nullable', 'array'],
+            'loan_deductions.*.id'     => ['required', 'integer', 'exists:employee_advances,id'],
+            'loan_deductions.*.amount' => ['required', 'numeric', 'min:0.01'],
+
             'period_from'      => ['required', 'date'],
             'period_to'        => ['required', 'date', 'after_or_equal:period_from'],
             'paid_at'          => ['nullable', 'date'],
@@ -69,11 +91,26 @@ class SalaryController extends Controller
         }
 
         $advanceIds = array_values(array_unique($data['advance_ids'] ?? []));
-        $userId     = $request->user()?->id;
+
+        $loanRows = collect($data['loan_deductions'] ?? [])
+            ->map(fn (array $row) => [
+                'id'     => (int) $row['id'],
+                'amount' => round((float) $row['amount'], 2),
+            ])
+            ->values();
+
+        if ($loanRows->pluck('id')->duplicates()->isNotEmpty()) {
+            return response()->json([
+                'message' => 'لا يمكن خصم قسطَين من نفس السلفة في راتب واحد؛ اجمعهما في مبلغ واحد',
+            ], 422);
+        }
+
+        $userId = $request->user()?->id;
 
         try {
-            $salary = DB::transaction(function () use ($data, $gross, $advanceIds, $userId) {
+            $salary = DB::transaction(function () use ($data, $gross, $advanceIds, $loanRows, $userId) {
                 $advances  = collect();
+                $loans     = collect();
                 $deduction = 0.0;
 
                 if ($advanceIds !== []) {
@@ -90,6 +127,10 @@ class SalaryController extends Controller
                     }
 
                     foreach ($advances as $advance) {
+                        if ($advance->settled_by_salary_id !== null) {
+                            throw new RuntimeException('التسبقة رقم ' . $advance->id . ' مخصومة من راتب آخر');
+                        }
+
                         $remaining = round((float) $advance->amount - (float) $advance->settled_amount, 2);
 
                         if ($remaining <= 0) {
@@ -98,15 +139,49 @@ class SalaryController extends Controller
 
                         $deduction += $remaining;
                     }
-
-                    $deduction = round($deduction, 2);
                 }
 
-                $net = round($gross - $deduction, 2);
+                if ($loanRows->isNotEmpty()) {
+                    $loans = EmployeeAdvance::whereIn('id', $loanRows->pluck('id')->all())
+                        ->where('employee_id', $data['employee_id'])
+                        ->where('type', EmployeeAdvance::TYPE_LOAN)
+                        ->whereNull('cancelled_at')
+                        ->lockForUpdate()
+                        ->get()
+                        ->keyBy('id');
+
+                    if ($loans->count() !== $loanRows->count()) {
+                        throw new RuntimeException('بعض السلف المختارة غير موجودة، أو ملغاة، أو لا تخصّ هذا الإطار');
+                    }
+
+                    foreach ($loanRows as $row) {
+                        $loan = $loans[$row['id']];
+
+                        // المتبقّي يُشتقّ من الردّيات القائمة لا من settled_amount المخزّن،
+                        // فالمخزّن قد يكون قديماً إن أُلغي ردّ في نفس اللحظة.
+                        $repaid    = (float) $loan->repayments()->whereNull('cancelled_at')->sum('amount');
+                        $remaining = round((float) $loan->amount - $repaid, 2);
+
+                        if ($remaining <= 0) {
+                            throw new RuntimeException('السلفة رقم ' . $loan->id . ' مخلّصة بالكامل');
+                        }
+
+                        if ($row['amount'] > $remaining) {
+                            throw new RuntimeException(
+                                'قسط السلفة رقم ' . $loan->id . ' (' . number_format($row['amount'], 2, '.', '') . ') يتجاوز المتبقّي منها (' . number_format($remaining, 2, '.', '') . ')'
+                            );
+                        }
+
+                        $deduction += $row['amount'];
+                    }
+                }
+
+                $deduction = round($deduction, 2);
+                $net       = round($gross - $deduction, 2);
 
                 if ($net < 0) {
                     throw new RuntimeException(
-                        'مجموع التسبقات (' . number_format($deduction, 2, '.', '') . ') يتجاوز الراتب الخام (' . number_format($gross, 2, '.', '') . ')'
+                        'مجموع الخصومات (' . number_format($deduction, 2, '.', '') . ') يتجاوز الراتب الخام (' . number_format($gross, 2, '.', '') . ')'
                     );
                 }
 
@@ -133,7 +208,31 @@ class SalaryController extends Controller
                     ]);
                 }
 
-                // راتب ابتلعته التسبقات بالكامل لم يخرج منه مليم اليوم، فلا سطر له في الدفتر.
+                $repaidAt = $data['paid_at'] ?? now()->toDateString();
+
+                foreach ($loanRows as $row) {
+                    $loan = $loans[$row['id']];
+
+                    EmployeeAdvanceRepayment::create([
+                        'employee_advance_id' => $loan->id,
+                        'employee_id'         => $loan->employee_id,
+                        // السلف القديمة قد تحمل سنة فارغة؛ سنة الراتب تسدّ الفراغ
+                        // فلا يسقط القسط خارج كل التقارير السنوية.
+                        'academic_year_id'    => $loan->academic_year_id ?? $data['academic_year_id'],
+                        'amount'              => number_format($row['amount'], 2, '.', ''),
+                        'repaid_at'           => $repaidAt,
+                        'method'              => EmployeeAdvanceRepayment::METHOD_SALARY_DEDUCTION,
+                        'salary_id'           => $salary->id,
+                        'notes'               => 'قسط مخصوم ضمن الراتب رقم ' . $salary->id,
+                        'created_by'          => $userId,
+                    ]);
+
+                    // لا سطر في الدفتر: الخصم من الراتب لا يُدخل مالاً إلى الدرج،
+                    // وأثره النقدي مأخوذ سلفاً في صافي الراتب المُسقَط أدناه.
+                    $loan->recalculateSettlement();
+                }
+
+                // راتب ابتلعته الخصومات بالكامل لم يخرج منه مليم اليوم، فلا سطر له في الدفتر.
                 if ($net > 0) {
                     $this->ledger->recordSalary($salary);
                 }
@@ -165,7 +264,7 @@ class SalaryController extends Controller
     }
 
     /**
-     * التعديل لا يمسّ التسبقات المخصومة.
+     * التعديل لا يمسّ الخصومات.
      *
      * تغيير الخصم يعني إعادة فتح سلفة مخلّصة وربطها براتب آخر، وهو مسار
      * يسهل أن يُخطئ فيه. الطريق الموثّق: إلغاء الراتب ثم تسجيله من جديد.
@@ -176,9 +275,9 @@ class SalaryController extends Controller
             return response()->json(['message' => 'لا يمكن تعديل راتب ملغى'], 422);
         }
 
-        if ($request->has('advance_ids')) {
+        if ($request->has('advance_ids') || $request->has('loan_deductions')) {
             return response()->json([
-                'message' => 'لتعديل التسبقات المخصومة ألغِ الراتب ثم سجّله من جديد',
+                'message' => 'لتعديل الخصومات ألغِ الراتب ثم سجّله من جديد',
             ], 422);
         }
 
@@ -199,7 +298,7 @@ class SalaryController extends Controller
 
             if ($net < 0) {
                 return response()->json([
-                    'message' => 'الراتب الخام أقلّ من التسبقات المخصومة منه',
+                    'message' => 'الراتب الخام أقلّ من الخصومات المحسوبة عليه',
                 ], 422);
             }
 
@@ -219,9 +318,9 @@ class SalaryController extends Controller
 
     /**
      * إلغاء موثّق للراتب بدل الحذف النهائي، مع سحب أثره من الدفتر النقدي
-     * وإعادة فتح التسبقات التي خُصمت به.
+     * وإرجاع كل ما خُصم به إلى ذمّة الإطار.
      *
-     * بدون إعادة الفتح، يبقى الإطار مديناً في الواقع ومبرّأً في النظام.
+     * بدون هذا الإرجاع يبقى الإطار مديناً في الواقع ومبرّأً في النظام.
      */
     public function cancel(Request $request, Salary $salary): JsonResponse
     {
@@ -233,22 +332,50 @@ class SalaryController extends Controller
             return response()->json(['message' => 'هذا الراتب ملغى مسبقاً'], 422);
         }
 
-        DB::transaction(function () use ($salary, $data, $request) {
+        $userId = $request->user()?->id;
+
+        DB::transaction(function () use ($salary, $data, $userId) {
             $salary->update([
                 'cancelled_at'        => now(),
-                'cancelled_by'        => $request->user()?->id,
+                'cancelled_by'        => $userId,
                 'cancellation_reason' => $data['reason'],
             ]);
 
-            // التسبقة تُخصم كاملة دائماً، فإعادة فتحها إرجاع إلى الصفر لا طرح جزئي.
-            EmployeeAdvance::where('settled_by_salary_id', $salary->id)->update([
-                'settled_amount'       => 0,
-                'status'               => EmployeeAdvance::STATUS_PENDING,
-                'settled_by_salary_id' => null,
-                'updated_at'           => now(),
-            ]);
+            // التسبقات: تُفكّ عن الراتب ويُعاد احتساب المخلَّص منها اشتقاقاً
+            // من ردّياتها القائمة. التصفير الأعمى كان يمحو ردّاً نقديّاً سابقاً
+            // فيُطالَب الإطار ثانية بمال دفعه فعلاً.
+            $reopened = EmployeeAdvance::where('settled_by_salary_id', $salary->id)->get();
 
-            $this->ledger->cancelFor($salary, $request->user()?->id, $data['reason']);
+            foreach ($reopened as $advance) {
+                $repaid = (float) $advance->repayments()->whereNull('cancelled_at')->sum('amount');
+                $amount = (float) $advance->amount;
+
+                $advance->update([
+                    'settled_by_salary_id' => null,
+                    'settled_amount'       => number_format(round($repaid, 2), 2, '.', ''),
+                    'status'               => $repaid <= 0
+                        ? EmployeeAdvance::STATUS_PENDING
+                        : ($repaid >= $amount ? EmployeeAdvance::STATUS_SETTLED : EmployeeAdvance::STATUS_PARTIAL),
+                ]);
+            }
+
+            // أقساط السلف التي خُصمت بهذا الراتب تسقط معه: الراتب لم يُدفع،
+            // فالقسط لم يُخصم من شيء، والدَّين يعود كما كان.
+            $deductedRepayments = EmployeeAdvanceRepayment::where('salary_id', $salary->id)
+                ->whereNull('cancelled_at')
+                ->get();
+
+            foreach ($deductedRepayments as $repayment) {
+                $repayment->update([
+                    'cancelled_at'        => now(),
+                    'cancelled_by'        => $userId,
+                    'cancellation_reason' => 'إلغاء الراتب رقم ' . $salary->id . ': ' . $data['reason'],
+                ]);
+
+                $repayment->advance?->recalculateSettlement();
+            }
+
+            $this->ledger->cancelFor($salary, $userId, $data['reason']);
         });
 
         return response()->json(
