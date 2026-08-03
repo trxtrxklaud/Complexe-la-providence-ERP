@@ -16,6 +16,13 @@ const C = {
   dangerBg: '#FDECEC',
 };
 
+/** تاريخ اليوم بصيغة YYYY-MM-DD بتوقيت الجهاز لا بتوقيت UTC. */
+function todayLocal(): string {
+  const now = new Date();
+  const offset = now.getTimezoneOffset() * 60000;
+  return new Date(now.getTime() - offset).toISOString().slice(0, 10);
+}
+
 export function OldStudentReenroll() {
   const [students, setStudents] = useState<any[]>([]);
   const [search, setSearch] = useState('');
@@ -37,6 +44,7 @@ export function OldStudentReenroll() {
   const [paymentMethod, setPaymentMethod] = useState('');
   const [amount, setAmount] = useState('');
   const [paymentDate, setPaymentDate] = useState('');
+  const [paymentNotes, setPaymentNotes] = useState('');
 
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -90,6 +98,25 @@ export function OldStudentReenroll() {
   const sectionError = sectionId === '' ? 'القسم إجباري: اختر قسم التلميذ لهذه السنة الدراسية.' : '';
   const showSectionError = submitted && sectionError !== '';
 
+  // الدفع اختياري ككتلة واحدة: إمّا مبلغ وطريقة وتاريخ، أو لا شيء.
+  // نفس قاعدة الخادم (required_with:registration_amount)، مكرّرة هنا ليرى القابض
+  // الخطأ قبل إرسال الطلب، لا لتحلّ محلّه — الخادم يبقى هو الحارس الأخير.
+  const amountValue = amount.trim() === '' ? 0 : Number(amount);
+  const hasAmount = amount.trim() !== '';
+  const amountInvalid = hasAmount && (!Number.isFinite(amountValue) || amountValue <= 0);
+
+  let paymentError = '';
+  if (amountInvalid) {
+    paymentError = 'مبلغ الترسيم يجب أن يكون رقماً أكبر من صفر.';
+  } else if (hasAmount && paymentMethod === '') {
+    paymentError = 'اختر طريقة الدفع الموافقة للمبلغ المقبوض.';
+  } else if (hasAmount && paymentDate === '') {
+    paymentError = 'تاريخ الدفع إجباري مع وجود مبلغ مقبوض.';
+  } else if (!hasAmount && (paymentMethod !== '' || paymentNotes.trim() !== '')) {
+    paymentError = 'أدخل المبلغ المقبوض، أو أفرغ حقول الدفع لترسيم بلا دفع.';
+  }
+  const showPaymentError = submitted && paymentError !== '';
+
   function openStudent(student: any) {
     setSelectedStudent(student);
     // القسم المختار في البحث اقتراح أوّلي لا أكثر؛ يبقى قابلاً للتغيير قبل الحفظ.
@@ -97,6 +124,12 @@ export function OldStudentReenroll() {
     setSubmitted(false);
     setError('');
     setSuccess('');
+    // تاريخ اليوم افتراضاً: القبض يقع لحظة الترسيم في الحالة الغالبة،
+    // ويبقى قابلاً للتعديل لمن يسجّل قبضاً وقع أمس.
+    setPaymentDate(todayLocal());
+    setPaymentMethod('');
+    setAmount('');
+    setPaymentNotes('');
   }
 
   function closeStudent() {
@@ -104,30 +137,48 @@ export function OldStudentReenroll() {
     setSectionId('');
     setSubmitted(false);
     setError('');
+    setPaymentMethod('');
+    setAmount('');
+    setPaymentDate('');
+    setPaymentNotes('');
   }
 
   async function handleSave() {
     setSubmitted(true);
     setError('');
 
-    if (!selectedStudent || sectionError) return;
+    if (!selectedStudent || sectionError || paymentError) return;
 
     setSaving(true);
     try {
       const response = await reenrollStudent(selectedStudent.id, {
         section_id: Number(sectionId),
+        ...(hasAmount
+          ? {
+              registration_amount: amountValue,
+              payment_method: paymentMethod as 'cash' | 'bank_transfer' | 'check' | 'card',
+              payment_date: paymentDate,
+              ...(paymentNotes.trim() !== '' ? { payment_notes: paymentNotes.trim() } : {}),
+            }
+          : {}),
       });
       const student = `${selectedStudent.first_name || ''} ${selectedStudent.last_name || ''}`.trim();
       const placed = response?.enrollment?.section?.name
         ? ` — القسم: ${response.enrollment.level?.name || ''} ${response.enrollment.section.name}`.trimEnd()
         : '';
-      setSuccess(`تم تجديد ترسيم ${student} بنجاح${placed}`);
+      const paid = response?.payment
+        ? ` — دخل الخزينة: ${Number(response.payment.amount).toFixed(2)} د`
+        : '';
+      setSuccess(`تم تجديد ترسيم ${student} بنجاح${placed}${paid}`);
       setSelectedStudent(null);
       setSectionId('');
       setSubmitted(false);
       setPaymentMethod('');
       setAmount('');
       setPaymentDate('');
+      setPaymentNotes('');
+      // إعادة تحميل القائمة: التلميذ صار مُرسّماً، وإعادة فتحه تُرفض من الخادم.
+      loadStudents(sectionFilter);
     } catch (err: any) {
       setError(err?.message || 'حدث خطأ أثناء الترسيم');
     } finally {
@@ -248,7 +299,7 @@ export function OldStudentReenroll() {
                 </p>
               ) : (
                 <p id="section_id_hint" className="mt-1.5 text-xs" style={{ color: C.muted }}>
-                  المستوى يُحدَّد تلقائياً من القسم المختار.
+                  المستوى يُحدّد تلقائياً من القسم المختار.
                 </p>
               )}
 
@@ -271,31 +322,86 @@ export function OldStudentReenroll() {
             <div className="pt-4 border-t" style={{ borderColor: C.line }}>
               <h4 className="font-medium mb-1 flex items-center gap-2" style={{ color: C.ink }}>
                 <CreditCard size={18} />
-                معلومات الدفع
+                معلوم التجديد المقبوض
               </h4>
-              <p className="mb-3 text-xs" style={{ color: C.danger }}>
-                غير مفعّل بعد: هذه الحقول لا تُرسَل إلى الخزينة. سجّل الدفع من شاشة الاستخلاص بعد الترسيم.
+              <p id="reenroll_payment_hint" className="mb-3 text-xs" style={{ color: C.muted }}>
+                اختياري: إن قبضت مبلغاً الآن سجّله هنا فيدخل الخزينة مباشرة تحت «معلوم ترسيم»
+                ويظهر في السجل اليومي والشهري والدخل الصافي. اتركه فارغاً إن كان الدفع لاحقاً.
               </p>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
+                  <label htmlFor="reenroll_amount" className="block text-sm mb-1.5" style={{ color: C.muted }}>مبلغ الترسيم</label>
+                  <input
+                    id="reenroll_amount"
+                    name="reenroll_amount"
+                    type="number"
+                    inputMode="decimal"
+                    step="0.01"
+                    min="0"
+                    autoComplete="off"
+                    value={amount}
+                    onChange={(e) => { setAmount(e.target.value); setError(''); }}
+                    placeholder="0.00"
+                    aria-describedby="reenroll_payment_hint"
+                    className="w-full p-3 rounded-xl border bg-slate-50 outline-none"
+                    style={{ borderColor: showPaymentError ? C.danger : C.line }}
+                  />
+                </div>
+                <div>
                   <label htmlFor="reenroll_payment_method" className="block text-sm mb-1.5" style={{ color: C.muted }}>صيغة الدفع</label>
-                  <select id="reenroll_payment_method" name="reenroll_payment_method" disabled value={paymentMethod} onChange={(e) => setPaymentMethod(e.target.value)} className="w-full p-3 rounded-xl border bg-slate-50 outline-none disabled:opacity-60" style={{ borderColor: C.line }}>
+                  <select
+                    id="reenroll_payment_method"
+                    name="reenroll_payment_method"
+                    value={paymentMethod}
+                    onChange={(e) => { setPaymentMethod(e.target.value); setError(''); }}
+                    aria-describedby="reenroll_payment_hint"
+                    className="w-full p-3 rounded-xl border bg-slate-50 outline-none"
+                    style={{ borderColor: showPaymentError ? C.danger : C.line }}
+                  >
                     <option value="">اختر صيغة الدفع</option>
                     <option value="cash">نقداً</option>
                     <option value="check">شيك</option>
                     <option value="bank_transfer">تحويل بنكي</option>
+                    <option value="card">بطاقة</option>
                   </select>
                 </div>
                 <div>
-                  <label htmlFor="reenroll_amount" className="block text-sm mb-1.5" style={{ color: C.muted }}>مبلغ التسجيل</label>
-                  <input id="reenroll_amount" name="reenroll_amount" disabled type="number" inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0.00" className="w-full p-3 rounded-xl border bg-slate-50 outline-none disabled:opacity-60" style={{ borderColor: C.line }} />
+                  <label htmlFor="reenroll_payment_date" className="block text-sm mb-1.5" style={{ color: C.muted }}>تاريخ الدفع</label>
+                  <input
+                    id="reenroll_payment_date"
+                    name="reenroll_payment_date"
+                    type="date"
+                    value={paymentDate}
+                    onChange={(e) => { setPaymentDate(e.target.value); setError(''); }}
+                    aria-describedby="reenroll_payment_hint"
+                    className="w-full p-3 rounded-xl border bg-slate-50 outline-none"
+                    style={{ borderColor: showPaymentError ? C.danger : C.line }}
+                  />
                 </div>
                 <div>
-                  <label htmlFor="reenroll_payment_date" className="block text-sm mb-1.5" style={{ color: C.muted }}>تاريخ الدفع</label>
-                  <input id="reenroll_payment_date" name="reenroll_payment_date" disabled type="date" value={paymentDate} onChange={(e) => setPaymentDate(e.target.value)} className="w-full p-3 rounded-xl border bg-slate-50 outline-none disabled:opacity-60" style={{ borderColor: C.line }} />
+                  <label htmlFor="reenroll_payment_notes" className="block text-sm mb-1.5" style={{ color: C.muted }}>ملاحظة على الدفع</label>
+                  <input
+                    id="reenroll_payment_notes"
+                    name="reenroll_payment_notes"
+                    type="text"
+                    autoComplete="off"
+                    value={paymentNotes}
+                    onChange={(e) => { setPaymentNotes(e.target.value); setError(''); }}
+                    placeholder="مثال: دفعة أولى من معلوم الترسيم"
+                    aria-describedby="reenroll_payment_hint"
+                    className="w-full p-3 rounded-xl border bg-slate-50 outline-none"
+                    style={{ borderColor: C.line }}
+                  />
                 </div>
               </div>
+
+              {showPaymentError && (
+                <p className="mt-2 flex items-center gap-1.5 text-sm" style={{ color: C.danger }}>
+                  <AlertCircle size={15} />
+                  {paymentError}
+                </p>
+              )}
             </div>
 
             <button
@@ -304,7 +410,7 @@ export function OldStudentReenroll() {
               className="w-full mt-6 py-3.5 rounded-xl text-white font-medium transition hover:opacity-90 disabled:opacity-70"
               style={{ backgroundColor: C.forest }}
             >
-              {saving ? 'جارٍ الحفظ…' : 'حفظ الترسيم'}
+              {saving ? 'جارٍ الحفظ…' : hasAmount ? 'حفظ الترسيم وتسجيل المبلغ' : 'حفظ الترسيم'}
             </button>
           </div>
         </div>
