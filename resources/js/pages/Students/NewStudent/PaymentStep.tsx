@@ -34,46 +34,57 @@ export function PaymentStep({ data, onChange, setField }: Props) {
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-6">
         <div className="space-y-2.5">
-          <label className={LABEL_CLASS}>
+          <label className={LABEL_CLASS} htmlFor="payment_method_trigger">
             طريقة الدفع <span className="text-red-500">*</span>
           </label>
           <div className="relative">
+            {/* الحقل المخفي هو ما تقرأه FormData؛ الزرّ هو ما يراه المستخدم ويركّز عليه. */}
             <input type="hidden" name="payment_method" value={data.payment_method} />
             <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-slate-400 z-10">
               <ChevronDown size={18} className={`transition-transform duration-200 ${open ? 'rotate-180' : ''}`} />
             </div>
-            <div
+            <button
+              type="button"
+              id="payment_method_trigger"
+              aria-haspopup="listbox"
+              aria-expanded={open}
               onClick={() => setOpen(!open)}
-              className={`flex items-center w-full pr-4 pl-12 py-3 bg-slate-50/50 hover:bg-white border rounded-xl cursor-pointer min-h-[50px] transition-all duration-200 ${open ? 'border-blue-500 ring-2 ring-blue-500/20 bg-white' : 'border-slate-200'}`}
+              className={`flex items-center w-full text-right pr-4 pl-12 py-3 bg-slate-50/50 hover:bg-white border rounded-xl cursor-pointer min-h-[50px] transition-all duration-200 outline-none ${open ? 'border-blue-500 ring-2 ring-blue-500/20 bg-white' : 'border-slate-200'}`}
             >
               <span className={data.payment_method ? 'text-slate-700' : 'text-slate-400'}>{methodLabel}</span>
-            </div>
+            </button>
 
             {open && (
               <>
                 <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
-                <div className="absolute top-full left-0 right-0 mt-2 bg-white border border-slate-100 rounded-xl shadow-lg z-50 overflow-hidden py-1">
+                <ul
+                  role="listbox"
+                  aria-label="طريقة الدفع"
+                  className="absolute top-full left-0 right-0 mt-2 bg-white border border-slate-100 rounded-xl shadow-lg z-50 overflow-hidden py-1"
+                >
                   {METHODS.map((option) => (
-                    <div
-                      key={option.id}
-                      onClick={() => {
-                        setField('payment_method', option.id);
-                        setOpen(false);
-                      }}
-                      className={`px-4 py-3 cursor-pointer transition-colors flex items-center justify-between ${data.payment_method === option.id ? 'bg-blue-50 text-blue-700 font-medium' : 'hover:bg-slate-50 text-slate-700'}`}
-                    >
-                      {option.label}
-                      {data.payment_method === option.id && <CheckCircle2 size={16} className="text-blue-600" />}
-                    </div>
+                    <li key={option.id} role="option" aria-selected={data.payment_method === option.id}>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setField('payment_method', option.id);
+                          setOpen(false);
+                        }}
+                        className={`w-full px-4 py-3 cursor-pointer transition-colors flex items-center justify-between text-right ${data.payment_method === option.id ? 'bg-blue-50 text-blue-700 font-medium' : 'hover:bg-slate-50 text-slate-700'}`}
+                      >
+                        {option.label}
+                        {data.payment_method === option.id && <CheckCircle2 size={16} className="text-blue-600" />}
+                      </button>
+                    </li>
                   ))}
-                </div>
+                </ul>
               </>
             )}
           </div>
         </div>
 
         <div className="space-y-2.5">
-          <label className={LABEL_CLASS}>
+          <label className={LABEL_CLASS} htmlFor="registration_amount">
             المبلغ المدفوع <span className="text-red-500">*</span>
           </label>
           <input
@@ -81,7 +92,10 @@ export function PaymentStep({ data, onChange, setField }: Props) {
             step="0.01"
             min="0"
             dir="ltr"
+            id="registration_amount"
             name="registration_amount"
+            autoComplete="off"
+            inputMode="decimal"
             value={data.registration_amount}
             onChange={onChange}
             className={`${FIELD_CLASS} text-right`}
@@ -89,22 +103,29 @@ export function PaymentStep({ data, onChange, setField }: Props) {
         </div>
 
         <div className="space-y-2.5">
-          <label className={LABEL_CLASS}>
+          <label className={LABEL_CLASS} htmlFor="payment_date">
             تاريخ الدفع <span className="text-red-500">*</span>
           </label>
           <input
             type="date"
+            id="payment_date"
             name="payment_date"
+            autoComplete="off"
             value={data.payment_date}
             onChange={onChange}
             className={FIELD_CLASS}
           />
+          <p className="text-xs text-slate-500">
+            هذا التاريخ هو الذي يظهر في الخزينة والمداخيل، لا تاريخ إدخال البيانات.
+          </p>
         </div>
 
         <div className="md:col-span-2 space-y-2.5">
-          <label className={LABEL_CLASS}>ملاحظات الدفع</label>
+          <label className={LABEL_CLASS} htmlFor="payment_notes">ملاحظات الدفع</label>
           <textarea
+            id="payment_notes"
             name="payment_notes"
+            autoComplete="off"
             value={data.payment_notes}
             onChange={onChange}
             rows={3}
