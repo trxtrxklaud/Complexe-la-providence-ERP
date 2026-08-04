@@ -136,6 +136,22 @@ function firstValidationMessage(payload: any, fallback: string): string {
     return payload?.message || fallback;
 }
 
+/**
+ * خطأ يحمل code القادم من الخادم.
+ *
+ * Error العادي يحمل نصّاً فقط، ومطابقة النصوص العربية في الواجهة هشّة:
+ * تعديل حرف واحد في الرسالة يكسر المنطق صامتاً. لذلك نمرّر code منفصلاً.
+ */
+export class ApiError extends Error {
+    code: string | null;
+
+    constructor(message: string, code: string | null = null) {
+        super(message);
+        this.name = 'ApiError';
+        this.code = code;
+    }
+}
+
 export async function getStudents(filters: StudentSearchFilters = {}, signal?: AbortSignal): Promise<Student[]> {
     const data = await apiFetch<Student[] | { data: Student[] }>('/students', {
         params: filters,
@@ -217,6 +233,9 @@ export type ReenrollPayment = {
  *
  * section_id إجباري: الخادم يشتقّ level_id من القسم، فلا يمكن أن يقع تناقض بينهما.
  * حقول الدفع اختيارية، وإن أُرسل المبلغ وجب معه الطريقة والتاريخ (يفرضه الخادم أيضاً).
+ *
+ * يرمي ApiError بـ code = 'already_enrolled' حين يكون التلميذ مُرسَّماً سلفاً،
+ * وعندئذ العلاج هو recordRegistrationPayment لا تكرار الترسيم.
  */
 export async function reenrollStudent(studentId: number, data: {
     section_id: number;
@@ -229,7 +248,35 @@ export async function reenrollStudent(studentId: number, data: {
     });
     if (!res.ok) {
         const err = await res.json().catch(() => ({}));
-        throw new Error(firstValidationMessage(err, 'حدث خطأ أثناء إعادة التسجيل'));
+        throw new ApiError(
+            firstValidationMessage(err, 'حدث خطأ أثناء إعادة التسجيل'),
+            typeof err?.code === 'string' ? err.code : null,
+        );
+    }
+    return res.json();
+}
+
+/**
+ * قبض معلوم الترسيم لتلميذ ترسيمه قائم في السنة النشطة.
+ *
+ * لا يُنشئ ترسيماً ولا يُعدّل قسماً: يسجّل المال فقط على الترسيم القائم،
+ * فيدخل الدفتر النقدي تحت بند معاليم التسجيل ويظهر في اليومي والشهري والسنوي.
+ */
+export async function recordRegistrationPayment(
+    studentId: number,
+    data: ReenrollPayment,
+): Promise<EnrollmentResponse> {
+    const res = await fetch(`${API_BASE}/students/${studentId}/registration-payment`, {
+        method: 'POST',
+        headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+    });
+    if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new ApiError(
+            firstValidationMessage(err, 'تعذّر تسجيل المبلغ'),
+            typeof err?.code === 'string' ? err.code : null,
+        );
     }
     return res.json();
 }
