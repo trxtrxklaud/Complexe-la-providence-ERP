@@ -136,6 +136,12 @@ Route::middleware(['auth:sanctum', 'active', 'throttle:120,1'])->group(function 
         Route::apiResource('/students', StudentController::class);
         Route::post('/students/{student}/enroll',   [StudentController::class, 'enroll']);
         Route::post('/students/{student}/reenroll', [StudentController::class, 'reenroll']);
+
+        // قبض معلوم الترسيم لتلميذ ترسيمه قائم في السنة النشطة (ترحيل الترقية).
+        // مسار مستقل عن reenroll عمداً: هذا يقبض مالاً ولا يُنشئ ترسيماً،
+        // فلا يُضعف حارس ازدواج الترسيم ولا يخلط مسؤوليتين في مسار واحد.
+        Route::post('/students/{student}/registration-payment', [StudentController::class, 'registrationPayment']);
+
         Route::get('/students/{student}/balance',   [PaymentController::class, 'studentBalance']);
         Route::get('/students/{student}/fees',      [PaymentController::class, 'studentFees']);
         Route::get('/students/{student}/payments',  [StudentController::class, 'paymentHistory']);
