@@ -100,3 +100,87 @@ export function fetchStudentDetail(
     fallbackMessage: 'فشل تحميل تفصيل مداخيل التلميذ',
   });
 }
+
+/* ==================== كشف مداخيل القسم ==================== */
+
+export type RosterSectionOption = {
+  id: number;
+  name: string;
+  level: string | null;
+  level_id: number | null;
+  label: string;
+};
+
+export type RosterYearOption = {
+  id: number;
+  name: string;
+  start_date: string | null;
+  end_date: string | null;
+  is_active: boolean | number;
+};
+
+export type ClassroomRosterOptions = {
+  sections: RosterSectionOption[];
+  years: RosterYearOption[];
+  active_year_id: number | null;
+};
+
+export type RosterCategory = {
+  category: string;
+  label: string;
+};
+
+export type ClassroomRosterRow = {
+  student_id: number;
+  student_code: string | null;
+  name: string;
+  phone: string | null;
+  enrolled: boolean;
+  payments_count: number;
+  by_category: Record<string, number>;
+  total: number;
+  outstanding: number;
+};
+
+export type ClassroomRosterReport = {
+  filters: DetailParams;
+  section: {
+    id: number;
+    name: string | null;
+    level: string | null;
+    label: string;
+  };
+  academic_year: { id: number; name: string } | null;
+  categories: RosterCategory[];
+  by_category: Array<RosterCategory & { total: number }>;
+  rows: ClassroomRosterRow[];
+  summary: {
+    students_count: number;
+    enrolled_count: number;
+    payers_count: number;
+    debtors_count: number;
+    total: number;
+    outstanding_total: number;
+  };
+  report_date: string;
+  report_time: string;
+};
+
+export function fetchClassroomRosterOptions(signal?: AbortSignal) {
+  return apiFetch<ClassroomRosterOptions>('/reports/classroom-roster/options', {
+    signal,
+    fallbackMessage: 'تعذّر تحميل قائمة الأقسام',
+  });
+}
+
+export function fetchClassroomRoster(
+  sectionId: number | string,
+  params: DetailParams = {},
+  signal?: AbortSignal,
+) {
+  return apiFetch<ClassroomRosterReport>(`/reports/classroom-roster/${sectionId}`, {
+    params,
+    signal,
+    fallbackMessage: 'فشل تحميل كشف مداخيل القسم',
+  });
+}
