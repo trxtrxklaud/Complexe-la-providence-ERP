@@ -42,6 +42,7 @@ const StudentRevenuePage = lazy(() => import('./pages/Income/StudentRevenuePage'
 const StudentDetailPage = lazy(() => import('./pages/Income/StudentDetailPage').then((module) => ({ default: module.StudentDetailPage })));
 const RevenueByClassroomPage = lazy(() => import('./pages/Income/RevenueByClassroomPage').then((module) => ({ default: module.RevenueByClassroomPage })));
 const ClassroomDetailPage = lazy(() => import('./pages/Income/ClassroomDetailPage').then((module) => ({ default: module.ClassroomDetailPage })));
+const ClassroomRosterPage = lazy(() => import('./pages/Income/ClassroomRosterPage').then((module) => ({ default: module.ClassroomRosterPage })));
 const RevenueByYearPage = lazy(() => import('./pages/Income/RevenueByYearPage').then((module) => ({ default: module.RevenueByYearPage })));
 const UnpaidMonthlyReportPage = lazy(() => import('./pages/Income/UnpaidMonthlyReportPage').then((module) => ({ default: module.UnpaidMonthlyReportPage })));
 const ExpenseCreatePage = lazy(() => loadExpenseCreatePage().then((module) => ({ default: module.ExpenseCreatePage })));
@@ -108,7 +109,7 @@ export default function App() {
 
                     {/* التلاميذ — كل مسارات /students في الـ backend تحت manage_students.
                         صلاحية enroll_student موجودة في قاعدة البيانات لكنها لا تحرس أي مسار،
-                        فكان من يملكها وحدها يرى معالج التسجيل ثم يُرفَض عند الحفظ. */}
+                        فكان من يملكها وحدها يرى معالج التسجيل ثم يُرفض عند الحفظ. */}
                     <Route path="/students" element={
                         <ProtectedRoute permission="manage_students">
                             <Layout><StudentsDashboard /></Layout>
@@ -196,6 +197,9 @@ export default function App() {
                         {/* صفحة تلميذ واحد — حفر من جدول مداخيل التلاميذ */}
                         <Route path="revenue/:studentId" element={<StudentDetailPage />} />
                         <Route path="by-classroom" element={<RevenueByClassroomPage />} />
+                        {/* كشف القسم التفصيلي: قائمة منسدلة لكل الأقسام + جدول تلاميذ قابل للطباعة.
+                            يُعلَن قبل by-classroom/:sectionId وإلا ابتلعه المسار ذو المعامِل. */}
+                        <Route path="by-classroom/roster" element={<ClassroomRosterPage />} />
                         {/* صفحة قسم واحد — حفر من جدول الأقسام */}
                         <Route path="by-classroom/:sectionId" element={<ClassroomDetailPage />} />
                         <Route path="by-year" element={<RevenueByYearPage />} />
@@ -217,7 +221,7 @@ export default function App() {
                     </Route>
 
                     {/* ═══ الخزينة ═══
-                        السجلّ والسحوبات manage_treasury، أمّا الكشف اليومي وهو التبويب الافتراضي
+                        السجل० والسحوبات manage_treasury، أمّا الكشف اليومي وهو التبويب الافتراضي
                         فمساره /reports/treasury-daybook تحت view_reports. */}
                     <Route path="/treasury" element={
                         <ProtectedRoute anyOf={['manage_treasury', 'view_reports']}>
