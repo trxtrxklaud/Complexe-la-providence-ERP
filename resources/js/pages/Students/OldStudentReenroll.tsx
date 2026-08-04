@@ -1,7 +1,13 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { Search, ArrowRight, User, GraduationCap, CreditCard } from 'lucide-react';
-import { getStudents, reenrollStudent } from '../../api/students';
+import { Search, ArrowRight, GraduationCap, CreditCard, AlertCircle, CheckCircle } from 'lucide-react';
+import {
+  getStudents,
+  getSectionOptions,
+  reenrollStudent,
+  recordRegistrationPayment,
+  type SectionOption,
+} from '../../api/students';
 import { ListSkeleton } from '../../components/DataSkeleton';
 
 const C = {
@@ -12,27 +18,63 @@ const C = {
   muted: '#7C8677',
   line: '#EDF1E8',
   beige: '#EFEAE0',
+  danger: '#A03434',
+  dangerBg: '#FDECEC',
 };
+
+/** تاريخ اليوم بصيغة YYYY-MM-DD بتوقيت الجهاز لا بتوقيت UTC. */
+function todayLocal(): string {
+  const now = new Date();
+  const offset = now.getTimezoneOffset() * 60000;
+  return new Date(now.getTime() - offset).toISOString().slice(0, 10);
+}
 
 export function OldStudentReenroll() {
   const [students, setStudents] = useState<any[]>([]);
   const [search, setSearch] = useState('');
+  // فلتر القسم: يُرسل إلى الخادم باسم level لأنّ StudentController يقرأ منه section_id
+  // (نفس السلوك المعتمد في شاشة البحث)؛ الفلترة في الخادم لا في المتصفّح
+  // حتى لا تتوقّف النتيجة على عدد الصفوف المُحمّلة.
+  const [sectionFilter, setSectionFilter] = useState('');
   const [loading, setLoading] = useState(true);
   const [selectedStudent, setSelectedStudent] = useState<any>(null);
-  const [levelId, setLevelId] = useState('');
+
+  // الأقسام: تُحمّل مرّة واحدة عند فتح الشاشة وتُعاد عند الفشل بطلب المستخدم.
+  const [sections, setSections] = useState<SectionOption[]>([]);
+  const [sectionsLoading, setSectionsLoading] = useState(true);
+  const [sectionsError, setSectionsError] = useState('');
+
+  const [sectionId, setSectionId] = useState('');
+  const [submitted, setSubmitted] = useState(false);
+
   const [paymentMethod, setPaymentMethod] = useState('');
   const [amount, setAmount] = useState('');
   const [paymentDate, setPaymentDate] = useState('');
+  const [paymentNotes, setPaymentNotes] = useState('');
+
+  // يُرفع حين يردّ الخادم code = already_enrolled: التلميذ ترسيمه قائم في السنة
+  // النشطة (546 تلميذاً دخلوا عبر ترحيل الترقية دون أن يُقبض معلومهم)، فالمطلوب
+  // قبض المعلوم على الترسيم القائم لا إنشاء ترسيم ثانٍ.
+  const [alreadyEnrolled, setAlreadyEnrolled] = useState(false);
+
   const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
 
   useEffect(() => {
-    loadStudents();
+    loadSections();
   }, []);
 
-  async function loadStudents() {
+  useEffect(() => {
+    loadStudents(sectionFilter);
+  }, [sectionFilter]);
+
+  async function loadStudents(section: string) {
     try {
       setLoading(true);
-      const data = await getStudents();
+      const data = section
+        ? await getStudents({ level: section, student_name: '', phone: '', birthday: '', year: '', cnte: '', per_page: 100 })
+        : await getStudents();
       setStudents(data || []);
     } catch (err) {
       console.error(err);
@@ -41,31 +83,159 @@ export function OldStudentReenroll() {
     }
   }
 
+  async function loadSections() {
+    try {
+      setSectionsLoading(true);
+      setSectionsError('');
+      const data = await getSectionOptions();
+      setSections(data || []);
+      if (!data || data.length === 0) {
+        setSectionsError('لا توجد أقسام مسجّلة. أضفها من شاشة المستويات والأقسام قبل الترسيم.');
+      }
+    } catch (err: any) {
+      setSectionsError(err?.message || 'تعذّر تحميل قائمة الأقسام');
+    } finally {
+      setSectionsLoading(false);
+    }
+  }
+
   const filtered = students.filter((s) => {
     const fullName = `${s.first_name || ''} ${s.last_name || ''}`.toLowerCase();
-    return fullName.includes(search.toLowerCase()) || 
+    return fullName.includes(search.toLowerCase()) ||
            (s.student_code || '').toLowerCase().includes(search.toLowerCase());
   });
 
+  // التحقّق في الواجهة يطابق قاعدة الخادم: required|exists:sections,id
+  // ويسقط في وضع «مُرسَّم سلفاً» لأنّ القبض لا يمسّ القسم أصلاً.
+  const sectionError = !alreadyEnrolled && sectionId === ''
+    ? 'القسم إجباري: اختر قسم التلميذ لهذه السنة الدراسية.'
+    : '';
+  const showSectionError = submitted && sectionError !== '';
+
+  // الدفع اختياري ككتلة واحدة: إمّا مبلغ وطريقة وتاريخ، أو لا شيء.
+  // نفس قاعدة الخادم (required_with:registration_amount)، مكرّرة هنا ليرى القابض
+  // الخطأ قبل إرسال الطلب، لا لتحلّ محلّه — الخادم يبقى هو الحارس الأخير.
+  const amountValue = amount.trim() === '' ? 0 : Number(amount);
+  const hasAmount = amount.trim() !== '';
+  const amountInvalid = hasAmount && (!Number.isFinite(amountValue) || amountValue <= 0);
+
+  let paymentError = '';
+  if (amountInvalid) {
+    paymentError = 'مبلغ الترسيم يجب أن يكون رقماً أكبر من صفر.';
+  } else if (alreadyEnrolled && !hasAmount) {
+    paymentError = 'أدخل المبلغ المقبوض لتسجيله على الترسيم القائم.';
+  } else if (hasAmount && paymentMethod === '') {
+    paymentError = 'اختر طريقة الدفع الموافقة للمبلغ المقبوض.';
+  } else if (hasAmount && paymentDate === '') {
+    paymentError = 'تاريخ الدفع إجباري مع وجود مبلغ مقبوض.';
+  } else if (!hasAmount && (paymentMethod !== '' || paymentNotes.trim() !== '')) {
+    paymentError = 'أدخل المبلغ المقبوض، أو أفرغ حقول الدفع لترسيم بلا دفع.';
+  }
+  const showPaymentError = submitted && paymentError !== '';
+
+  function resetForm() {
+    setSectionId('');
+    setSubmitted(false);
+    setPaymentMethod('');
+    setAmount('');
+    setPaymentDate('');
+    setPaymentNotes('');
+    setAlreadyEnrolled(false);
+  }
+
+  function openStudent(student: any) {
+    setSelectedStudent(student);
+    // القسم المختار في البحث اقتراح أوّلي لا أكثر؛ يبقى قابلاً للتغيير قبل الحفظ.
+    setSectionId(sectionFilter);
+    setSubmitted(false);
+    setError('');
+    setSuccess('');
+    setAlreadyEnrolled(false);
+    // تاريخ اليوم افتراضاً: القبض يقع لحظة الترسيم في الحالة الغالبة،
+    // ويبقى قابلاً للتعديل لمن يسجّل قبضاً وقع أمس.
+    setPaymentDate(todayLocal());
+    setPaymentMethod('');
+    setAmount('');
+    setPaymentNotes('');
+  }
+
+  function closeStudent() {
+    setSelectedStudent(null);
+    setError('');
+    resetForm();
+  }
+
+  function announceSuccess(response: any, prefix: string) {
+    const student = `${selectedStudent?.first_name || ''} ${selectedStudent?.last_name || ''}`.trim();
+    const placed = response?.enrollment?.section?.name
+      ? ` — القسم: ${response.enrollment.level?.name || ''} ${response.enrollment.section.name}`.trimEnd()
+      : '';
+    const paid = response?.payment
+      ? ` — دخل الخزينة: ${Number(response.payment.amount).toFixed(2)} د`
+      : '';
+    setSuccess(`${prefix} ${student}${placed}${paid}`);
+    setSelectedStudent(null);
+    resetForm();
+    // إعادة تحميل القائمة حتى تعكس الحالة بعد الحفظ.
+    loadStudents(sectionFilter);
+  }
 
   async function handleSave() {
-    if (!selectedStudent || !levelId) {
-      alert('الرجاء اختيار المستوى');
-      return;
-    }
+    setSubmitted(true);
+    setError('');
+
+    if (!selectedStudent || sectionError || paymentError) return;
+
     setSaving(true);
     try {
-      await reenrollStudent(selectedStudent.id, {
-        level_id: parseInt(levelId, 10),
+      const response = await reenrollStudent(selectedStudent.id, {
+        section_id: Number(sectionId),
+        ...(hasAmount
+          ? {
+              registration_amount: amountValue,
+              payment_method: paymentMethod as 'cash' | 'bank_transfer' | 'check' | 'card',
+              payment_date: paymentDate,
+              ...(paymentNotes.trim() !== '' ? { payment_notes: paymentNotes.trim() } : {}),
+            }
+          : {}),
       });
-      alert('تم تجديد الترسيم بنجاح');
-      setSelectedStudent(null);
-      setLevelId('');
-      setPaymentMethod('');
-      setAmount('');
-      setPaymentDate('');
+      announceSuccess(response, 'تم تجديد ترسيم');
     } catch (err: any) {
-      alert(err.message || 'حدث خطأ');
+      // التلميذ مُرسَّم سلفاً: لا يُعاد ترسيمه ولا يُحذف ترسيمه، بل يُقبض معلومه.
+      if (err?.code === 'already_enrolled') {
+        setAlreadyEnrolled(true);
+        setError('التلميذ مُرسَّم فعلاً في السنة الدراسية النشطة، ولا يُرسّم مرتين. إن قبضت معلوم الترسيم منه فأدخل المبلغ وطريقة الدفع ثمّ اضغط «تسجيل المعلوم على الترسيم القائم».');
+      } else {
+        setError(err?.message || 'حدث خطأ أثناء الترسيم');
+      }
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  /**
+   * قبض المعلوم على ترسيم قائم دون إنشاء ترسيم جديد.
+   *
+   * مسار منفصل عن الحفظ عمداً: القابض يرى أنّ العملية اختلفت، فلا يظنّ
+   * أنّ النظام أنشأ له ترسيماً ثانياً في الخفاء.
+   */
+  async function handleRecordPaymentOnly() {
+    setSubmitted(true);
+    setError('');
+
+    if (!selectedStudent || paymentError || !hasAmount) return;
+
+    setSaving(true);
+    try {
+      const response = await recordRegistrationPayment(selectedStudent.id, {
+        registration_amount: amountValue,
+        payment_method: paymentMethod as 'cash' | 'bank_transfer' | 'check' | 'card',
+        payment_date: paymentDate,
+        ...(paymentNotes.trim() !== '' ? { payment_notes: paymentNotes.trim() } : {}),
+      });
+      announceSuccess(response, 'تم تسجيل معلوم الترسيم لـ');
+    } catch (err: any) {
+      setError(err?.message || 'تعذّر تسجيل المبلغ');
     } finally {
       setSaving(false);
     }
@@ -76,7 +246,7 @@ export function OldStudentReenroll() {
       <div className="p-6 md:p-8" dir="rtl">
         <div className="flex items-center gap-4 mb-6">
           <button
-            onClick={() => setSelectedStudent(null)}
+            onClick={closeStudent}
             className="flex h-10 w-10 items-center justify-center rounded-full bg-white border"
             style={{ borderColor: C.line, color: C.muted }}
           >
@@ -91,6 +261,16 @@ export function OldStudentReenroll() {
             </p>
           </div>
         </div>
+
+        {error && (
+          <div
+            className="mb-5 flex items-start gap-2 rounded-xl border px-4 py-3 text-sm"
+            style={{ borderColor: C.danger, backgroundColor: C.dangerBg, color: C.danger }}
+          >
+            <AlertCircle size={18} className="mt-0.5 shrink-0" />
+            <span>{error}</span>
+          </div>
+        )}
 
         <div className="bg-white rounded-[22px] p-6 mb-5 border" style={{ borderColor: C.line }}>
           <div className="flex items-center gap-4 mb-4">
@@ -139,60 +319,178 @@ export function OldStudentReenroll() {
         <div className="bg-white rounded-[22px] p-6 border" style={{ borderColor: C.line }}>
           <h3 className="font-bold text-lg mb-4 flex items-center gap-2" style={{ color: C.ink }}>
             <GraduationCap size={20} />
-            تجديد الترسيم — 2025/2026
+            {alreadyEnrolled ? 'قبض معلوم الترسيم — الترسيم قائم' : 'تجديد الترسيم — السنة الدراسية النشطة'}
           </h3>
 
           <div className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium mb-1.5" style={{ color: C.muted }}>
-                القسم / المستوى الدراسي الجديد
-              </label>
-              <select value={levelId} onChange={(e) => setLevelId(e.target.value)} className="w-full p-3 rounded-xl border bg-slate-50 outline-none" style={{ borderColor: C.line }}>
-                <option value="">اختر القسم الجديد</option>
-                <option value="1">السنة الأولى</option>
-                <option value="2">السنة الثانية</option>
-                <option value="3">السنة الثالثة</option>
-                <option value="4">السنة الرابعة</option>
-                <option value="5">السنة الخامسة</option>
-                <option value="6">السنة السادسة</option>
-              </select>
-            </div>
+            {!alreadyEnrolled && (
+              <div>
+                <label htmlFor="section_id" className="block text-sm font-medium mb-1.5" style={{ color: C.muted }}>
+                  القسم <span style={{ color: C.danger }}>*</span>
+                </label>
 
-            <div className="pt-4 border-t" style={{ borderColor: C.line }}>
-              <h4 className="font-medium mb-3 flex items-center gap-2" style={{ color: C.ink }}>
+                <select
+                  id="section_id"
+                  name="section_id"
+                  value={sectionId}
+                  onChange={(e) => { setSectionId(e.target.value); setError(''); }}
+                  disabled={sectionsLoading || sections.length === 0}
+                  aria-invalid={showSectionError}
+                  aria-describedby={showSectionError ? 'section_id_error' : 'section_id_hint'}
+                  className="w-full p-3 rounded-xl border bg-slate-50 outline-none disabled:opacity-60"
+                  style={{ borderColor: showSectionError ? C.danger : C.line }}
+                >
+                  <option value="">
+                    {sectionsLoading ? 'جارٍ تحميل الأقسام…' : 'اختر القسم'}
+                  </option>
+                  {sections.map((section) => (
+                    <option key={section.id} value={section.id}>{section.label}</option>
+                  ))}
+                </select>
+
+                {showSectionError ? (
+                  <p id="section_id_error" className="mt-1.5 flex items-center gap-1.5 text-sm" style={{ color: C.danger }}>
+                    <AlertCircle size={15} />
+                    {sectionError}
+                  </p>
+                ) : (
+                  <p id="section_id_hint" className="mt-1.5 text-xs" style={{ color: C.muted }}>
+                    المستوى يُحدّد تلقائياً من القسم المختار.
+                  </p>
+                )}
+
+                {sectionsError && (
+                  <div className="mt-2 flex items-center justify-between gap-3 rounded-xl border px-3 py-2 text-sm"
+                       style={{ borderColor: C.danger, backgroundColor: C.dangerBg, color: C.danger }}>
+                    <span>{sectionsError}</span>
+                    <button
+                      type="button"
+                      onClick={loadSections}
+                      className="shrink-0 rounded-lg px-3 py-1 text-white"
+                      style={{ backgroundColor: C.danger }}
+                    >
+                      إعادة المحاولة
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+
+            <div className={alreadyEnrolled ? '' : 'pt-4 border-t'} style={{ borderColor: C.line }}>
+              <h4 className="font-medium mb-1 flex items-center gap-2" style={{ color: C.ink }}>
                 <CreditCard size={18} />
-                معلومات الدفع
+                معلوم التجديد المقبوض
               </h4>
+              <p id="reenroll_payment_hint" className="mb-3 text-xs" style={{ color: C.muted }}>
+                {alreadyEnrolled
+                  ? 'ترسيم التلميذ قائم في السنة النشطة، ولن يُمسّ. المبلغ الذي تدخله هنا يُسجّل على ذلك الترسيم ويدخل الخزينة تحت «معاليم التسجيل».'
+                  : 'اختياري: إن قبضت مبلغاً الآن سجّله هنا فيدخل الخزينة مباشرة تحت «معاليم التسجيل» ويظهر في السجل اليومي والشهري والدخل الصافي. اتركه فارغاً إن كان الدفع لاحقاً.'}
+              </p>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm mb-1.5" style={{ color: C.muted }}>صيغة الدفع</label>
-                  <select value={paymentMethod} onChange={(e) => setPaymentMethod(e.target.value)} className="w-full p-3 rounded-xl border bg-slate-50 outline-none" style={{ borderColor: C.line }}>
+                  <label htmlFor="reenroll_amount" className="block text-sm mb-1.5" style={{ color: C.muted }}>مبلغ الترسيم</label>
+                  <input
+                    id="reenroll_amount"
+                    name="reenroll_amount"
+                    type="number"
+                    inputMode="decimal"
+                    step="0.01"
+                    min="0"
+                    autoComplete="off"
+                    value={amount}
+                    onChange={(e) => { setAmount(e.target.value); setError(''); }}
+                    placeholder="0.00"
+                    aria-describedby="reenroll_payment_hint"
+                    className="w-full p-3 rounded-xl border bg-slate-50 outline-none"
+                    style={{ borderColor: showPaymentError ? C.danger : C.line }}
+                  />
+                </div>
+                <div>
+                  <label htmlFor="reenroll_payment_method" className="block text-sm mb-1.5" style={{ color: C.muted }}>صيغة الدفع</label>
+                  <select
+                    id="reenroll_payment_method"
+                    name="reenroll_payment_method"
+                    value={paymentMethod}
+                    onChange={(e) => { setPaymentMethod(e.target.value); setError(''); }}
+                    aria-describedby="reenroll_payment_hint"
+                    className="w-full p-3 rounded-xl border bg-slate-50 outline-none"
+                    style={{ borderColor: showPaymentError ? C.danger : C.line }}
+                  >
                     <option value="">اختر صيغة الدفع</option>
                     <option value="cash">نقداً</option>
                     <option value="check">شيك</option>
                     <option value="bank_transfer">تحويل بنكي</option>
+                    <option value="card">بطاقة</option>
                   </select>
                 </div>
                 <div>
-                  <label className="block text-sm mb-1.5" style={{ color: C.muted }}>مبلغ التسجيل</label>
-                  <input type="number" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0.00" className="w-full p-3 rounded-xl border bg-slate-50 outline-none" style={{ borderColor: C.line }} />
+                  <label htmlFor="reenroll_payment_date" className="block text-sm mb-1.5" style={{ color: C.muted }}>تاريخ الدفع</label>
+                  <input
+                    id="reenroll_payment_date"
+                    name="reenroll_payment_date"
+                    type="date"
+                    value={paymentDate}
+                    onChange={(e) => { setPaymentDate(e.target.value); setError(''); }}
+                    aria-describedby="reenroll_payment_hint"
+                    className="w-full p-3 rounded-xl border bg-slate-50 outline-none"
+                    style={{ borderColor: showPaymentError ? C.danger : C.line }}
+                  />
                 </div>
                 <div>
-                  <label className="block text-sm mb-1.5" style={{ color: C.muted }}>تاريخ الدفع</label>
-                  <input type="date" value={paymentDate} onChange={(e) => setPaymentDate(e.target.value)} className="w-full p-3 rounded-xl border bg-slate-50 outline-none" style={{ borderColor: C.line }} />
+                  <label htmlFor="reenroll_payment_notes" className="block text-sm mb-1.5" style={{ color: C.muted }}>ملاحظة على الدفع</label>
+                  <input
+                    id="reenroll_payment_notes"
+                    name="reenroll_payment_notes"
+                    type="text"
+                    autoComplete="off"
+                    value={paymentNotes}
+                    onChange={(e) => { setPaymentNotes(e.target.value); setError(''); }}
+                    placeholder="مثال: دفعة أولى من معلوم الترسيم"
+                    aria-describedby="reenroll_payment_hint"
+                    className="w-full p-3 rounded-xl border bg-slate-50 outline-none"
+                    style={{ borderColor: C.line }}
+                  />
                 </div>
               </div>
+
+              {showPaymentError && (
+                <p className="mt-2 flex items-center gap-1.5 text-sm" style={{ color: C.danger }}>
+                  <AlertCircle size={15} />
+                  {paymentError}
+                </p>
+              )}
             </div>
 
-            <button
-              onClick={handleSave}
-              disabled={saving}
-              className="w-full mt-6 py-3.5 rounded-xl text-white font-medium transition hover:opacity-90 disabled:opacity-70"
-              style={{ backgroundColor: C.forest }}
-            >
-              {saving ? 'جاري الحفظ...' : 'حفظ الترسيم'}
-            </button>
+            {alreadyEnrolled ? (
+              <div className="mt-6 space-y-3">
+                <button
+                  onClick={handleRecordPaymentOnly}
+                  disabled={saving}
+                  className="w-full py-3.5 rounded-xl text-white font-medium transition hover:opacity-90 disabled:opacity-70"
+                  style={{ backgroundColor: C.forest }}
+                >
+                  {saving ? 'جارٍ الحفظ…' : 'تسجيل المعلوم على الترسيم القائم'}
+                </button>
+                <button
+                  type="button"
+                  onClick={closeStudent}
+                  className="w-full py-3 rounded-xl border font-medium"
+                  style={{ borderColor: C.line, color: C.muted }}
+                >
+                  إلغاء والعودة إلى القائمة
+                </button>
+              </div>
+            ) : (
+              <button
+                onClick={handleSave}
+                disabled={saving || sectionsLoading}
+                className="w-full mt-6 py-3.5 rounded-xl text-white font-medium transition hover:opacity-90 disabled:opacity-70"
+                style={{ backgroundColor: C.forest }}
+              >
+                {saving ? 'جارٍ الحفظ…' : hasAmount ? 'حفظ الترسيم وتسجيل المبلغ' : 'حفظ الترسيم'}
+              </button>
+            )}
           </div>
         </div>
       </div>
@@ -214,34 +512,81 @@ export function OldStudentReenroll() {
             ترسيم تلميذ قديم
           </h1>
           <p className="text-sm" style={{ color: C.muted }}>
-            ابحث عن التلميذ لتجديد ترسيمه
+            ابحث عن التلميذ بالقسم أو بالاسم لتجديد ترسيمه
           </p>
         </div>
       </div>
 
-      <div className="relative mb-6">
-        <Search className="absolute right-4 top-1/2 -translate-y-1/2" size={18} style={{ color: C.muted }} />
-        <input
-          type="text"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="ابحث بالاسم أو رقم التلميذ..."
-          className="w-full pr-12 pl-4 py-3.5 rounded-xl border bg-white outline-none"
-          style={{ borderColor: C.line }}
-        />
+      {success && (
+        <div
+          className="mb-5 flex items-start gap-2 rounded-xl border px-4 py-3 text-sm"
+          style={{ borderColor: C.forest, backgroundColor: C.sage, color: C.forest }}
+        >
+          <CheckCircle size={18} className="mt-0.5 shrink-0" />
+          <span>{success}</span>
+        </div>
+      )}
+
+      <div className="mb-6 grid grid-cols-1 gap-4 md:grid-cols-2">
+        <div>
+          <label htmlFor="search_section" className="mb-1.5 block text-sm font-medium" style={{ color: C.muted }}>
+            القسم
+          </label>
+          <select
+            id="search_section"
+            name="search_section"
+            value={sectionFilter}
+            onChange={(e) => setSectionFilter(e.target.value)}
+            disabled={sectionsLoading || sections.length === 0}
+            className="w-full rounded-xl border bg-white p-3.5 outline-none disabled:opacity-60"
+            style={{ borderColor: C.line }}
+          >
+            <option value="">
+              {sectionsLoading ? 'جارٍ تحميل الأقسام…' : 'كل الأقسام'}
+            </option>
+            {sections.map((section) => (
+              <option key={section.id} value={section.id}>{section.label}</option>
+            ))}
+          </select>
+        </div>
+
+        <div>
+          <label htmlFor="search_student" className="mb-1.5 block text-sm font-medium" style={{ color: C.muted }}>
+            الاسم أو رقم التلميذ
+          </label>
+          <div className="relative">
+            <Search className="absolute right-4 top-1/2 -translate-y-1/2" size={18} style={{ color: C.muted }} />
+            <input
+              id="search_student"
+              name="search_student"
+              type="text"
+              autoComplete="off"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="ابحث بالاسم أو رقم التلميذ..."
+              className="w-full rounded-xl border bg-white py-3.5 pr-12 pl-4 outline-none"
+              style={{ borderColor: C.line }}
+            />
+          </div>
+        </div>
       </div>
 
       <div className="bg-white rounded-[22px] border overflow-hidden" style={{ borderColor: C.line }}>
+        <div className="flex items-center justify-between border-b px-5 py-3 text-sm" style={{ borderColor: C.line, color: C.muted }}>
+          <span>نتائج البحث</span>
+          {!loading && <span>{filtered.length} تلميذ</span>}
+        </div>
         {loading ? (
           <ListSkeleton />
         ) : filtered.length === 0 ? (
-          <div className="p-10 text-center" style={{ color: C.muted }}>لا يوجد تلاميذ</div>
+          <div className="p-10 text-center" style={{ color: C.muted }}>لا يوجد تلاميذ مطابقون للبحث</div>
         ) : (
           <div className="divide-y" style={{ borderColor: C.line }}>
             {filtered.map((student) => (
               <button
                 key={student.id}
-                onClick={() => setSelectedStudent(student)}
+                type="button"
+                onClick={() => openStudent(student)}
                 className="w-full flex items-center gap-4 p-4 text-right hover:bg-[#FAFBF8] transition"
               >
                 <div className="w-11 h-11 rounded-full flex items-center justify-center text-white font-semibold"
@@ -254,6 +599,7 @@ export function OldStudentReenroll() {
                   </p>
                   <p className="text-sm" style={{ color: C.muted }}>
                     {student.student_code || `ID: ${student.id}`}
+                    {student.enrollments?.[0]?.section?.name ? ` — ${student.enrollments[0].section.name}` : ''}
                   </p>
                 </div>
                 <span className="text-xs px-3 py-1 rounded-full" style={{ backgroundColor: C.sage, color: C.forest }}>
