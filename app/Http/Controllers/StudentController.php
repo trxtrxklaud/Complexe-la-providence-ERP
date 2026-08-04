@@ -10,6 +10,7 @@ use App\Models\Student;
 use App\Services\EnrollmentService;
 use App\Services\RegistrationPaymentService;
 use App\Services\StudentService;
+use Illuminate\Database\QueryException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -29,10 +30,13 @@ class StudentController extends Controller
         'section_id.integer' => 'القسم المختار غير صالح.',
         'section_id.exists' => 'القسم المختار غير موجود في قائمة الأقسام.',
         'notes.max' => 'الملاحظات طويلة جداً (1000 حرف كحدّ أقصى).',
+        'registration_amount.required' => 'أدخل المبلغ المقبوض.',
         'registration_amount.numeric' => 'مبلغ الترسيم يجب أن يكون رقماً.',
         'registration_amount.min' => 'مبلغ الترسيم يجب أن يكون أكبر من صفر.',
         'payment_method.in' => 'طريقة الدفع غير معروفة.',
+        'payment_method.required' => 'اختر طريقة الدفع الموافقة للمبلغ المقبوض.',
         'payment_method.required_with' => 'اختر طريقة الدفع الموافقة للمبلغ المقبوض.',
+        'payment_date.required' => 'تاريخ الدفع إجباري مع وجود مبلغ مقبوض.',
         'payment_date.required_with' => 'تاريخ الدفع إجباري مع وجود مبلغ مقبوض.',
         'payment_date.date' => 'تاريخ الدفع غير صالح.',
     ];
@@ -415,11 +419,93 @@ class StudentController extends Controller
                 ] : null,
             ], 201);
         } catch (\InvalidArgumentException $e) {
-            return response()->json(['message' => $e->getMessage()], 422);
+            // code يسمح للواجهة بالتفريق بين رفض حقيقي وبين حالة "مُرسَّم سلفاً"
+            // التي علاجها قبض المعلوم على الترسيم القائم، لا إنشاء ترسيم ثانٍ.
+            return response()->json([
+                'message' => $e->getMessage(),
+                'code' => str_contains($e->getMessage(), 'مُرسَّم بالفعل') ? 'already_enrolled' : null,
+            ], 422);
         } catch (\Exception $e) {
             report($e);
 
             return response()->json(['message' => 'حدث خطأ أثناء الترسيم'], 500);
         }
+    }
+
+    /**
+     * قبض معلوم الترسيم لتلميذ مُرسَّم سلفاً في السنة النشطة.
+     *
+     * سبب وجود هذا المسار: 546 ترسيماً دخلت جدول الترسيمات عبر ترحيل الترقية
+     * (2026-07-25) دون أن تمرّ بمسار الدفع، فلا يقابلها سطر في الدفتر النقدي.
+     * حارس الازدواج في reenroll() يمنع — عن حقّ — إنشاء ترسيم ثانٍ لهم، فلولا
+     * هذا المسار لبقي معلوم 546 تلميذاً غير قابل للقبض إلا بحذف ترسيماتهم.
+     *
+     * الحارس لم يُمسّ: هنا لا يُنشأ ترسيم إطلاقاً، بل يُقبض المال على القائم منه.
+     */
+    public function registrationPayment(Request $request, Student $student): JsonResponse
+    {
+        $validated = $request->validate([
+            'registration_amount' => ['required', 'numeric', 'min:0.01'],
+            'payment_method' => ['required', 'in:cash,bank_transfer,check,card'],
+            'payment_date' => ['required', 'date'],
+            'payment_notes' => ['nullable', 'string', 'max:1000'],
+        ], self::SECTION_MESSAGES);
+
+        $academicYear = AcademicYear::where('is_active', true)->first();
+
+        if (! $academicYear) {
+            return response()->json([
+                'message' => 'لا توجد سنة دراسية نشطة. فعّل السنة الدراسية أولاً.',
+            ], 422);
+        }
+
+        $enrollment = Enrollment::where('student_id', $student->id)
+            ->where('academic_year_id', $academicYear->id)
+            ->latest('id')
+            ->first();
+
+        if (! $enrollment) {
+            return response()->json([
+                'message' => 'التلميذ غير مُرسَّم في السنة الدراسية الحالية. رسّمه أوّلاً ثمّ اقبض المعلوم.',
+            ], 422);
+        }
+
+        $payload = $validated;
+        $payload['payment_notes'] = $validated['payment_notes'] ?? 'معلوم تجديد الترسيم';
+
+        try {
+            $payment = DB::transaction(fn () => $this->registrationPaymentService->record(
+                $enrollment,
+                $payload,
+                $request->user()?->id,
+            ));
+        } catch (QueryException $e) {
+            report($e);
+
+            // مفتاح المنع المزدوج enrollment-{id}-registration فريد في جدول الدفعات،
+            // فتكرار القبض على نفس الترسيم يسقط هنا بدل أن يضاعف المدخول.
+            return response()->json([
+                'message' => 'سبق قبض معلوم الترسيم لهذا التلميذ في هذه السنة الدراسية.',
+            ], 422);
+        } catch (\Exception $e) {
+            report($e);
+
+            return response()->json(['message' => 'حدث خطأ أثناء تسجيل المبلغ'], 500);
+        }
+
+        if (! $payment) {
+            return response()->json(['message' => 'لم يُسجَّل أي مبلغ.'], 422);
+        }
+
+        return response()->json([
+            'message' => 'تم تسجيل المبلغ في الخزينة بنجاح',
+            'enrollment' => $enrollment->load(['student', 'level', 'section']),
+            'payment' => [
+                'id' => $payment->id,
+                'amount' => $payment->amount,
+                'payment_date' => $payment->payment_date?->toDateString(),
+                'method' => $payment->method,
+            ],
+        ], 201);
     }
 }
