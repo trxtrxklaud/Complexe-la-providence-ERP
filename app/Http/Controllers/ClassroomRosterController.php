@@ -5,28 +5,41 @@ namespace App\Http\Controllers;
 use App\Models\AcademicYear;
 use App\Models\CashTransaction;
 use App\Models\Enrollment;
+use App\Models\FeePlan;
 use App\Models\Payment;
 use App\Models\Section;
+use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
 /**
  * كشف مداخيل القسم — مرآة الجدول الورقي القديم: سطر لكل تلميذ في القسم
- * مرتّبين أبجدياً، مفصّلاً على بنود المداخيل، وأمام كل تلميذ ما تخلّد بذمّته.
+ * مرتّبين أبجدياً، مفصّلاً على بنود المداخيل وعلى أشهر السنة شهراً شهراً.
  *
  * فرق جوهري عن /reports/revenue/classrooms/{section}: ذاك يبدأ من الدفعات
- * فلا يرى إلا من دفع. هذا يبدأ من التسجيلات فيرى كل التلاميذ، ومن لم يدفع
- * يظهر بأصفار وبمتخلَّده كاملاً — وهو أهمّ سطر في الكشف عملياً.
+ * فلا يرى إلا من دفع. هذا يبدأ من التسجيلات فيرى كل التلاميذ.
  *
- * قاعدتان لا استثناء لهما:
+ * ثلاث قواعد لا استثناء لها:
  * 1) كل مبلغ مقبوض يُقرأ من cash_transactions لا من payments، فلا يختلف رقم
  *    هذه الصفحة عن الخزينة ولا عن الدخل الصافي عند أول إلغاء.
- * 2) المتخلَّد يُحسب من student_fees ناقص payment_allocations للوصولات غير
- *    الملغاة. هو التزام لا حركة نقدية، فلا مكان له في الدفتر أصلاً.
+ * 2) حالة الشهر تُقرأ من payments.months حصراً — وهو ما اختاره القابض بيده،
+ *    لا تاريخ القبض. من دفع في جانفي شهر ديسمبر يُحتسب لديسمبر.
+ * 3) المتخلّد الشهري = عدد الأشهر المنقضية غير المدفوعة × القسط المرجعي
+ *    لمستوى القسم (FeePlan). لا يُحمّل التلميذ شهراً لم يأتِ دوره.
  */
 class ClassroomRosterController extends Controller
 {
+    /** السنة الدراسية عشرة أشهر: سبتمبر → جوان. مطابق لـ CollectionService. */
+    private const SCHOOL_MONTHS = [9, 10, 11, 12, 1, 2, 3, 4, 5, 6];
+
+    private const MONTH_NAMES_AR = [
+        '01' => 'جانفي', '02' => 'فيفري', '03' => 'مارس',
+        '04' => 'أفريل', '05' => 'ماي', '06' => 'جوان',
+        '07' => 'جويلية', '08' => 'أوت', '09' => 'سبتمبر',
+        '10' => 'أكتوبر', '11' => 'نوفمبر', '12' => 'ديسمبر',
+    ];
+
     /**
      * قائمة الأقسام للقائمة المنسدلة.
      *
@@ -52,15 +65,18 @@ class ClassroomRosterController extends Controller
                 'label'    => trim(($section->level?->name ? $section->level->name . ' ' : '') . $section->name),
             ]);
 
+        $activeYear = AcademicYear::query()
+            ->where('is_active', true)
+            ->orderByDesc('start_date')
+            ->first();
+
         return response()->json([
             'sections' => $sections,
             'years'    => AcademicYear::query()
                 ->orderByDesc('start_date')
                 ->get(['id', 'name', 'start_date', 'end_date', 'is_active']),
-            'active_year_id' => AcademicYear::query()
-                ->where('is_active', true)
-                ->orderByDesc('start_date')
-                ->value('id'),
+            'active_year_id' => $activeYear?->id,
+            'months'         => $activeYear ? $this->academicYearMonths($activeYear) : [],
         ]);
     }
 
@@ -70,6 +86,13 @@ class ClassroomRosterController extends Controller
             'date_from'        => ['nullable', 'date'],
             'date_to'          => ['nullable', 'date', 'after_or_equal:date_from'],
             'academic_year_id' => ['nullable', 'integer', 'exists:academic_years,id'],
+            'month_from'       => ['nullable', 'string', 'regex:/^\\d{4}-\\d{2}$/'],
+            'month_to'         => ['nullable', 'string', 'regex:/^\\d{4}-\\d{2}$/'],
+        ], [
+            'date_to.after_or_equal' => 'تاريخ النهاية يجب أن يكون بعد تاريخ البداية أو مساوياً له',
+            'academic_year_id.exists' => 'السنة الدراسية المختارة غير موجودة',
+            'month_from.regex' => 'صيغة شهر البداية غير صحيحة (المطلوب: YYYY-MM)',
+            'month_to.regex'   => 'صيغة شهر النهاية غير صحيحة (المطلوب: YYYY-MM)',
         ]);
 
         $year = ! empty($data['academic_year_id'])
@@ -88,15 +111,18 @@ class ClassroomRosterController extends Controller
 
         $paid        = $this->paidByStudent($section, $year, $data);
         $outstanding = $this->outstandingByStudent($section, $year);
+        $monthDefs   = $this->monthColumns($year, $data);
+        $monthsPaid  = $this->paidMonthsByStudent($section, $year);
+        $reference   = $this->referenceMonthlyFee($section, $year);
 
         $categories = CashTransaction::INCOME_CATEGORIES;
         $rows       = [];
         $seen       = [];
 
         foreach ($enrollments as $enrollment) {
-            $studentId    = (int) $enrollment->student_id;
-            $seen[]       = $studentId;
-            $rows[]       = $this->row(
+            $studentId = (int) $enrollment->student_id;
+            $seen[]    = $studentId;
+            $rows[]    = $this->row(
                 studentId: $studentId,
                 code: $enrollment->student->student_code,
                 name: trim($enrollment->student->first_name . ' ' . $enrollment->student->last_name),
@@ -105,12 +131,14 @@ class ClassroomRosterController extends Controller
                 paid: $paid[$studentId] ?? [],
                 outstanding: $outstanding[$studentId] ?? 0.0,
                 categories: $categories,
+                monthDefs: $monthDefs,
+                studentMonths: $monthsPaid[$studentId] ?? [],
+                reference: $reference,
             );
         }
 
         // من دفع تحت هذا القسم ثم لم يعد في تسجيلاته (نقلة أو حذف تسجيل):
-        // يُضاف حتى يبقى مجموع الأسطر مساوياً لمجموع الكشف. إسقاطه يجعل
-        // الجدول لا يجمع إلى مجموعه، وهو أسوأ خطأ يمكن أن يحمله تقرير مالي.
+        // يُضاف حتى يبقى مجموع الأسطر مساوياً لمجموع الكشف.
         foreach ($paid as $studentId => $line) {
             if (in_array($studentId, $seen, true)) {
                 continue;
@@ -125,6 +153,9 @@ class ClassroomRosterController extends Controller
                 paid: $line,
                 outstanding: $outstanding[$studentId] ?? 0.0,
                 categories: $categories,
+                monthDefs: $monthDefs,
+                studentMonths: $monthsPaid[$studentId] ?? [],
+                reference: $reference,
             );
         }
 
@@ -136,6 +167,20 @@ class ClassroomRosterController extends Controller
                 'category' => $category,
                 'label'    => CashTransaction::CATEGORY_LABELS[$category] ?? $category,
                 'total'    => round(array_sum(array_column(array_column($rows, 'by_category'), $category)), 2),
+            ];
+        }
+
+        // مجاميع أسفل كل عمود شهر: كم دفع وكم تخلّف في ذاك الشهر.
+        $byMonth = [];
+        foreach ($monthDefs as $index => $def) {
+            $cells = array_column(array_column($rows, 'months'), $index);
+            $byMonth[] = [
+                'key'        => $def['key'],
+                'label'      => $def['label'],
+                'paid_count' => count(array_filter($cells, fn ($c) => $c['status'] === 'paid')),
+                'late_count' => count(array_filter($cells, fn ($c) => $c['status'] === 'late')),
+                'due_count'  => count(array_filter($cells, fn ($c) => $c['status'] === 'due')),
+                'total'      => round(array_sum(array_column($cells, 'amount')), 2),
             ];
         }
 
@@ -154,14 +199,18 @@ class ClassroomRosterController extends Controller
                 'category' => $category,
                 'label'    => CashTransaction::CATEGORY_LABELS[$category] ?? $category,
             ], $categories),
-            'by_category' => $byCategory,
-            'rows'        => $rows,
+            'months'                 => $monthDefs,
+            'reference_monthly_fee'  => $reference,
+            'by_category'            => $byCategory,
+            'by_month'               => $byMonth,
+            'rows'                   => $rows,
             'summary'     => [
                 'students_count'    => count($rows),
                 'enrolled_count'    => count($seen),
                 'payers_count'      => count(array_filter($rows, fn (array $r) => $r['total'] > 0)),
-                'debtors_count'     => count(array_filter($rows, fn (array $r) => $r['outstanding'] > 0)),
+                'debtors_count'     => count(array_filter($rows, fn (array $r) => $r['late_count'] > 0)),
                 'total'             => round(array_sum(array_column($rows, 'total')), 2),
+                'months_arrears'    => round(array_sum(array_column($rows, 'months_arrears')), 2),
                 'outstanding_total' => round(array_sum(array_map(
                     fn (array $r) => max($r['outstanding'], 0.0),
                     $rows
@@ -175,8 +224,153 @@ class ClassroomRosterController extends Controller
     // ==================== الدوال المساعدة ====================
 
     /**
+     * أعمدة الأشهر المعروضة مع تصنيف زمني لكل شهر مقارنةً باليوم:
+     * منقضٍ (يستحقّ وجوباً)، جارٍ (ما زالت أيامه)، أو لم يأتِ بعد.
+     *
+     * @param  array<string,mixed>  $data
+     * @return array<int,array<string,mixed>>
+     */
+    private function monthColumns(?AcademicYear $year, array $data): array
+    {
+        if ($year === null) {
+            return [];
+        }
+
+        $today = Carbon::today();
+        $from  = $data['month_from'] ?? null;
+        $to    = $data['month_to'] ?? null;
+
+        if ($from !== null && $to !== null && $from > $to) {
+            [$from, $to] = [$to, $from];
+        }
+
+        $columns = [];
+
+        foreach ($this->academicYearMonths($year) as $month) {
+            if ($from !== null && $month['key'] < $from) {
+                continue;
+            }
+            if ($to !== null && $month['key'] > $to) {
+                continue;
+            }
+
+            $start = Carbon::parse($month['key'] . '-01');
+            $end   = $start->copy()->endOfMonth();
+
+            $columns[] = [
+                'key'     => $month['key'],
+                'label'   => $month['label'],
+                'year'    => $month['year'],
+                'elapsed' => $end->lt($today),
+                'current' => $start->lte($today) && $end->gte($today),
+            ];
+        }
+
+        return $columns;
+    }
+
+    /**
+     * أشهر السنة الدراسية بمفاتيح YYYY-MM مرتّبة دراسياً لا تقويمياً.
+     *
+     * @return array<int,array<string,mixed>>
+     */
+    private function academicYearMonths(AcademicYear $year): array
+    {
+        $startYear = (int) Carbon::parse($year->start_date)->format('Y');
+        $months    = [];
+
+        foreach (self::SCHOOL_MONTHS as $month) {
+            $calendarYear = $month >= 9 ? $startYear : $startYear + 1;
+            $key          = sprintf('%04d-%02d', $calendarYear, $month);
+
+            $months[] = [
+                'key'   => $key,
+                'label' => self::MONTH_NAMES_AR[sprintf('%02d', $month)] ?? $key,
+                'year'  => $calendarYear,
+            ];
+        }
+
+        return $months;
+    }
+
+    /**
+     * الأشهر المدفوعة لكل تلميذ من payments.months.
+     *
+     * لا يُرشّح هنا بتاريخ القبض عمداً: تغطية الشهر حقيقة ثابتة لا تتغير
+     * بتغيير مدّة التقرير؛ من دفع ديسمبر في جانفي يبقى ديسمبر مدفوعاً.
+     * مبلغ الشهر = قسط الدفعة الشهري في الدفتر ÷ عدد أشهرها (تقسيم متساوٍ
+     * معلن صراحةً، لأن الوصل لا يخزّن حصّة كل شهر منفردة).
+     *
+     * @return array<int,array<string,array<string,mixed>>>
+     */
+    private function paidMonthsByStudent(Section $section, ?AcademicYear $year): array
+    {
+        $rows = DB::table('payments as p')
+            ->join('enrollments as e', 'e.id', '=', 'p.enrollment_id')
+            ->leftJoin('cash_transactions as ct', function ($join) {
+                $join->on('ct.source_id', '=', 'p.id')
+                    ->where('ct.source_type', '=', (new Payment)->getMorphClass())
+                    ->where('ct.category', '=', CashTransaction::CATEGORY_MONTHLY_FEE)
+                    ->whereNull('ct.cancelled_at');
+            })
+            ->whereNull('p.cancelled_at')
+            ->whereNotNull('p.months')
+            ->where('e.section_id', $section->id)
+            ->when($year !== null, fn ($q) => $q->where('e.academic_year_id', $year->id))
+            ->groupBy('e.student_id', 'p.id', 'p.months', 'p.payment_date')
+            ->select(['e.student_id', 'p.id as payment_id', 'p.months', 'p.payment_date'])
+            ->selectRaw('COALESCE(SUM(ct.amount), 0) as monthly_amount')
+            ->get();
+
+        $paidMonths = [];
+
+        foreach ($rows as $row) {
+            $months = json_decode((string) $row->months, true);
+
+            if (! is_array($months) || $months === []) {
+                continue;
+            }
+
+            $share     = round(((float) $row->monthly_amount) / count($months), 2);
+            $studentId = (int) $row->student_id;
+
+            foreach ($months as $month) {
+                $paidMonths[$studentId][(string) $month] = [
+                    'amount'       => $share,
+                    'payment_id'   => (int) $row->payment_id,
+                    'payment_date' => $row->payment_date
+                        ? Carbon::parse($row->payment_date)->toDateString()
+                        : null,
+                ];
+            }
+        }
+
+        return $paidMonths;
+    }
+
+    /**
+     * القسط الشهري المرجعي لمستوى القسم من FeePlan.
+     * أساس حساب متخلّد الأشهر؛ إن لم يُعرّف المخطّط أُرجع 0
+     * وتُعرض الحالات بالألوان بلا مبلغ مخترع.
+     */
+    private function referenceMonthlyFee(Section $section, ?AcademicYear $year): float
+    {
+        if ($year === null || $section->level_id === null) {
+            return 0.0;
+        }
+
+        return round((float) FeePlan::query()
+            ->where('academic_year_id', $year->id)
+            ->where('level_id', $section->level_id)
+            ->where('frequency', 'monthly')
+            ->sum('amount'), 2);
+    }
+
+    /**
      * @param  array<string,float|string|null>  $paid
      * @param  array<int,string>  $categories
+     * @param  array<int,array<string,mixed>>  $monthDefs
+     * @param  array<string,array<string,mixed>>  $studentMonths
      * @return array<string,mixed>
      */
     private function row(
@@ -188,10 +382,41 @@ class ClassroomRosterController extends Controller
         array $paid,
         float $outstanding,
         array $categories,
+        array $monthDefs,
+        array $studentMonths,
+        float $reference,
     ): array {
         $lines = [];
         foreach ($categories as $category) {
             $lines[$category] = round((float) ($paid[$category] ?? 0.0), 2);
+        }
+
+        $cells     = [];
+        $lateCount = 0;
+        $unpaid    = [];
+
+        foreach ($monthDefs as $def) {
+            $entry = $studentMonths[$def['key']] ?? null;
+
+            if ($entry !== null) {
+                $status = 'paid';
+            } elseif ($def['elapsed']) {
+                $status = 'late';
+                $lateCount++;
+                $unpaid[] = $def['label'];
+            } elseif ($def['current']) {
+                $status = 'due';
+            } else {
+                $status = 'upcoming';
+            }
+
+            $cells[] = [
+                'key'          => $def['key'],
+                'label'        => $def['label'],
+                'status'       => $status,
+                'amount'       => round((float) ($entry['amount'] ?? 0.0), 2),
+                'payment_date' => $entry['payment_date'] ?? null,
+            ];
         }
 
         return [
@@ -202,6 +427,11 @@ class ClassroomRosterController extends Controller
             'enrolled'       => $enrolled,
             'payments_count' => (int) ($paid['payments_count'] ?? 0),
             'by_category'    => $lines,
+            'months'         => $cells,
+            'paid_months'    => count(array_filter($cells, fn (array $c) => $c['status'] === 'paid')),
+            'late_count'     => $lateCount,
+            'unpaid_months'  => $unpaid,
+            'months_arrears' => round($lateCount * $reference, 2),
             'total'          => round(array_sum($lines), 2),
             'outstanding'    => round($outstanding, 2),
             'sort_key'       => $this->normalizeName($name),
@@ -270,8 +500,8 @@ class ClassroomRosterController extends Controller
     }
 
     /**
-     * المتخلَّد بالذمّة لكل تلميذ: مجموع الرسوم المستحقّة ناقص ما وُزِّع عليها
-     * من وصولات غير ملغاة. الوصل الملغى يعيد الدين تلقائياً لأن توزيعاته تُستثنى.
+     * المتخلّد المحاسبي: مجموع الرسوم المستحقّة ناقص ما وُزّع عليها
+     * من وصولات غير ملغاة. الوصل الملغى يعيد الدين تلقائياً.
      *
      * @return array<int,float>
      */
@@ -312,7 +542,7 @@ class ClassroomRosterController extends Controller
 
     /**
      * ترتيب أبجدي عربي سليم: التشكيل والتطويل يُحذفان، والهمزات وصور الياء
-     * والتاء تُوحَّد، وإلا تفرّق «أحمد» عن «احمد» في القائمة نفسها.
+     * والتاء تُوحّد، وإلا تفرّق «أحمد» عن «احمد» في القائمة نفسها.
      */
     private function normalizeName(string $name): string
     {
