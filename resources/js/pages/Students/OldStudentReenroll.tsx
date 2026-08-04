@@ -1,7 +1,13 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { Search, ArrowRight, GraduationCap, CreditCard, AlertCircle, CheckCircle } from 'lucide-react';
-import { getStudents, getSectionOptions, reenrollStudent, type SectionOption } from '../../api/students';
+import {
+  getStudents,
+  getSectionOptions,
+  reenrollStudent,
+  recordRegistrationPayment,
+  type SectionOption,
+} from '../../api/students';
 import { ListSkeleton } from '../../components/DataSkeleton';
 
 const C = {
@@ -45,6 +51,11 @@ export function OldStudentReenroll() {
   const [amount, setAmount] = useState('');
   const [paymentDate, setPaymentDate] = useState('');
   const [paymentNotes, setPaymentNotes] = useState('');
+
+  // يُرفع حين يردّ الخادم code = already_enrolled: التلميذ ترسيمه قائم في السنة
+  // النشطة (546 تلميذاً دخلوا عبر ترحيل الترقية دون أن يُقبض معلومهم)، فالمطلوب
+  // قبض المعلوم على الترسيم القائم لا إنشاء ترسيم ثانٍ.
+  const [alreadyEnrolled, setAlreadyEnrolled] = useState(false);
 
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -95,7 +106,10 @@ export function OldStudentReenroll() {
   });
 
   // التحقّق في الواجهة يطابق قاعدة الخادم: required|exists:sections,id
-  const sectionError = sectionId === '' ? 'القسم إجباري: اختر قسم التلميذ لهذه السنة الدراسية.' : '';
+  // ويسقط في وضع «مُرسَّم سلفاً» لأنّ القبض لا يمسّ القسم أصلاً.
+  const sectionError = !alreadyEnrolled && sectionId === ''
+    ? 'القسم إجباري: اختر قسم التلميذ لهذه السنة الدراسية.'
+    : '';
   const showSectionError = submitted && sectionError !== '';
 
   // الدفع اختياري ككتلة واحدة: إمّا مبلغ وطريقة وتاريخ، أو لا شيء.
@@ -108,6 +122,8 @@ export function OldStudentReenroll() {
   let paymentError = '';
   if (amountInvalid) {
     paymentError = 'مبلغ الترسيم يجب أن يكون رقماً أكبر من صفر.';
+  } else if (alreadyEnrolled && !hasAmount) {
+    paymentError = 'أدخل المبلغ المقبوض لتسجيله على الترسيم القائم.';
   } else if (hasAmount && paymentMethod === '') {
     paymentError = 'اختر طريقة الدفع الموافقة للمبلغ المقبوض.';
   } else if (hasAmount && paymentDate === '') {
@@ -117,6 +133,16 @@ export function OldStudentReenroll() {
   }
   const showPaymentError = submitted && paymentError !== '';
 
+  function resetForm() {
+    setSectionId('');
+    setSubmitted(false);
+    setPaymentMethod('');
+    setAmount('');
+    setPaymentDate('');
+    setPaymentNotes('');
+    setAlreadyEnrolled(false);
+  }
+
   function openStudent(student: any) {
     setSelectedStudent(student);
     // القسم المختار في البحث اقتراح أوّلي لا أكثر؛ يبقى قابلاً للتغيير قبل الحفظ.
@@ -124,6 +150,7 @@ export function OldStudentReenroll() {
     setSubmitted(false);
     setError('');
     setSuccess('');
+    setAlreadyEnrolled(false);
     // تاريخ اليوم افتراضاً: القبض يقع لحظة الترسيم في الحالة الغالبة،
     // ويبقى قابلاً للتعديل لمن يسجّل قبضاً وقع أمس.
     setPaymentDate(todayLocal());
@@ -134,13 +161,23 @@ export function OldStudentReenroll() {
 
   function closeStudent() {
     setSelectedStudent(null);
-    setSectionId('');
-    setSubmitted(false);
     setError('');
-    setPaymentMethod('');
-    setAmount('');
-    setPaymentDate('');
-    setPaymentNotes('');
+    resetForm();
+  }
+
+  function announceSuccess(response: any, prefix: string) {
+    const student = `${selectedStudent?.first_name || ''} ${selectedStudent?.last_name || ''}`.trim();
+    const placed = response?.enrollment?.section?.name
+      ? ` — القسم: ${response.enrollment.level?.name || ''} ${response.enrollment.section.name}`.trimEnd()
+      : '';
+    const paid = response?.payment
+      ? ` — دخل الخزينة: ${Number(response.payment.amount).toFixed(2)} د`
+      : '';
+    setSuccess(`${prefix} ${student}${placed}${paid}`);
+    setSelectedStudent(null);
+    resetForm();
+    // إعادة تحميل القائمة حتى تعكس الحالة بعد الحفظ.
+    loadStudents(sectionFilter);
   }
 
   async function handleSave() {
@@ -162,25 +199,43 @@ export function OldStudentReenroll() {
             }
           : {}),
       });
-      const student = `${selectedStudent.first_name || ''} ${selectedStudent.last_name || ''}`.trim();
-      const placed = response?.enrollment?.section?.name
-        ? ` — القسم: ${response.enrollment.level?.name || ''} ${response.enrollment.section.name}`.trimEnd()
-        : '';
-      const paid = response?.payment
-        ? ` — دخل الخزينة: ${Number(response.payment.amount).toFixed(2)} د`
-        : '';
-      setSuccess(`تم تجديد ترسيم ${student} بنجاح${placed}${paid}`);
-      setSelectedStudent(null);
-      setSectionId('');
-      setSubmitted(false);
-      setPaymentMethod('');
-      setAmount('');
-      setPaymentDate('');
-      setPaymentNotes('');
-      // إعادة تحميل القائمة: التلميذ صار مُرسّماً، وإعادة فتحه تُرفض من الخادم.
-      loadStudents(sectionFilter);
+      announceSuccess(response, 'تم تجديد ترسيم');
     } catch (err: any) {
-      setError(err?.message || 'حدث خطأ أثناء الترسيم');
+      // التلميذ مُرسَّم سلفاً: لا يُعاد ترسيمه ولا يُحذف ترسيمه، بل يُقبض معلومه.
+      if (err?.code === 'already_enrolled') {
+        setAlreadyEnrolled(true);
+        setError('التلميذ مُرسَّم فعلاً في السنة الدراسية النشطة، ولا يُرسّم مرتين. إن قبضت معلوم الترسيم منه فأدخل المبلغ وطريقة الدفع ثمّ اضغط «تسجيل المعلوم على الترسيم القائم».');
+      } else {
+        setError(err?.message || 'حدث خطأ أثناء الترسيم');
+      }
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  /**
+   * قبض المعلوم على ترسيم قائم دون إنشاء ترسيم جديد.
+   *
+   * مسار منفصل عن الحفظ عمداً: القابض يرى أنّ العملية اختلفت، فلا يظنّ
+   * أنّ النظام أنشأ له ترسيماً ثانياً في الخفاء.
+   */
+  async function handleRecordPaymentOnly() {
+    setSubmitted(true);
+    setError('');
+
+    if (!selectedStudent || paymentError || !hasAmount) return;
+
+    setSaving(true);
+    try {
+      const response = await recordRegistrationPayment(selectedStudent.id, {
+        registration_amount: amountValue,
+        payment_method: paymentMethod as 'cash' | 'bank_transfer' | 'check' | 'card',
+        payment_date: paymentDate,
+        ...(paymentNotes.trim() !== '' ? { payment_notes: paymentNotes.trim() } : {}),
+      });
+      announceSuccess(response, 'تم تسجيل معلوم الترسيم لـ');
+    } catch (err: any) {
+      setError(err?.message || 'تعذّر تسجيل المبلغ');
     } finally {
       setSaving(false);
     }
@@ -264,69 +319,72 @@ export function OldStudentReenroll() {
         <div className="bg-white rounded-[22px] p-6 border" style={{ borderColor: C.line }}>
           <h3 className="font-bold text-lg mb-4 flex items-center gap-2" style={{ color: C.ink }}>
             <GraduationCap size={20} />
-            تجديد الترسيم — السنة الدراسية النشطة
+            {alreadyEnrolled ? 'قبض معلوم الترسيم — الترسيم قائم' : 'تجديد الترسيم — السنة الدراسية النشطة'}
           </h3>
 
           <div className="space-y-4">
-            <div>
-              <label htmlFor="section_id" className="block text-sm font-medium mb-1.5" style={{ color: C.muted }}>
-                القسم <span style={{ color: C.danger }}>*</span>
-              </label>
+            {!alreadyEnrolled && (
+              <div>
+                <label htmlFor="section_id" className="block text-sm font-medium mb-1.5" style={{ color: C.muted }}>
+                  القسم <span style={{ color: C.danger }}>*</span>
+                </label>
 
-              <select
-                id="section_id"
-                name="section_id"
-                value={sectionId}
-                onChange={(e) => { setSectionId(e.target.value); setError(''); }}
-                disabled={sectionsLoading || sections.length === 0}
-                aria-invalid={showSectionError}
-                aria-describedby={showSectionError ? 'section_id_error' : 'section_id_hint'}
-                className="w-full p-3 rounded-xl border bg-slate-50 outline-none disabled:opacity-60"
-                style={{ borderColor: showSectionError ? C.danger : C.line }}
-              >
-                <option value="">
-                  {sectionsLoading ? 'جارٍ تحميل الأقسام…' : 'اختر القسم'}
-                </option>
-                {sections.map((section) => (
-                  <option key={section.id} value={section.id}>{section.label}</option>
-                ))}
-              </select>
+                <select
+                  id="section_id"
+                  name="section_id"
+                  value={sectionId}
+                  onChange={(e) => { setSectionId(e.target.value); setError(''); }}
+                  disabled={sectionsLoading || sections.length === 0}
+                  aria-invalid={showSectionError}
+                  aria-describedby={showSectionError ? 'section_id_error' : 'section_id_hint'}
+                  className="w-full p-3 rounded-xl border bg-slate-50 outline-none disabled:opacity-60"
+                  style={{ borderColor: showSectionError ? C.danger : C.line }}
+                >
+                  <option value="">
+                    {sectionsLoading ? 'جارٍ تحميل الأقسام…' : 'اختر القسم'}
+                  </option>
+                  {sections.map((section) => (
+                    <option key={section.id} value={section.id}>{section.label}</option>
+                  ))}
+                </select>
 
-              {showSectionError ? (
-                <p id="section_id_error" className="mt-1.5 flex items-center gap-1.5 text-sm" style={{ color: C.danger }}>
-                  <AlertCircle size={15} />
-                  {sectionError}
-                </p>
-              ) : (
-                <p id="section_id_hint" className="mt-1.5 text-xs" style={{ color: C.muted }}>
-                  المستوى يُحدّد تلقائياً من القسم المختار.
-                </p>
-              )}
+                {showSectionError ? (
+                  <p id="section_id_error" className="mt-1.5 flex items-center gap-1.5 text-sm" style={{ color: C.danger }}>
+                    <AlertCircle size={15} />
+                    {sectionError}
+                  </p>
+                ) : (
+                  <p id="section_id_hint" className="mt-1.5 text-xs" style={{ color: C.muted }}>
+                    المستوى يُحدّد تلقائياً من القسم المختار.
+                  </p>
+                )}
 
-              {sectionsError && (
-                <div className="mt-2 flex items-center justify-between gap-3 rounded-xl border px-3 py-2 text-sm"
-                     style={{ borderColor: C.danger, backgroundColor: C.dangerBg, color: C.danger }}>
-                  <span>{sectionsError}</span>
-                  <button
-                    type="button"
-                    onClick={loadSections}
-                    className="shrink-0 rounded-lg px-3 py-1 text-white"
-                    style={{ backgroundColor: C.danger }}
-                  >
-                    إعادة المحاولة
-                  </button>
-                </div>
-              )}
-            </div>
+                {sectionsError && (
+                  <div className="mt-2 flex items-center justify-between gap-3 rounded-xl border px-3 py-2 text-sm"
+                       style={{ borderColor: C.danger, backgroundColor: C.dangerBg, color: C.danger }}>
+                    <span>{sectionsError}</span>
+                    <button
+                      type="button"
+                      onClick={loadSections}
+                      className="shrink-0 rounded-lg px-3 py-1 text-white"
+                      style={{ backgroundColor: C.danger }}
+                    >
+                      إعادة المحاولة
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
 
-            <div className="pt-4 border-t" style={{ borderColor: C.line }}>
+            <div className={alreadyEnrolled ? '' : 'pt-4 border-t'} style={{ borderColor: C.line }}>
               <h4 className="font-medium mb-1 flex items-center gap-2" style={{ color: C.ink }}>
                 <CreditCard size={18} />
                 معلوم التجديد المقبوض
               </h4>
               <p id="reenroll_payment_hint" className="mb-3 text-xs" style={{ color: C.muted }}>
-                اختياري: إن قبضت مبلغاً الآن سجّله هنا فيدخل الخزينة مباشرة تحت «معلوم ترسيم»
-                ويظهر في السجل اليومي والشهري والدخل الصافي. اتركه فارغاً إن كان الدفع لاحقاً.
+                {alreadyEnrolled
+                  ? 'ترسيم التلميذ قائم في السنة النشطة، ولن يُمسّ. المبلغ الذي تدخله هنا يُسجّل على ذلك الترسيم ويدخل الخزينة تحت «معاليم التسجيل».'
+                  : 'اختياري: إن قبضت مبلغاً الآن سجّله هنا فيدخل الخزينة مباشرة تحت «معاليم التسجيل» ويظهر في السجل اليومي والشهري والدخل الصافي. اتركه فارغاً إن كان الدفع لاحقاً.'}
               </p>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -404,14 +462,35 @@ export function OldStudentReenroll() {
               )}
             </div>
 
-            <button
-              onClick={handleSave}
-              disabled={saving || sectionsLoading}
-              className="w-full mt-6 py-3.5 rounded-xl text-white font-medium transition hover:opacity-90 disabled:opacity-70"
-              style={{ backgroundColor: C.forest }}
-            >
-              {saving ? 'جارٍ الحفظ…' : hasAmount ? 'حفظ الترسيم وتسجيل المبلغ' : 'حفظ الترسيم'}
-            </button>
+            {alreadyEnrolled ? (
+              <div className="mt-6 space-y-3">
+                <button
+                  onClick={handleRecordPaymentOnly}
+                  disabled={saving}
+                  className="w-full py-3.5 rounded-xl text-white font-medium transition hover:opacity-90 disabled:opacity-70"
+                  style={{ backgroundColor: C.forest }}
+                >
+                  {saving ? 'جارٍ الحفظ…' : 'تسجيل المعلوم على الترسيم القائم'}
+                </button>
+                <button
+                  type="button"
+                  onClick={closeStudent}
+                  className="w-full py-3 rounded-xl border font-medium"
+                  style={{ borderColor: C.line, color: C.muted }}
+                >
+                  إلغاء والعودة إلى القائمة
+                </button>
+              </div>
+            ) : (
+              <button
+                onClick={handleSave}
+                disabled={saving || sectionsLoading}
+                className="w-full mt-6 py-3.5 rounded-xl text-white font-medium transition hover:opacity-90 disabled:opacity-70"
+                style={{ backgroundColor: C.forest }}
+              >
+                {saving ? 'جارٍ الحفظ…' : hasAmount ? 'حفظ الترسيم وتسجيل المبلغ' : 'حفظ الترسيم'}
+              </button>
+            )}
           </div>
         </div>
       </div>
