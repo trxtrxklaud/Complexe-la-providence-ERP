@@ -9,7 +9,7 @@ use App\Models\Payment;
 use App\Models\StudentFee;
 
 /**
- * معلوم الترسيم المقبوض لحظة تسجيل تلميذ جديد.
+ * معلوم الترسيم المقبوض لحظة تسجيل تلميذ أو تجديد ترسيمه.
  *
  * التصنيف ليس تفصيلاً تجميلياً: LedgerService لا يعرف أنّ الدفعة معلوم ترسيم، بل
  * يستنتج البند من الرسم المُخصّص لها. دفعة بلا تخصيص تسقط في «مداخيل أخرى»،
@@ -19,8 +19,15 @@ use App\Models\StudentFee;
  *   1) رسوم خطة سنوية (yearly) إن وُلّدت للمستوى — وهي الحالة المثلى
  *   2) وإلا فرسم مربوط بنوع رسم مُصنّف registration_fee يُنشَأ عند الحاجة
  *
- * لماذا نُنشئ رسماً؟ لأنّ المدرسة قبضت مالاً مقابل الترسيم، فوجب أن يظهر في
+ * ولماذا نُنشئ رسماً؟ لأنّ المدرسة قبضت مالاً مقابل الترسيم، فوجب أن يظهر في
  * ملفّ التلميذ ما قُبض ومقابل ماذا. دفعة بلا رسم هي مال بلا سبب في دفتر محاسبي.
+ *
+ * قاعدة التصنيف الحاسمة: البند يتبع تصريح القابض، لا قائمة الأسعار.
+ * كان سعر نوع الرسم يسقّف التخصيص، فدفعة 70 د على نوع سعره 20 د تُنتج
+ * 20 د في معاليم التسجيل و50 د في «مداخيل أخرى» — وهذا تشويه صامت للتقرير:
+ * المال في الخزينة صحيح والبند خطأ، فيقرأ صاحب المدرسة معاليم تسجيل أقلّ من
+ * الحقيقة ومداخيل أخرى منفوخة دون أن يظهر خطأ في أي مجموع. الأسعار في
+ * fee_types مرجع افتراضي لا سلطة على مبلغ قُبض فعلاً وصرّح القابض ببنده.
  */
 class RegistrationPaymentService
 {
@@ -51,7 +58,11 @@ class RegistrationPaymentService
     }
 
     /**
-     * توزيع المبلغ على رسوم الترسيم المفتوحة دون تجاوز المتبقّي.
+     * توزيع المبلغ على رسوم الترسيم، ثمّ استيعاب الفائض في رسم الترسيم نفسه.
+     *
+     * التخصيصات مُفتَرَسة بالرسم (fee_id => مبلغ) لا قائمة مسطّحة، لأنّ الفائض قد
+     * يعود إلى رسم خُصّص له مبلغ في نفس الدورة: سطران للرسم الواحد يجعلان
+     * PaymentService يقيس كلّ سطر على المتبقّي وحده فيمرّ مجموع يتجاوز المستحقّ.
      *
      * @return array<int,array{student_fee_id:int,amount:float}>
      */
@@ -59,19 +70,16 @@ class RegistrationPaymentService
     {
         $fees = $this->registrationFees($enrollment, $amount);
 
-        $allocations = [];
-        $remaining   = $amount;
+        /** @var array<int,float> $planned */
+        $planned   = [];
+        $remaining = $amount;
 
         foreach ($fees as $fee) {
             if ($remaining <= 0) {
                 break;
             }
 
-            $allocated = (float) $fee->paymentAllocations()
-                ->whereHas('payment', fn ($query) => $query->whereNull('cancelled_at'))
-                ->sum('amount_allocated');
-
-            $due = round((float) $fee->amount_due - $allocated, 2);
+            $due = round((float) $fee->amount_due - $this->allocatedOn($fee), 2);
 
             if ($due <= 0) {
                 continue;
@@ -79,15 +87,81 @@ class RegistrationPaymentService
 
             $take = min($due, $remaining);
 
-            $allocations[] = [
-                'student_fee_id' => $fee->id,
-                'amount'         => $take,
-            ];
+            $planned[$fee->id] = round(($planned[$fee->id] ?? 0.0) + $take, 2);
+            $remaining         = round($remaining - $take, 2);
+        }
 
-            $remaining = round($remaining - $take, 2);
+        if ($remaining > 0) {
+            $extra = $this->absorbingFee($enrollment);
+
+            if ($extra) {
+                $inFlight = $planned[$extra->id] ?? 0.0;
+                $needed   = round($this->allocatedOn($extra) + $inFlight + $remaining, 2);
+
+                // رفع المستحقّ إلى ما قُبض فعلاً: الرسم يوثّق ما طالبت به المدرسة،
+                // وقد طالبت بالمبلغ المقبوض بدليل قبضه.
+                if (round((float) $extra->amount_due, 2) < $needed) {
+                    $extra->update(['amount_due' => $needed]);
+                }
+
+                $planned[$extra->id] = round($inFlight + $remaining, 2);
+                $remaining           = 0.0;
+            }
+        }
+
+        $allocations = [];
+
+        foreach ($planned as $feeId => $allocated) {
+            if ($allocated <= 0) {
+                continue;
+            }
+
+            $allocations[] = [
+                'student_fee_id' => (int) $feeId,
+                'amount'         => $allocated,
+            ];
         }
 
         return $allocations;
+    }
+
+    /**
+     * ما خُصّص فعلاً لرسم من دفعات غير ملغاة.
+     */
+    private function allocatedOn(StudentFee $fee): float
+    {
+        return round((float) $fee->paymentAllocations()
+            ->whereHas('payment', fn ($query) => $query->whereNull('cancelled_at'))
+            ->sum('amount_allocated'), 2);
+    }
+
+    /**
+     * الرسم الذي يستوعب الفائض: رسم نوع الترسيم لهذا الترسيم، يُنشَأ عند الحاجة.
+     *
+     * لا نرفع مستحقّ رسوم الخطة السنوية أبداً، فهي قائمة أسعار المؤسسة ويجب أن
+     * تبقى كما قرّرتها الإدارة. الفائض يذهب إلى رسم مستقلّ من نوع مُصنّف
+     * registration_fee، فيبقى البند في الدفتر معاليم تسجيل والخطة سليمة.
+     */
+    private function absorbingFee(Enrollment $enrollment): ?StudentFee
+    {
+        $feeType = $this->registrationFeeType();
+
+        if (! $feeType) {
+            return null;
+        }
+
+        return StudentFee::firstOrCreate(
+            [
+                'enrollment_id' => $enrollment->id,
+                'fee_type_id'   => $feeType->id,
+            ],
+            [
+                'description' => $feeType->name_ar ?: 'معلوم الترسيم',
+                'amount_due'  => 0,
+                'due_date'    => $enrollment->enrollment_date ?? now()->toDateString(),
+                'status'      => 'pending',
+            ]
+        );
     }
 
     /**
