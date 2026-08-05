@@ -1,36 +1,118 @@
 @import "tailwindcss";
 
-/*
-| Complexe La Providence — قواعد الطباعة العامة
-|
-| المتصفّح يطبع داخل هامش الورقة رأسًا وتذييلًا من عنده: عنوان الصفحة،
-| الرابط (مثال: 127.0.0.1:8002/income/unpaid-monthly)، التاريخ ورقم الصفحة.
-| هذا لا علاقة له بمحتوى المنصة، ولا يُلغى إلا بإلغاء هامش الورقة نفسه
-| عبر @page، ثم إعادة الهامش داخل منطقة الطباعة نفسها.
-*/
+/* ==========================================================================
+   الطباعة — قواعد عامّة تسري على كل شاشات المنصة
+   --------------------------------------------------------------------------
+   1. هامش الورقة = 0، لأن المتصفّح يرسم الرابط والتاريخ ورقم الصفحة داخل
+      هامش الورقة؛ فإذا انعدم الهامش انعدم موضع الرأس والتذييل.
+   2. المحتوى يأخذ كامل عرض A4، وحدود العرض الخاصّة بالشاشة تُلغى.
+   3. الهامش الداخلي (10mm) يعوّض هامش الورقة الملغى فلا يلتصق النص بالحافة.
+   ========================================================================== */
 @media print {
   @page {
-    size: A4;
+    size: A4 portrait;
     margin: 0;
   }
 
   html,
   body {
     margin: 0 !important;
+    padding: 0 !important;
+    width: 210mm !important;
     background: #ffffff !important;
     -webkit-print-color-adjust: exact;
     print-color-adjust: exact;
   }
 
-  /*
-  | بعد إلغاء هامش الورقة يجب إرجاع الهامش داخل المستند حتى لا يلتصق
-  | المحتوى بحافة الورقة. سابقة body ترفع الأولوية فوق قواعد الصفحات.
-  */
-  body .unpaid-monthly-print,
+  /* كامل عرض الورقة: قيود العرض المخصّصة للشاشة لا معنى لها على الورق */
+  body .container,
+  body .max-w-3xl,
+  body .max-w-4xl,
+  body .max-w-5xl,
+  body .max-w-6xl,
+  body .max-w-7xl {
+    max-width: none !important;
+    width: 100% !important;
+    margin-right: 0 !important;
+    margin-left: 0 !important;
+  }
+
+  /* مناطق الطباعة المعروفة: عرض كامل + هامش داخلي بديل */
+  body #print-area,
   body #receipt-print,
   body #net-print-area,
-  body .print-area {
+  body .print-area,
+  body .unpaid-monthly-print {
     padding: 10mm !important;
+    width: 100% !important;
+    max-width: none !important;
     box-sizing: border-box !important;
+  }
+
+  /* الجداول داخل مناطق الطباعة: عرض كامل وترويسة تتكرّر في كل ورقة */
+  body #print-area table,
+  body #net-print-area table,
+  body .print-area table,
+  body .unpaid-monthly-print table {
+    width: 100% !important;
+    border-collapse: collapse !important;
+  }
+
+  thead {
+    display: table-header-group;
+  }
+
+  tr,
+  th,
+  td {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  /* --------------------------------------------------------------------
+     قوائم الأقسام: القسم الواحد على ورقة واحدة.
+     تصغير الخطّ وضغط الحشو داخل الجدول وحده — لا داخل بطاقة التلميذ —
+     فيتّسع القسم كاملاً في صفحة A4 واحدة.
+     -------------------------------------------------------------------- */
+  body #print-area table {
+    font-size: 9pt !important;
+  }
+
+  body #print-area table th,
+  body #print-area table td {
+    padding: 2px 4px !important;
+    line-height: 1.25 !important;
+  }
+
+  /* --------------------------------------------------------------------
+     التقارير اليومية: كل يوم في ورقة مستقلّة حتى لا تنقسم أرقامه.
+     القاعدة على البطاقة الثانية فما بعدها، لا على الأخيرة، تفادياً
+     لورقة بيضاء زائدة في آخر الكشف.
+     -------------------------------------------------------------------- */
+  .daybook-card,
+  .print-page {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  .daybook-card + .daybook-card,
+  .print-page + .print-page {
+    break-before: page;
+    page-break-before: always;
+  }
+
+  /* عند طباعة يوم واحد لا داعي لأي قفزة صفحة */
+  .printing-single .daybook-card + .daybook-card {
+    break-before: auto;
+    page-break-before: auto;
+  }
+
+  .print-keep {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  .no-print {
+    display: none !important;
   }
 }
