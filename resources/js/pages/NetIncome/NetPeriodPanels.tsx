@@ -59,20 +59,51 @@ export function dinar(value: number | string | null | undefined): string {
  *
  * استُعملت visibility بدل display لأنّها لا تتعلّق ببنية القائمة الجانبية،
  * فلا تنكسر الطباعة إذا تغيّر ترميز Sidebar لاحقاً.
+ *
+ * لماذا كانت الجداول تتجاوز الورقة قبل هذا التعديل: العناصر المخفيّة بـ
+ * visibility تبقى محتلّة مكانها، فيبقى عرض التخطيط عرض الشاشة (بما فيه القائمة
+ * الجانبية)، ومنطقة التقرير المقيسة بـ 100% كانت تقيس على ذلك العرض العريض ثم
+ * يقصّ المتصفّح ما زاد عن الورقة. العلاج: تثبيت العرض والحشو والقياس على صندوق
+ * الورقة نفسه، وإلزام الجدول بألّا يتجاوزه (table-layout: fixed + كسر الكلمات).
  */
 export function PrintStyles() {
   return (
     <style>{`
       @media print {
+        @page { size: A4 portrait; margin: 0; }
+
         body * { visibility: hidden !important; }
         #net-print-area, #net-print-area * { visibility: visible !important; }
+
         #net-print-area {
-          position: absolute;
+          position: absolute !important;
           top: 0;
           right: 0;
           left: 0;
-          width: 100%;
+          width: 100% !important;
+          max-width: 100% !important;
+          padding: 8mm !important;
+          box-sizing: border-box !important;
+          overflow: visible !important;
         }
+
+        #net-print-area table {
+          width: 100% !important;
+          max-width: 100% !important;
+          table-layout: fixed;
+          border-collapse: collapse;
+        }
+
+        #net-print-area th,
+        #net-print-area td {
+          white-space: normal !important;
+          word-break: break-word !important;
+          overflow-wrap: break-word !important;
+        }
+
+        #net-print-area thead { display: table-header-group; }
+        #net-print-area tr { break-inside: avoid; page-break-inside: avoid; }
+
         .no-print { display: none !important; }
       }
     `}</style>
