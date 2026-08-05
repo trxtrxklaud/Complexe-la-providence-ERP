@@ -24,6 +24,7 @@ use App\Http\Controllers\TreasuryDaybookController;
 use App\Http\Controllers\TreasuryWithdrawalController;
 use App\Http\Controllers\UnpaidMonthlyReportController;
 use App\Http\Controllers\FeeWaiverController;
+use App\Http\Controllers\DiscountController;
 
 Route::middleware('throttle:5,1')->post('/login', [AuthController::class, 'login']);
 
@@ -174,5 +175,11 @@ Route::middleware(['auth:sanctum', 'active', 'throttle:120,1'])->group(function 
         Route::get('/student-fees/{studentFee}/waivers', [FeeWaiverController::class, 'index']);
         Route::post('/student-fees/{studentFee}/waive',  [FeeWaiverController::class, 'store']);
         Route::post('/fee-waivers/{waiver}/cancel',      [FeeWaiverController::class, 'cancel']);
+
+        // التخفيض السنوي — سعر مخفّض لا دَين. يتبع صلاحية التنازل نفسها:
+        // كلاهما يُنقص ما تجنيه المدرسة فلا يملكه القابض. لا سطر في الخزينة.
+        Route::get('/enrollments/{enrollment}/discount',  [DiscountController::class, 'show']);
+        Route::post('/enrollments/{enrollment}/discount', [DiscountController::class, 'store']);
+        Route::post('/discounts/{discount}/cancel',       [DiscountController::class, 'cancel']);
     });
 });

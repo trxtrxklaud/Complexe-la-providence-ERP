@@ -70,16 +70,12 @@ class CollectionService
                     $months
                 ));
 
+                // التخفيض لم يعد يُطبَّق عند الاستخلاص: صار سعراً سنوياً ثابتاً
+                // يُدار في enrollment_discounts عبر DiscountService. هنا يُخزَّن السعر
+                // الكامل لكل بند، فلا يضيع أصل ما طُولب به التلميذ، ويُطرح التخفيض
+                // في التقارير والمتخلّد لا في صفوف الرسوم.
                 $itemsTotal = round((float) array_sum(array_column($data['items'], 'amount')), 2);
-                $discount = max(0, (float) ($data['discount'] ?? 0));
-
-                if ($discount > $itemsTotal) {
-                    throw new \InvalidArgumentException(
-                        'التخفيض (' . $discount . ') يتجاوز مجموع البنود (' . $itemsTotal . ')'
-                    );
-                }
-
-                $total = round($itemsTotal - $discount, 2);
+                $total = $itemsTotal;
 
                 $payment = Payment::create([
                     'student_id'      => $data['student_id'],
@@ -94,16 +90,12 @@ class CollectionService
                     'created_by'      => $createdBy,
                 ]);
 
-                // توزيع التخفيض تناسبياً على البنود حتى يبقى:
-                //   مجموع amount_due = مجموع التوزيعات = مبلغ الدفعة
-                $netShares = $this->distribute($data['items'], $itemsTotal, $total);
-
                 $receiptItems = [];
                 $feeIds = [];
 
-                foreach ($data['items'] as $index => $item) {
+                foreach ($data['items'] as $item) {
                     $feeType = FeeType::findOrFail($item['fee_type_id']);
-                    $net = $netShares[$index];
+                    $amount = round((float) $item['amount'], 2);
 
                     $studentFee = StudentFee::create([
                         'enrollment_id' => $enrollment->id,
@@ -112,7 +104,7 @@ class CollectionService
                         // بدل استخراج النوع من نصّ الوصف.
                         'fee_type_id'   => $feeType->id,
                         'description'   => $feeType->name_ar . ' — ' . $monthsLabel,
-                        'amount_due'    => $net,
+                        'amount_due'    => $amount,
                         'due_date'      => $data['payment_date'],
                         'status'        => 'pending',
                     ]);
@@ -120,7 +112,7 @@ class CollectionService
                     PaymentAllocation::create([
                         'payment_id'       => $payment->id,
                         'student_fee_id'   => $studentFee->id,
-                        'amount_allocated' => $net,
+                        'amount_allocated' => $amount,
                     ]);
 
                     $feeIds[] = $studentFee->id;
@@ -158,7 +150,9 @@ class CollectionService
                     'months'       => $months,
                     'months_label' => $monthsLabel,
                     'items_total'  => $itemsTotal,
-                    'discount'     => $discount,
+                    // التخفيض لم يعد يُطبَّق عند القبض؛ يبقى الحقل صفراً للتوافق مع
+                    // الوصولات القديمة وعرض الوصل. التخفيض السنوي يُعرض من مصدره.
+                    'discount'     => 0.0,
                     'total'        => $total,
                     'items'        => $receiptItems,
                     'student'      => [
@@ -207,39 +201,6 @@ class CollectionService
         return in_array($code, ['23000', '23505'], true)
             || str_contains($e->getMessage(), 'idempotency_key')
             || str_contains(strtolower($e->getMessage()), 'unique');
-    }
-
-    /**
-     * يوزّع المبلغ الصافي على البنود تناسبياً، ويضع فرق التقريب في البند الأخير
-     * حتى يساوي المجموع المبلغ الصافي بالضبط (بلا انحراف مليمات).
-     *
-     * @return array<int, float>
-     */
-    private function distribute(array $items, float $itemsTotal, float $total): array
-    {
-        $count = count($items);
-        $shares = [];
-
-        if ($itemsTotal <= 0) {
-            return array_fill(0, $count, 0.0);
-        }
-
-        // يُحتفظ بالمتبقّي بدل المجموع الجاري حتى لا ينتج نصيب سالب
-        // عند تراكم التقريب على مبالغ صغيرة جداً.
-        $remaining = $total;
-        foreach (array_values($items) as $i => $item) {
-            if ($i === $count - 1) {
-                $shares[$i] = max(0.0, round($remaining, 2));
-                break;
-            }
-            $share = round(((float) $item['amount'] / $itemsTotal) * $total, 2);
-            $share = min($share, $remaining);
-            $share = max(0.0, $share);
-            $shares[$i] = $share;
-            $remaining = round($remaining - $share, 2);
-        }
-
-        return $shares;
     }
 
     public function monthLedger(int $enrollmentId): array
