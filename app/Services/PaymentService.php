@@ -35,7 +35,7 @@ class PaymentService
                     }
 
                     foreach ($data['allocations'] as $allocation) {
-                        // قفل صف الرسم حتى لا تتجاوز دفعتان متزامنتان المتبقّي معاً.
+                        // قفل صف الرسم حتّى لا تتجاوز دفعتان متزامنتان المتبقّي معاً.
                         $fee = StudentFee::whereKey($allocation['student_fee_id'])
                             ->lockForUpdate()
                             ->first();
@@ -49,7 +49,12 @@ class PaymentService
                         $alreadyAllocated = $fee->paymentAllocations()
                             ->whereHas('payment', fn ($q) => $q->whereNull('cancelled_at'))
                             ->sum('amount_allocated');
-                        $remaining = $fee->amount_due - $alreadyAllocated;
+
+                        // المتنازل عنه ليس محلّاً للقبض: من أُعفي من 50 د لا يُطالَب بها،
+                        // فتُخصم من المتبقّي المسموح توزيعه.
+                        $waived = $fee->waivers()->whereNull('cancelled_at')->sum('amount');
+
+                        $remaining = round((float) $fee->amount_due - (float) $alreadyAllocated - (float) $waived, 2);
 
                         if ($allocation['amount'] > $remaining) {
                             throw new \InvalidArgumentException(
@@ -84,7 +89,7 @@ class PaymentService
                 }
 
                 // إسقاط الدفعة في الدفتر النقدي المركزي داخل نفس المعاملة،
-                // فإمّا أن تُسجَّل الدفعة وأثرها النقدي معاً أو لا يُسجَّل شيء.
+                // فإمّا أن تُسجّل الدفعة وأثرها النقدي معاً أو لا يُسجّل شيء.
                 $this->ledger->recordPayment($payment);
 
                 return $payment;
@@ -119,17 +124,22 @@ class PaymentService
         $fee = StudentFee::find($studentFeeId);
         if (!$fee) return;
 
-        // تُحتسب المخصّصات من الدفعات غير الملغاة فقط، حتى يعود الرسم
+        // تُحتسب المخصّصات من الدفعات غير الملغاة فقط، حتّى يعود الرسم
         // غير مدفوع تلقائياً عند إلغاء دفعته.
-        $allocated = $fee->paymentAllocations()
+        $allocated = (float) $fee->paymentAllocations()
             ->whereHas('payment', fn ($q) => $q->whereNull('cancelled_at'))
             ->sum('amount_allocated');
 
+        // وكذلك التنازلات السارية: رسم تُنوزِل عن متبقّيه مقفل، وإلغاء
+        // التنازل يعيد الدَّين تلقائياً. لا قيمة waived في الحالات المتاحة،
+        // فالمقفل يُخزّن paid وسجلّ fee_waivers هو من يوثّق أنّه لم يكن نقداً.
+        $waived = (float) $fee->waivers()->whereNull('cancelled_at')->sum('amount');
+
         $fee->update([
             'status' => match (true) {
-                $allocated >= $fee->amount_due => 'paid',
-                $allocated > 0                 => 'partial',
-                default                        => 'pending',
+                $allocated + $waived >= (float) $fee->amount_due => 'paid',
+                $allocated > 0                                   => 'partial',
+                default                                          => 'pending',
             }
         ]);
     }
@@ -140,13 +150,15 @@ class PaymentService
             $q->where('student_id', $studentId)
         )
             ->whereIn('status', ['pending', 'partial', 'overdue'])
-            ->with(['paymentAllocations' => fn ($q) =>
-                $q->whereHas('payment', fn ($p) => $p->whereNull('cancelled_at'))
+            ->with([
+                'paymentAllocations' => fn ($q) =>
+                    $q->whereHas('payment', fn ($p) => $p->whereNull('cancelled_at')),
+                'waivers' => fn ($q) => $q->whereNull('cancelled_at'),
             ])
             ->get();
 
         return (float) $fees->sum(fn ($fee) =>
-            max(0, $fee->amount_due - $fee->paymentAllocations->sum('amount_allocated'))
+            max(0, $fee->amount_due - $fee->paymentAllocations->sum('amount_allocated') - $fee->waivers->sum('amount'))
         );
     }
 }
