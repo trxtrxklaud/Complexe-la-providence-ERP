@@ -123,15 +123,48 @@ export function ClassroomRosterPage() {
     <div className="px-6 pb-10 max-w-full mx-auto" dir="rtl">
       <PrintStyles />
 
-      {/* طباعة أفقية وإلزام المتصفّح بإبقاء الألوان: كشف بلا أحمر وأخضر يفقد معناه ورقياً. */}
+      {/*
+        طباعة أفقية بلا هامش ورقة (المتصفّح يرسم الرابط والتاريخ داخل الهامش)،
+        وحشو داخلي يعوّضه. وإلزام المتصفّح بإبقاء الألوان: كشف بلا أحمر وأخضر
+        يفقد معناه ورقياً.
+
+        وأهمّ من ذلك: الجدول هنا أعرض جدول في المنصة (عشرة أشهر + ستة أعمدة)،
+        فلزم إجباره على عرض الورقة: table-layout: fixed مع كسر الكلمات وإلغاء
+        whitespace-nowrap، وإلغاء overflow لأنّ شريط التمرير على الشاشة يصير قصّاً على الورق.
+      */}
       <style>{`
         @media print {
-          @page { size: A4 landscape; margin: 8mm; }
+          @page { size: A4 landscape; margin: 0; }
           * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
-          #net-print-area table { font-size: 9pt; }
-          #net-print-area td, #net-print-area th { padding: 3px 4px !important; }
-          #net-print-area tr { page-break-inside: avoid; }
+
+          #net-print-area { padding: 8mm !important; }
+
+          #net-print-area .overflow-x-auto,
+          #net-print-area .overflow-hidden {
+            overflow: visible !important;
+          }
+
+          #net-print-area table {
+            font-size: 8pt !important;
+            width: 100% !important;
+            max-width: 100% !important;
+            table-layout: fixed !important;
+            border-collapse: collapse !important;
+          }
+
+          #net-print-area td,
+          #net-print-area th {
+            padding: 2px 3px !important;
+            white-space: normal !important;
+            word-break: break-word !important;
+            overflow-wrap: break-word !important;
+          }
+
+          #net-print-area tr { page-break-inside: avoid; break-inside: avoid; }
           #net-print-area thead { display: table-header-group; }
+
+          /* بطاقات الملخّص أربع في سطر واحد حتّى لا تأكل نصف الورقة */
+          #net-print-area .grid { gap: 6px !important; }
         }
       `}</style>
 
