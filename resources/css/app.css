@@ -3,10 +3,15 @@
 /* ==========================================================================
    الطباعة — قواعد عامّة تسري على كل شاشات المنصة
    --------------------------------------------------------------------------
-   1. هامش الورقة = 0، لأن المتصفّح يرسم الرابط والتاريخ ورقم الصفحة داخل
-      هامش الورقة؛ فإذا انعدم الهامش انعدم موضع الرأس والتذييل.
-   2. المحتوى يأخذ كامل عرض A4، وحدود العرض الخاصّة بالشاشة تُلغى.
-   3. الهامش الداخلي (10mm) يعوّض هامش الورقة الملغى فلا يلتصق النص بالحافة.
+   أربع علل حقيقية كانت تفسد المطبوع، وهذا علاج كل واحدة منها:
+   1. هامش الورقة: المتصفّح يرسم الرابط والتاريخ داخله → الهامش = 0
+      ويعوّضه حشو داخلي.
+   2. overflow-x-auto وoverflow-hidden: على الشاشة يمنحان شريط تمرير، وفي
+      الطباعة يقصّان ما زاد عن الورقة دون إنذار → overflow: visible.
+   3. whitespace-nowrap: يمنع كسر السطر فيتمدد الجدول أعرض من الورقة
+      → يُلغى في المطبوع.
+   4. الأسلاف ذوو position أو transform: يصيرون مرجع قياس للمنطقة المطلقة،
+      فتقيس عرضها على عرض الشاشة لا عرض الورقة → تُحيّد في المطبوع.
    ========================================================================== */
 @media print {
   @page {
@@ -18,10 +23,33 @@
   body {
     margin: 0 !important;
     padding: 0 !important;
-    width: 210mm !important;
+    width: auto !important;
+    max-width: none !important;
     background: #ffffff !important;
     -webkit-print-color-adjust: exact;
     print-color-adjust: exact;
+  }
+
+  /* (4) تحييد الأسلاف الموضوعة حتّى يكون قياس منطقة الطباعة على الورقة نفسها */
+  body .relative,
+  body .sticky,
+  body .fixed {
+    position: static !important;
+  }
+
+  body .transform,
+  body .scale-95,
+  body .scale-100 {
+    transform: none !important;
+  }
+
+  /* (2) لا قصّ للجداول العريضة */
+  body .overflow-hidden,
+  body .overflow-auto,
+  body .overflow-x-auto,
+  body .overflow-y-auto,
+  body .overflow-x-scroll {
+    overflow: visible !important;
   }
 
   /* كامل عرض الورقة: قيود العرض المخصّصة للشاشة لا معنى لها على الورق */
@@ -37,7 +65,7 @@
     margin-left: 0 !important;
   }
 
-  /* مناطق الطباعة المعروفة: عرض كامل + هامش داخلي بديل */
+  /* مناطق الطباعة المعروفة: عرض كامل + حشو داخلي يعوّض هامش الورقة */
   body #print-area,
   body #receipt-print,
   body #net-print-area,
@@ -45,17 +73,30 @@
   body .unpaid-monthly-print {
     padding: 10mm !important;
     width: 100% !important;
-    max-width: none !important;
+    max-width: 100% !important;
     box-sizing: border-box !important;
+    overflow: visible !important;
   }
 
-  /* الجداول داخل مناطق الطباعة: عرض كامل وترويسة تتكرّر في كل ورقة */
+  /* (3) الجداول: لا تتجاوز الورقة، وترويسة تتكرّر في كل ورقة */
+  body table {
+    max-width: 100% !important;
+    border-collapse: collapse !important;
+  }
+
   body #print-area table,
   body #net-print-area table,
   body .print-area table,
   body .unpaid-monthly-print table {
     width: 100% !important;
-    border-collapse: collapse !important;
+  }
+
+  body .whitespace-nowrap,
+  body th,
+  body td {
+    white-space: normal !important;
+    word-break: break-word !important;
+    overflow-wrap: break-word !important;
   }
 
   thead {
@@ -71,11 +112,11 @@
 
   /* --------------------------------------------------------------------
      قوائم الأقسام: القسم الواحد على ورقة واحدة.
-     تصغير الخطّ وضغط الحشو داخل الجدول وحده — لا داخل بطاقة التلميذ —
-     فيتّسع القسم كاملاً في صفحة A4 واحدة.
+     الضغط داخل جدول القائمة وحده لا داخل بطاقة التلميذ.
      -------------------------------------------------------------------- */
   body #print-area table {
     font-size: 9pt !important;
+    table-layout: fixed !important;
   }
 
   body #print-area table th,
@@ -86,8 +127,8 @@
 
   /* --------------------------------------------------------------------
      التقارير اليومية: كل يوم في ورقة مستقلّة حتى لا تنقسم أرقامه.
-     القاعدة على البطاقة الثانية فما بعدها، لا على الأخيرة، تفادياً
-     لورقة بيضاء زائدة في آخر الكشف.
+     القفزة على البطاقة الثانية فما بعدها لا على الأخيرة، تفادياً لورقة
+     بيضاء زائدة في آخر الكشف.
      -------------------------------------------------------------------- */
   .daybook-card,
   .print-page {
@@ -101,7 +142,6 @@
     page-break-before: always;
   }
 
-  /* عند طباعة يوم واحد لا داعي لأي قفزة صفحة */
   .printing-single .daybook-card + .daybook-card {
     break-before: auto;
     page-break-before: auto;
