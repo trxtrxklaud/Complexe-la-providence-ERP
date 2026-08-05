@@ -1,1 +1,36 @@
 @import "tailwindcss";
+
+/*
+| Complexe La Providence — قواعد الطباعة العامة
+|
+| المتصفّح يطبع داخل هامش الورقة رأسًا وتذييلًا من عنده: عنوان الصفحة،
+| الرابط (مثال: 127.0.0.1:8002/income/unpaid-monthly)، التاريخ ورقم الصفحة.
+| هذا لا علاقة له بمحتوى المنصة، ولا يُلغى إلا بإلغاء هامش الورقة نفسه
+| عبر @page، ثم إعادة الهامش داخل منطقة الطباعة نفسها.
+*/
+@media print {
+  @page {
+    size: A4;
+    margin: 0;
+  }
+
+  html,
+  body {
+    margin: 0 !important;
+    background: #ffffff !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  /*
+  | بعد إلغاء هامش الورقة يجب إرجاع الهامش داخل المستند حتى لا يلتصق
+  | المحتوى بحافة الورقة. سابقة body ترفع الأولوية فوق قواعد الصفحات.
+  */
+  body .unpaid-monthly-print,
+  body #receipt-print,
+  body #net-print-area,
+  body .print-area {
+    padding: 10mm !important;
+    box-sizing: border-box !important;
+  }
+}
