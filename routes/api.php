@@ -23,6 +23,7 @@ use App\Http\Controllers\TreasuryController;
 use App\Http\Controllers\TreasuryDaybookController;
 use App\Http\Controllers\TreasuryWithdrawalController;
 use App\Http\Controllers\UnpaidMonthlyReportController;
+use App\Http\Controllers\FeeWaiverController;
 
 Route::middleware('throttle:5,1')->post('/login', [AuthController::class, 'login']);
 
@@ -79,7 +80,7 @@ Route::middleware(['auth:sanctum', 'active', 'throttle:120,1'])->group(function 
         Route::get('/reports/net-income',         [FinancialReportController::class, 'netIncome']);
 
         // الدخل الصافي مجمّعاً: granularity=month|year
-        // مسار مستقل لا معامِل داخل net-income، حتى لا يبتلع مسارٌ ذو {parameter}
+        // مسار مستقل لا معامِل داخل net-income، حتّى لا يبتلع مسارٌ ذو {parameter}
         // قيمة ثابتة مثل periods ويصعب تشخيصه لاحقاً.
         Route::get('/reports/net-income/periods', [FinancialReportController::class, 'netIncomePeriods']);
 
@@ -164,5 +165,14 @@ Route::middleware(['auth:sanctum', 'active', 'throttle:120,1'])->group(function 
         Route::get('/collection/sections/{section}/students', [CollectionController::class, 'studentsBySection']);
         Route::post('/payments/collect', [CollectionController::class, 'collect']);
         Route::get('/enrollments/{enrollment}/ledger', [CollectionController::class, 'ledger']);
+    });
+
+    // التنازل عن الدُّيون — صلاحية مستقلة عن manage_payments عمداً:
+    // القابض يقبض المال ولا يُسقِط دَيناً؛ الإسقاط لصاحب النظام وحده.
+    // لا يُكتب أي سطر في الخزينة: التنازل لا يحرّك مليماً.
+    Route::middleware('permission:waive_fees')->group(function () {
+        Route::get('/student-fees/{studentFee}/waivers', [FeeWaiverController::class, 'index']);
+        Route::post('/student-fees/{studentFee}/waive',  [FeeWaiverController::class, 'store']);
+        Route::post('/fee-waivers/{waiver}/cancel',      [FeeWaiverController::class, 'cancel']);
     });
 });
