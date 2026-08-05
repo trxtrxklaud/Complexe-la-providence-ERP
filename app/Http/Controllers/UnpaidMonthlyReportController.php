@@ -135,16 +135,27 @@ class UnpaidMonthlyReportController extends Controller
                 $student = $enrollment->student;
                 $guardian = $student->guardians->first();
 
+                // الأب والأم مفصولان عمداً: الواجهة تحتاج حجب كل حقل على حدة
+                // عند الطباعة والتوزيع، والحقل المدمج لا يُمكّن من ذلك.
+                $fatherName = trim(implode(' ', array_filter([
+                    $guardian?->first_name ?? $student->guardian_first_name,
+                    $guardian?->last_name ?? $student->guardian_last_name,
+                ])));
+                $fatherPhone = $guardian?->phone ?? $student->guardian_phone;
+                $motherName = trim((string) ($student->mother_name ?? ''));
+
                 return [
                     'enrollment_id' => $enrollment->id,
                     'student_id' => $student->id,
                     'student_code' => $student->student_code,
                     'student_name' => trim($student->first_name.' '.$student->last_name),
-                    'guardian_name' => trim(implode(' ', array_filter([
-                        $guardian?->first_name ?? $student->guardian_first_name,
-                        $guardian?->last_name ?? $student->guardian_last_name,
-                    ]))),
-                    'phone' => $guardian?->phone ?? $student->guardian_phone ?? $student->mother_phone,
+                    // يُحافَظ على الحقلين القديمين حتى لا تنكسر أي واجهة تقرأهما.
+                    'guardian_name' => $fatherName,
+                    'phone' => $fatherPhone ?? $student->mother_phone,
+                    'father_name' => $fatherName !== '' ? $fatherName : null,
+                    'father_phone' => $fatherPhone,
+                    'mother_name' => $motherName !== '' ? $motherName : null,
+                    'mother_phone' => $student->mother_phone,
                     'enrollment_date' => $enrollment->enrollment_date?->toDateString(),
                 ];
             });
