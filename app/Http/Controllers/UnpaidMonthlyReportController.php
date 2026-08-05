@@ -36,23 +36,49 @@ class UnpaidMonthlyReportController extends Controller
                 ->get(['id', 'name', 'start_date', 'end_date', 'is_active']),
             'selected_year_id' => $year?->id,
             'months' => $year ? $this->academicYearMonths($year) : [],
-            'sections' => $year
-                ? Section::query()
-                    ->whereHas('enrollments', fn ($query) => $query
-                        ->where('academic_year_id', $year->id)
-                        ->where('status', 'active'))
-                    ->with('level:id,name')
-                    ->orderBy('level_id')
-                    ->orderBy('name')
-                    ->get(['id', 'level_id', 'name'])
-                    ->map(fn (Section $section) => [
-                        'id' => $section->id,
-                        'name' => $section->name,
-                        'level' => $section->level?->name,
-                        'label' => trim(($section->level?->name ? $section->level->name.' ' : '').$section->name),
-                    ])
-                : [],
+            'sections' => $this->sectionOptions($year),
         ]);
+    }
+
+    /**
+     * كل أقسام المدرسة من الروضة إلى السادسة، لا الأقسام التي بها تسجيلات فقط.
+     *
+     * النسخة السابقة كانت ترشّح بـ whereHas('enrollments')، فيختفي من قائمة
+     * المتخلفين كل قسم لم يُرسَّم فيه أحد بعد في السنة المختارة. قائمة اختيار
+     * لا يجوز أن تُرشَّح ببيانات المعاملات: المستعمل يحتاج القسم ليفحصه، لا بعد
+     * أن يمتلئ. عدد التلاميذ يُعاد كحقل مستقل ليظهر القسم الفارغ فارغاً بصدق.
+     */
+    private function sectionOptions(?AcademicYear $year): array
+    {
+        return Section::query()
+            ->with('level:id,name,code')
+            ->withCount(['enrollments as students_count' => fn ($query) => $query
+                ->where('academic_year_id', $year?->id ?? 0)
+                ->where('status', 'active')])
+            ->get(['id', 'level_id', 'name'])
+            ->sortBy([
+                // الروضة والتمهيدي والتحضيري أولاً، ثم الأولى إلى السادسة، ثم حرف القسم.
+                fn (Section $a, Section $b) => $this->levelRank($a) <=> $this->levelRank($b),
+                fn (Section $a, Section $b) => ($a->level_id ?? 0) <=> ($b->level_id ?? 0),
+                fn (Section $a, Section $b) => ($a->name ?? '') <=> ($b->name ?? ''),
+            ])
+            ->values()
+            ->map(fn (Section $section) => [
+                'id' => $section->id,
+                'name' => $section->name,
+                'level' => $section->level?->name,
+                'label' => trim(($section->level?->name ? $section->level->name.' ' : '').$section->name),
+                'students_count' => (int) ($section->students_count ?? 0),
+            ])
+            ->all();
+    }
+
+    /** الروضة والتمهيدي والتحضيري أولاً (0)، ثم بقية المستويات (1). */
+    private function levelRank(Section $section): int
+    {
+        $code = (string) ($section->level?->code ?? '');
+
+        return str_starts_with($code, 'PRE') ? 0 : 1;
     }
 
     public function index(Request $request): JsonResponse
