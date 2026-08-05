@@ -74,7 +74,7 @@ class CollectionServiceTest extends TestCase
         $this->assertSame((float) $fee->amount_due, $allocated);
     }
 
-    public function test_discount_is_distributed_so_allocations_equal_payment_amount(): void
+    public function test_full_price_is_stored_and_transactional_discount_is_ignored(): void
     {
         $user = $this->makeUser();
         $this->actingAs($user);
@@ -82,6 +82,8 @@ class CollectionServiceTest extends TestCase
         $tuition = $this->makeFeeType('القسط الشهري', 240);
         $transport = $this->makeFeeType('نقل مدرسي', 60);
 
+        // حتى لو أرسلت الواجهة القديمة حقل discount، يُتجاهل: التخفيض صار سنوياً
+        // ثابتاً في enrollment_discounts، والرسوم تُخزَّن بسعرها الكامل.
         $receipt = $this->service->collect($this->payload([
             'student_id'    => $enrollment->student_id,
             'enrollment_id' => $enrollment->id,
@@ -96,12 +98,13 @@ class CollectionServiceTest extends TestCase
         $allocated = (float) PaymentAllocation::sum('amount_allocated');
         $due = (float) StudentFee::sum('amount_due');
 
-        $this->assertSame(280.0, (float) $receipt['total']);
-        $this->assertSame(280.0, (float) $payment->amount);
-        // الخلل المحاسبي القديم: كان مجموع التوزيعات 300 مقابل دفعة 280
-        $this->assertSame(280.0, $allocated);
-        $this->assertSame(280.0, $due);
-        // الوصل يبقى يعرض البنود الإجمالية كما كان
+        // السعر الكامل 300 لا 280: التخفيض المُرسل تُجووِز بلا أثر.
+        $this->assertSame(300.0, (float) $receipt['total']);
+        $this->assertSame(300.0, (float) $payment->amount);
+        $this->assertSame(300.0, $allocated);
+        $this->assertSame(300.0, $due);
+        // الوصل يُبقي حقل التخفيض صفراً للتوافق.
+        $this->assertSame(0.0, (float) $receipt['discount']);
         $this->assertSame(240.0, (float) $receipt['items'][0]['amount']);
         $this->assertSame(60.0, (float) $receipt['items'][1]['amount']);
     }
@@ -196,23 +199,6 @@ class CollectionServiceTest extends TestCase
             'student_id'    => $enrollment->student_id,
             'enrollment_id' => $enrollment->id,
             'months'        => ['2025-10'],
-            'items'         => [['fee_type_id' => $feeType->id, 'amount' => 240]],
-        ]), $user->id);
-    }
-
-    public function test_rejects_discount_greater_than_items_total(): void
-    {
-        $user = $this->makeUser();
-        $this->actingAs($user);
-        $enrollment = $this->makeEnrollment();
-        $feeType = $this->makeFeeType();
-
-        $this->expectException(\InvalidArgumentException::class);
-
-        $this->service->collect($this->payload([
-            'student_id'    => $enrollment->student_id,
-            'enrollment_id' => $enrollment->id,
-            'discount'      => 500,
             'items'         => [['fee_type_id' => $feeType->id, 'amount' => 240]],
         ]), $user->id);
     }

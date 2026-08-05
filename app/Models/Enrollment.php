@@ -45,5 +45,22 @@ class Enrollment extends Model
     {
         return $this->hasMany(ClubSubscription::class);
     }
+    public function discounts(): HasMany
+    {
+        return $this->hasMany(EnrollmentDiscount::class);
+    }
+
+    /**
+     * التخفيض السنوي السارِي لهذا التسجيل — واحد على الأكثر لكل سنة دراسية.
+     * إن لم تُمرّر السنة استُعملت سنة التسجيل نفسها.
+     */
+    public function activeDiscount(?int $academicYearId = null): ?EnrollmentDiscount
+    {
+        return $this->discounts()
+            ->whereNull('cancelled_at')
+            ->where('academic_year_id', $academicYearId ?? $this->academic_year_id)
+            ->latest('id')
+            ->first();
+    }
     // payments() حُذفت — استخدم $student->payments() مباشرة
 }

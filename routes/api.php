@@ -17,11 +17,14 @@ use App\Http\Controllers\RosterController;
 use App\Http\Controllers\ExpenseCategoryController;
 use App\Http\Controllers\ExpenseController;
 use App\Http\Controllers\EmployeeAdvanceController;
+use App\Http\Controllers\ClassroomRosterController;
 use App\Http\Controllers\FinancialReportController;
 use App\Http\Controllers\TreasuryController;
 use App\Http\Controllers\TreasuryDaybookController;
 use App\Http\Controllers\TreasuryWithdrawalController;
 use App\Http\Controllers\UnpaidMonthlyReportController;
+use App\Http\Controllers\FeeWaiverController;
+use App\Http\Controllers\DiscountController;
 
 Route::middleware('throttle:5,1')->post('/login', [AuthController::class, 'login']);
 
@@ -51,7 +54,7 @@ Route::middleware(['auth:sanctum', 'active', 'throttle:120,1'])->group(function 
         Route::post('/employee-advances/{advance}/settle', [EmployeeAdvanceController::class, 'settle']);
         Route::post('/employee-advances/{advance}/cancel', [EmployeeAdvanceController::class, 'cancel']);
 
-        // ردّيات السلفة: سجلّ مؤرّخ لكل دفعة، وإلغاء موثّق لردّ مفرد
+        // ردّيات السلفة: سجل० مأرخ لكل دفعة، وإلغاء موثّق لردّ مفرد
         // دون المساس ببقية الردّيات ولا بالسلفة نفسها.
         Route::get('/employee-advances/{advance}/repayments', [EmployeeAdvanceController::class, 'repayments']);
         Route::post('/advance-repayments/{repayment}/cancel', [EmployeeAdvanceController::class, 'cancelRepayment']);
@@ -64,7 +67,7 @@ Route::middleware(['auth:sanctum', 'active', 'throttle:120,1'])->group(function 
         Route::post('/expenses/{expense}/cancel', [ExpenseController::class, 'cancel']);
     });
 
-    // الخزينة — السجلّ والرصيد والسحوبات
+    // الخزينة — السجل० والرصيد والسحوبات
     Route::middleware('permission:manage_treasury')->group(function () {
         Route::get('/treasury/history', [TreasuryController::class, 'history']);
         Route::get('/treasury/balance', [TreasuryController::class, 'balance']);
@@ -78,7 +81,7 @@ Route::middleware(['auth:sanctum', 'active', 'throttle:120,1'])->group(function 
         Route::get('/reports/net-income',         [FinancialReportController::class, 'netIncome']);
 
         // الدخل الصافي مجمّعاً: granularity=month|year
-        // مسار مستقل لا معامِل داخل net-income، حتى لا يبتلع مسارٌ ذو {parameter}
+        // مسار مستقل لا معامِل داخل net-income، حتّى لا يبتلع مسارٌ ذو {parameter}
         // قيمة ثابتة مثل periods ويصعب تشخيصه لاحقاً.
         Route::get('/reports/net-income/periods', [FinancialReportController::class, 'netIncomePeriods']);
 
@@ -92,6 +95,11 @@ Route::middleware(['auth:sanctum', 'active', 'throttle:120,1'])->group(function 
         Route::get('/reports/revenue/years',      [FinancialReportController::class, 'revenueByYear']);
         Route::get('/reports/unpaid-monthly/options', [UnpaidMonthlyReportController::class, 'options']);
         Route::get('/reports/unpaid-monthly', [UnpaidMonthlyReportController::class, 'index']);
+
+        // كشف مداخيل القسم: كل تلاميذ القسم أبجدياً مع المتخلَّد بالذمّة.
+        // مسار options يُعلَن قبل مسار {section} لأن مساراً بمعامِل يبتلع أي قيمة ثابتة بعده.
+        Route::get('/reports/classroom-roster/options', [ClassroomRosterController::class, 'options']);
+        Route::get('/reports/classroom-roster/{section}', [ClassroomRosterController::class, 'index']);
 
         // صفحات التفصيل: قسم واحد أو تلميذ واحد
         Route::get('/reports/revenue/classrooms/{section}', [FinancialReportController::class, 'classroomDetail']);
@@ -158,5 +166,20 @@ Route::middleware(['auth:sanctum', 'active', 'throttle:120,1'])->group(function 
         Route::get('/collection/sections/{section}/students', [CollectionController::class, 'studentsBySection']);
         Route::post('/payments/collect', [CollectionController::class, 'collect']);
         Route::get('/enrollments/{enrollment}/ledger', [CollectionController::class, 'ledger']);
+    });
+
+    // التنازل عن الدُّيون — صلاحية مستقلة عن manage_payments عمداً:
+    // القابض يقبض المال ولا يُسقِط دَيناً؛ الإسقاط لصاحب النظام وحده.
+    // لا يُكتب أي سطر في الخزينة: التنازل لا يحرّك مليماً.
+    Route::middleware('permission:waive_fees')->group(function () {
+        Route::get('/student-fees/{studentFee}/waivers', [FeeWaiverController::class, 'index']);
+        Route::post('/student-fees/{studentFee}/waive',  [FeeWaiverController::class, 'store']);
+        Route::post('/fee-waivers/{waiver}/cancel',      [FeeWaiverController::class, 'cancel']);
+
+        // التخفيض السنوي — سعر مخفّض لا دَين. يتبع صلاحية التنازل نفسها:
+        // كلاهما يُنقص ما تجنيه المدرسة فلا يملكه القابض. لا سطر في الخزينة.
+        Route::get('/enrollments/{enrollment}/discount',  [DiscountController::class, 'show']);
+        Route::post('/enrollments/{enrollment}/discount', [DiscountController::class, 'store']);
+        Route::post('/discounts/{discount}/cancel',       [DiscountController::class, 'cancel']);
     });
 });

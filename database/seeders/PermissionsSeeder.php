@@ -19,6 +19,8 @@ class PermissionsSeeder extends Seeder
             ['name' => 'manage_employees', 'display_name' => 'إدارة الموظفين',   'group' => 'HR'],
             ['name' => 'manage_salaries',  'display_name' => 'إدارة الرواتب',    'group' => 'HR'],
             ['name' => 'view_reports',     'display_name' => 'عرض التقارير',      'group' => 'Finance'],
+            // إقفال دَّين دون قبضه: صلاحية مستقلّة عمداً، لا تُمنح للقابض.
+            ['name' => 'waive_fees',       'display_name' => 'التنازل عن الدُّيون', 'group' => 'Finance'],
         ];
 
         foreach ($permissions as $p) {

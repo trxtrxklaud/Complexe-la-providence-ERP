@@ -5,6 +5,7 @@ import { getStudent, getStudentPaymentHistory, type Student, type StudentPayment
 import { studentFeesApi } from '../../api/payments';
 import type { StudentFeesEnrollment } from '../../types';
 import { PageDataSkeleton } from '../../components/DataSkeleton';
+import { EnrollmentDiscountCard } from './EnrollmentDiscountCard';
 
 function money(value: number | string | null | undefined): string {
   if (value === null || value === undefined || value === '') return 'غير متاح';
@@ -179,6 +180,13 @@ export function StudentDetailsPage() {
                               })}
                             </tbody>
                           </table>
+                        </div>
+
+                        <div className="mt-4">
+                          <EnrollmentDiscountCard
+                            enrollmentId={feeEnrollment.enrollment_id}
+                            yearLabel={feeEnrollment.academic_year?.name}
+                          />
                         </div>
                       </div>
                     ))}

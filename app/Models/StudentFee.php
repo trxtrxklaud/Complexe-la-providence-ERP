@@ -45,4 +45,38 @@ class StudentFee extends Model
     {
         return $this->hasMany(PaymentAllocation::class);
     }
+
+    public function waivers(): HasMany
+    {
+        return $this->hasMany(FeeWaiver::class);
+    }
+
+    /**
+     * ما خُصّص لهذا الرسم من دفعات غير ملغاة.
+     */
+    public function allocatedAmount(): float
+    {
+        return round((float) $this->paymentAllocations()
+            ->whereHas('payment', fn ($query) => $query->whereNull('cancelled_at'))
+            ->sum('amount_allocated'), 2);
+    }
+
+    /**
+     * ما تُنوزِل عنه بتنازلات سارية (الملغاة لا تُحتسب).
+     */
+    public function waivedAmount(): float
+    {
+        return round((float) $this->waivers()->whereNull('cancelled_at')->sum('amount'), 2);
+    }
+
+    /**
+     * الدَّين المتبقّي على هذا الرسم — التعريف الوحيد في المنصة.
+     *
+     * المستحقّ ناقصاً المقبوض ناقصاً المتنازل عنه، ولا ينزل تحت الصفر:
+     * الدفع الزائد ليس دَيناً سالباً على المدرسة في هذا السياق.
+     */
+    public function outstanding(): float
+    {
+        return round(max(0.0, (float) $this->amount_due - $this->allocatedAmount() - $this->waivedAmount()), 2);
+    }
 }

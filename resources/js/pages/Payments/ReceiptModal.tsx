@@ -182,6 +182,12 @@ function ReceiptHalf({ receipt, copyLabel, method, cashier, total }: HalfProps) 
               <td style={{ textAlign: 'left' }}>{money(item.amount)}</td>
             </tr>
           ))}
+          {/*
+            التخفيض لم يعد يُطبَّق عند القبض: صار سعراً سنوياً ثابتاً يُدار في
+            enrollment_discounts، فالوصولات الجديدة تحمل discount = 0 ولا يظهر هذا السطر.
+            يبقى الشرط لأجل الوصولات القديمة المحفوظة في payment.meta بتخفيض معاملاتيّ
+            سابق: تُطبع كما حُفظت فلا يتغيّر تاريخها.
+          */}
           {Number(receipt.discount || 0) > 0 && (
             <tr>
               <td>تخفيض</td>

@@ -22,17 +22,41 @@ class CollectionController extends Controller
         return response()->json($years);
     }
 
+    /**
+     * كل أقسام المدرسة، لا الأقسام التي بها تسجيلات فقط.
+     *
+     * النسخة السابقة كانت ترشّح بـ whereHas('enrollments')، فيختفي من شاشة
+     * الاستخلاص كل قسم لم يُرسّم فيه تلميذ بعد في السنة المختارة — وهذا بالضبط
+     * وضع بداية السنة الدراسية: القابض يحتاج القسم ليستخلص فيه قبل أن يمتلئ.
+     *
+     * الترتيب مثل المنصة القديمة: الأقسام التحضيرية أولاً، ثم الأولى إلى السادسة،
+     * ثم حرف القسم (أ، ب، ج، د، هـ). الترتيب بالاسم وحده كان يخلط «أ» كل
+     * المستويات معاً فيظهر الجدول وكأنه ناقص.
+     */
     public function sectionsByYear(AcademicYear $year): JsonResponse
     {
-        $sections = Section::whereHas(
-            'enrollments',
-            fn ($q) => $q->where('academic_year_id', $year->id)
-        )
-            ->with('level:id,name')
-            ->orderBy('name')
-            ->get(['id', 'level_id', 'name']);
+        $sections = Section::with('level:id,name,code')
+            ->withCount(['enrollments as students_count' => fn ($q) => $q
+                ->where('academic_year_id', $year->id)
+                ->where('status', 'active')])
+            ->get(['id', 'level_id', 'name'])
+            ->sortBy([
+                // المستويات التحضيرية (PRE) قبل الابتدائية.
+                fn (Section $a, Section $b) => $this->levelRank($a) <=> $this->levelRank($b),
+                fn (Section $a, Section $b) => ($a->level_id ?? 0) <=> ($b->level_id ?? 0),
+                fn (Section $a, Section $b) => ($a->name ?? '') <=> ($b->name ?? ''),
+            ])
+            ->values();
 
         return response()->json($sections);
+    }
+
+    /** الروضة والتمهيدي والتحضيري أولاً (0)، ثم بقية المستويات (1). */
+    private function levelRank(Section $section): int
+    {
+        $code = (string) ($section->level?->code ?? '');
+
+        return str_starts_with($code, 'PRE') ? 0 : 1;
     }
 
     public function studentsBySection(Section $section, Request $request): JsonResponse
@@ -43,6 +67,8 @@ class CollectionController extends Controller
 
         $enrollments = Enrollment::where('section_id', $section->id)
             ->where('academic_year_id', $request->integer('year_id'))
+            // المغادر والمنقول لا يُستخلص منهما في هذا القسم.
+            ->where('status', 'active')
             ->with([
                 'student:id,first_name,last_name,student_code',
                 'student.guardians',
@@ -68,7 +94,9 @@ class CollectionController extends Controller
                     'phone'      => $guardian->phone,
                 ] : null,
             ];
-        });
+        })
+            ->sortBy(fn ($row) => trim($row['student']['first_name'] . ' ' . $row['student']['last_name']))
+            ->values();
 
         return response()->json($result);
     }

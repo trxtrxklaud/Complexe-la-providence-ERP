@@ -149,6 +149,8 @@ class PaymentController extends Controller
                 // التوزيعات من الدفعات غير الملغاة فقط حتى تكون المبالغ المخصّصة دقيقة.
                 'studentFees.paymentAllocations' => fn ($q) =>
                     $q->whereHas('payment', fn ($p) => $p->whereNull('cancelled_at')),
+                // التنازلات السارية فقط: التنازل الملغى يعود دَيناً.
+                'studentFees.waivers' => fn ($q) => $q->whereNull('cancelled_at'),
                 'studentFees.feePlan:id,frequency',
                 'studentFees.feeType:id,name_ar,ledger_category',
                 'academicYear:id,name',
@@ -166,7 +168,9 @@ class PaymentController extends Controller
             'level'         => $enrollment->level,
             'status'        => $enrollment->status,
             'fees'          => $enrollment->studentFees->map(function ($fee) {
-                $allocated = $fee->paymentAllocations->sum('amount_allocated');
+                $allocated = (float) $fee->paymentAllocations->sum('amount_allocated');
+                // المتنازَل عنه ليس دَيناً ولا مدخولاً: يُطرح من المتبقّي ويُعرض مستقلاً.
+                $waived = (float) $fee->waivers->sum('amount');
                 return [
                     'id'          => $fee->id,
                     'description' => $fee->description,
@@ -174,7 +178,8 @@ class PaymentController extends Controller
                     'due_date'    => $fee->due_date,
                     'status'      => $fee->status,
                     'allocated'   => $allocated,
-                    'remaining'   => max(0, $fee->amount_due - $allocated),
+                    'waived'      => $waived,
+                    'remaining'   => max(0, round((float) $fee->amount_due - $allocated - $waived, 2)),
                     'frequency'   => $fee->feePlan?->frequency,
                     'category'    => $fee->feeType?->resolveLedgerCategory(),
                 ];

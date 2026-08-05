@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ClipboardList, Printer, Plus, Trash2, X, Upload, Pencil, Save, User } from 'lucide-react';
+import { ClipboardList, Printer, Plus, Trash2, X, Upload, Pencil, Save, User, Filter } from 'lucide-react';
 import { fetchLevels, type Level } from '../../api/classrooms';
 import {
   fetchYears,
@@ -31,6 +31,74 @@ const SCHOOL_PHONE = '95 420 350';
 
 type NewRow = StudentEntry & { _key: number };
 
+type ColumnKey = 'father_name' | 'mother_name' | 'father_phone' | 'mother_phone';
+
+type ContactFields = {
+  father_name?: string | null;
+  mother_name?: string | null;
+  father_phone?: string | null;
+  mother_phone?: string | null;
+};
+
+const COLUMNS: Array<{ key: ColumnKey; label: string; kind: 'name' | 'phone' }> = [
+  { key: 'father_name', label: 'اسم الأب', kind: 'name' },
+  { key: 'mother_name', label: 'اسم الأم', kind: 'name' },
+  { key: 'father_phone', label: 'هاتف الأب', kind: 'phone' },
+  { key: 'mother_phone', label: 'هاتف الأم', kind: 'phone' },
+];
+
+const STORAGE_KEY = 'roster_visible_columns';
+
+const DEFAULT_VISIBILITY: Record<ColumnKey, boolean> = {
+  father_name: true,
+  mother_name: true,
+  father_phone: true,
+  mother_phone: true,
+};
+
+function loadVisibility(): Record<ColumnKey, boolean> {
+  try {
+    const raw = window.localStorage.getItem(STORAGE_KEY);
+    if (!raw) return { ...DEFAULT_VISIBILITY };
+    return { ...DEFAULT_VISIBILITY, ...(JSON.parse(raw) as Partial<Record<ColumnKey, boolean>>) };
+  } catch {
+    return { ...DEFAULT_VISIBILITY };
+  }
+}
+
+function readField(source: ContactFields, key: ColumnKey): string {
+  if (key === 'father_name') return source.father_name ?? '';
+  if (key === 'mother_name') return source.mother_name ?? '';
+  if (key === 'father_phone') return source.father_phone ?? '';
+  return source.mother_phone ?? '';
+}
+
+function withField(draft: StudentEntry, key: ColumnKey, value: string): StudentEntry {
+  if (key === 'father_name') return { ...draft, father_name: value };
+  if (key === 'mother_name') return { ...draft, mother_name: value };
+  if (key === 'father_phone') return { ...draft, father_phone: value };
+  return { ...draft, mother_phone: value };
+}
+
+function formatPhone(value?: string | null): string {
+  if (!value) return '—';
+
+  let digits = value.replace(/\D+/g, '');
+  if (digits.startsWith('00')) digits = digits.slice(2);
+  if (digits.length === 11 && digits.startsWith('216')) digits = digits.slice(3);
+
+  if (digits.length === 8) {
+    return digits.slice(0, 2) + ' ' + digits.slice(2, 5) + ' ' + digits.slice(5);
+  }
+
+  return digits === '' ? '—' : digits;
+}
+
+function cellText(source: ContactFields, key: ColumnKey, kind: 'name' | 'phone'): string {
+  if (kind === 'phone') return formatPhone(readField(source, key));
+  return readField(source, key) || '—';
+}
+
 function errorMessage(err: unknown): string {
   if (err && typeof err === 'object') {
     const anyErr = err as { firstError?: string; message?: string };
@@ -42,9 +110,9 @@ function errorMessage(err: unknown): string {
 
 function parseCSV(text: string): string[][] {
   const lines = text.split(/\r?\n/).filter((l) => l.trim().length > 0);
- return lines.map((line) => {
+  return lines.map((line) => {
     if (line.includes('\t')) return line.split('\t').map((c) => c.trim());
-    // simple CSV split (no quoted-comma handling needed for Arabic names)
+    // تقسيم CSV بسيط (أسماء عربية بلا فواصل داخل الخانة)
     return line.split(',').map((c) => c.trim());
   });
 }
@@ -73,12 +141,11 @@ export function RosterPage() {
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
 
-  // column toggles for print
-  const [showFather, setShowFather] = useState(true);
-  const [showMother, setShowMother] = useState(true);
-  const [showPhones, setShowPhones] = useState(true);
+  // إظهار/حجب أعمدة الوليّين — تسري على الشاشة وعلى الطباعة معًا
+  const [visible, setVisible] = useState<Record<ColumnKey, boolean>>(loadVisibility);
+  const shownColumns = useMemo(() => COLUMNS.filter((column) => visible[column.key]), [visible]);
 
-  // add modal
+  // نافذة الإضافة
   const [addOpen, setAddOpen] = useState(false);
   const [newRows, setNewRows] = useState<NewRow[]>([]);
   const [pasteText, setPasteText] = useState('');
@@ -86,15 +153,27 @@ export function RosterPage() {
   const [saving, setSaving] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
-  // inline edit
+  // تعديل داخل الجدول
   const [editId, setEditId] = useState<number | null>(null);
   const [editDraft, setEditDraft] = useState<StudentEntry | null>(null);
   const [editSaving, setEditSaving] = useState(false);
 
-  // individual print
+  // طباعة بطاقة فردية
   const [printStudent, setPrintStudent] = useState<RosterStudent | null>(null);
 
-  let rowKey = useRef(1);
+  const rowKey = useRef(1);
+
+  const toggleColumn = (key: ColumnKey) => {
+    setVisible((current) => {
+      const next = { ...current, [key]: !current[key] };
+      try {
+        window.localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+      } catch {
+        // حفظ التفضيل رفاهية؛ فشله لا يعطّل الشاشة.
+      }
+      return next;
+    });
+  };
 
   useEffect(() => {
     (async () => {
@@ -141,7 +220,7 @@ export function RosterPage() {
     window.setTimeout(() => setNotice(''), 4000);
   };
 
-  // --- Add modal helpers ---
+  // --- نافذة الإضافة ---
   const openAdd = () => {
     setNewRows([{ _key: rowKey.current++, first_name: '', last_name: '', father_name: '', mother_name: '', father_phone: '', mother_phone: '' }]);
     setPasteText('');
@@ -215,7 +294,7 @@ export function RosterPage() {
     }
   };
 
-  // --- Inline edit helpers ---
+  // --- التعديل داخل الجدول ---
   const startEdit = (student: RosterStudent) => {
     setEditId(student.enrollment_id);
     setEditDraft({
@@ -234,7 +313,7 @@ export function RosterPage() {
   };
 
   const saveEdit = async () => {
- if (editId === null || !editDraft || typeof yearId !== 'number' || typeof sectionId !== 'number') return;
+    if (editId === null || !editDraft || typeof yearId !== 'number' || typeof sectionId !== 'number') return;
     setEditSaving(true);
     setError('');
     try {
@@ -249,7 +328,7 @@ export function RosterPage() {
     }
   };
 
-  // --- Delete ---
+  // --- الحذف ---
   const removeRow = async (enrollmentId: number, name: string) => {
     if (!window.confirm('حذف «' + name + '» من هذا القسم؟')) return;
     try {
@@ -261,13 +340,13 @@ export function RosterPage() {
     }
   };
 
-  // --- Print class ---
+  // --- طباعة القسم ---
   const printClass = () => {
     setPrintStudent(null);
     window.setTimeout(() => window.print(), 100);
   };
 
-  // --- Print individual ---
+  // --- طباعة بطاقة فردية ---
   const printOne = (student: RosterStudent) => {
     setPrintStudent(student);
     window.setTimeout(() => window.print(), 100);
@@ -278,6 +357,8 @@ export function RosterPage() {
   const selectStyle = { border: '1px solid ' + C.line, backgroundColor: '#fff', color: C.ink };
   const inputCls = 'w-full px-2 py-1.5 rounded-lg text-sm';
   const inputStyle = { border: '1px solid ' + C.line, backgroundColor: '#fff', color: C.ink };
+  const thPrint = { padding: '6px 8px', border: '1px solid #ccc', fontWeight: 'bold' as const };
+  const tdPrint = { padding: '6px 8px', border: '1px solid #ccc' };
 
   return (
     <div className="p-6" dir="rtl" style={{ backgroundColor: C.bg, minHeight: '100vh' }}>
@@ -286,14 +367,16 @@ export function RosterPage() {
         @media print {
           body * { visibility: hidden; }
           #print-area, #print-area * { visibility: visible; }
-          #print-area { display: block !important; position: absolute; top: 0; left: 0; right: 0; width: 100%; padding: 0; }
+          #print-area { display: block !important; position: absolute; top: 0; left: 0; right: 0; width: 100%; padding: 10mm; box-sizing: border-box; }
           .no-print { display: none !important; }
           #print-area > div { page-break-inside: avoid; }
-          @page { size: A4 portrait; margin: 8mm; }
+          #print-area thead { display: table-header-group; }
+          #print-area tr { break-inside: avoid; }
+          @page { size: A4 portrait; margin: 0; }
         }
       `}</style>
 
-      {/* ===== Print area (hidden on screen) ===== */}
+      {/* ===== منطقة الطباعة (مخفية على الشاشة) ===== */}
       <div id="print-area" className="print-only" dir="rtl">
         {printStudent ? (
           <div style={{ fontFamily: 'sans-serif', color: '#222' }}>
@@ -309,10 +392,16 @@ export function RosterPage() {
               {printStudent.student_code && <p style={{ margin: '6px 0' }}><strong>الرقم المدرسي: </strong>{printStudent.student_code}</p>}
               {roster && <p style={{ margin: '6px 0' }}><strong>القسم: </strong>{roster.level} — {roster.section}</p>}
               {roster && <p style={{ margin: '6px 0' }}><strong>السنة الدراسية: </strong>{roster.year}</p>}
-              <p style={{ margin: '6px 0' }}><strong>اسم الأب: </strong>{printStudent.father_name || '—'}</p>
-              <p style={{ margin: '6px 0' }}><strong>اسم الأم: </strong>{printStudent.mother_name || '—'}</p>
-              <p style={{ margin: '6px 0' }}><strong>هاتف الأب: </strong><span style={{ direction: 'ltr', display: 'inline-block' }}>{printStudent.father_phone || '—'}</span></p>
-              <p style={{ margin: '6px 0' }}><strong>هاتف الأم: </strong><span style={{ direction: 'ltr', display: 'inline-block' }}>{printStudent.mother_phone || '—'}</span></p>
+              {shownColumns.map((column) => (
+                <p key={column.key} style={{ margin: '6px 0' }}>
+                  <strong>{column.label}: </strong>
+                  {column.kind === 'phone' ? (
+                    <span style={{ direction: 'ltr', display: 'inline-block' }}>{cellText(printStudent, column.key, column.kind)}</span>
+                  ) : (
+                    cellText(printStudent, column.key, column.kind)
+                  )}
+                </p>
+              ))}
             </div>
           </div>
         ) : roster ? (
@@ -329,25 +418,24 @@ export function RosterPage() {
             <table style={{ width: '100%', fontSize: 13, borderCollapse: 'collapse' }}>
               <thead>
                 <tr>
-                  <th style={{ padding: '6px 8px', border: '1px solid #ccc', fontWeight: 'bold' }}>#</th>
-                  <th style={{ padding: '6px 8px', border: '1px solid #ccc', fontWeight: 'bold' }}>الإسم الكامل</th>
-                  {showFather && <th style={{ padding: '6px 8px', border: '1px solid #ccc', fontWeight: 'bold' }}>اسم الأب</th>}
-                  {showMother && <th style={{ padding: '6px 8px', border: '1px solid #ccc', fontWeight: 'bold' }}>اسم الأم</th>}
-                  {showPhones && <th style={{ padding: '6px 8px', border: '1px solid #ccc', fontWeight: 'bold' }}>الهاتف</th>}
+                  <th style={thPrint}>#</th>
+                  <th style={thPrint}>الإسم الكامل</th>
+                  {shownColumns.map((column) => <th key={column.key} style={thPrint}>{column.label}</th>)}
                 </tr>
               </thead>
               <tbody>
                 {roster.students.map((s, i) => (
                   <tr key={s.enrollment_id}>
-                    <td style={{ padding: '6px 8px', border: '1px solid #ccc', textAlign: 'center' }}>{i + 1}</td>
-                    <td style={{ padding: '6px 8px', border: '1px solid #ccc' }}>{s.first_name} {s.last_name}</td>
-                    {showFather && <td style={{ padding: '6px 8px', border: '1px solid #ccc' }}>{s.father_name || '—'}</td>}
-                    {showMother && <td style={{ padding: '6px 8px', border: '1px solid #ccc' }}>{s.mother_name || '—'}</td>}
-                    {showPhones && (
-                      <td style={{ padding: '6px 8px', border: '1px solid #ccc', direction: 'ltr', textAlign: 'right' }}>
-                        {s.father_phone || '—'}{s.mother_phone ? ' / ' + s.mother_phone : ''}
+                    <td style={{ ...tdPrint, textAlign: 'center' }}>{i + 1}</td>
+                    <td style={tdPrint}>{s.first_name} {s.last_name}</td>
+                    {shownColumns.map((column) => (
+                      <td
+                        key={column.key}
+                        style={column.kind === 'phone' ? { ...tdPrint, direction: 'ltr', textAlign: 'right', letterSpacing: '0.5px' } : tdPrint}
+                      >
+                        {cellText(s, column.key, column.kind)}
                       </td>
-                    )}
+                    ))}
                   </tr>
                 ))}
               </tbody>
@@ -356,9 +444,8 @@ export function RosterPage() {
         ) : null}
       </div>
 
-      {/* ===== Screen content ===== */}
+      {/* ===== محتوى الشاشة ===== */}
       <div className="no-print">
-        {/* Header */}
         <div className="flex items-center justify-between mb-6 flex-wrap gap-3">
           <div className="flex items-center gap-3">
             <div className="p-3 rounded-2xl" style={{ backgroundColor: C.sage }}>
@@ -392,44 +479,72 @@ export function RosterPage() {
           </div>
         </div>
 
-        {/* Selectors */}
+        {/* المرشّحات */}
         <div className="bg-white rounded-2xl p-4 mb-5" style={{ border: '1px solid ' + C.line }}>
           <div className="grid sm:grid-cols-3 gap-3">
             <div>
-              <label className="block text-xs mb-1.5" style={{ color: C.muted }}>السنة الدراسية</label>
-              <select value={yearId} onChange={(e) => setYearId(e.target.value ? Number(e.target.value) : '')} className="w-full px-3 py-2.5 rounded-xl text-sm" style={selectStyle}>
+              <label htmlFor="roster_year_id" className="block text-xs mb-1.5" style={{ color: C.muted }}>السنة الدراسية</label>
+              <select id="roster_year_id" name="roster_year_id" value={yearId} onChange={(e) => setYearId(e.target.value ? Number(e.target.value) : '')} className="w-full px-3 py-2.5 rounded-xl text-sm" style={selectStyle}>
                 <option value="">اختر السنة</option>
                 {years.map((y) => <option key={y.id} value={y.id}>{y.name}{y.is_active ? ' — حالية' : ''}</option>)}
               </select>
             </div>
             <div>
-              <label className="block text-xs mb-1.5" style={{ color: C.muted }}>المستوى</label>
-              <select value={levelId} onChange={(e) => { setLevelId(e.target.value ? Number(e.target.value) : ''); setSectionId(''); }} className="w-full px-3 py-2.5 rounded-xl text-sm" style={selectStyle}>
+              <label htmlFor="roster_level_id" className="block text-xs mb-1.5" style={{ color: C.muted }}>المستوى</label>
+              <select id="roster_level_id" name="roster_level_id" value={levelId} onChange={(e) => { setLevelId(e.target.value ? Number(e.target.value) : ''); setSectionId(''); }} className="w-full px-3 py-2.5 rounded-xl text-sm" style={selectStyle}>
                 <option value="">اختر المستوى</option>
                 {levels.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
               </select>
             </div>
             <div>
-              <label className="block text-xs mb-1.5" style={{ color: C.muted }}>القسم</label>
-              <select value={sectionId} onChange={(e) => setSectionId(e.target.value ? Number(e.target.value) : '')} disabled={sections.length === 0} className="w-full px-3 py-2.5 rounded-xl text-sm disabled:opacity-50" style={selectStyle}>
+              <label htmlFor="roster_section_id" className="block text-xs mb-1.5" style={{ color: C.muted }}>القسم</label>
+              <select id="roster_section_id" name="roster_section_id" value={sectionId} onChange={(e) => setSectionId(e.target.value ? Number(e.target.value) : '')} disabled={sections.length === 0} className="w-full px-3 py-2.5 rounded-xl text-sm disabled:opacity-50" style={selectStyle}>
                 <option value="">اختر القسم</option>
                 {sections.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
               </select>
             </div>
           </div>
 
-          <div className="flex items-center gap-4 mt-4 flex-wrap text-sm" style={{ color: C.ink }}>
-            <span style={{ color: C.muted }}>أعمدة الطباعة:</span>
-            <label className="flex items-center gap-1.5"><input type="checkbox" checked={showFather} onChange={(e) => setShowFather(e.target.checked)} /><span>اسم الأب</span></label>
-            <label className="flex items-center gap-1.5"><input type="checkbox" checked={showMother} onChange={(e) => setShowMother(e.target.checked)} /><span>اسم الأم</span></label>
-            <label className="flex items-center gap-1.5"><input type="checkbox" checked={showPhones} onChange={(e) => setShowPhones(e.target.checked)} /><span>الهواتف</span></label>
+          <div className="mt-4 pt-4" style={{ borderTop: '1px solid ' + C.line }}>
+            <div className="flex items-center gap-2 mb-3 text-sm font-semibold" style={{ color: C.ink }}>
+              <Filter size={16} color={C.forest} />
+              <span>الأعمدة الظاهرة — في الجدول وفي الطباعة</span>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {COLUMNS.map((column) => {
+                const active = visible[column.key];
+                return (
+                  <label
+                    key={column.key}
+                    htmlFor={'roster_col_' + column.key}
+                    className="inline-flex cursor-pointer select-none items-center gap-2 px-3 py-2 rounded-xl text-sm font-medium"
+                    style={{
+                      backgroundColor: active ? C.sage : '#fff',
+                      color: active ? C.forest : C.muted,
+                      border: '1px solid ' + (active ? C.forest : C.line),
+                    }}
+                  >
+                    <input
+                      id={'roster_col_' + column.key}
+                      name={'roster_col_' + column.key}
+                      type="checkbox"
+                      className="h-4 w-4"
+                      checked={active}
+                      onChange={() => toggleColumn(column.key)}
+                    />
+                    <span>{column.label}</span>
+                  </label>
+                );
+              })}
+            </div>
+            <p className="text-xs mt-3" style={{ color: C.muted }}>العمود المحجوب يختفي من الجدول ومن الورقة المطبوعة معًا، ويُحفظ اختيارك للمرة القادمة.</p>
           </div>
         </div>
 
         {error && <div className="mb-4 px-4 py-3 rounded-xl text-sm" style={{ backgroundColor: C.errorBg, color: C.error }}>{error}</div>}
         {notice && <div className="mb-4 px-4 py-3 rounded-xl text-sm" style={{ backgroundColor: C.sage, color: C.deep }}>{notice}</div>}
 
-        {/* Roster table */}
+        {/* جدول القسم */}
         {loading ? (
           <PageDataSkeleton cards={2} />
         ) : !roster ? (
@@ -455,10 +570,9 @@ export function RosterPage() {
                       <th className="text-right px-3 py-3 font-medium" style={{ width: '2.5rem' }}>#</th>
                       <th className="text-right px-3 py-3 font-medium">الاسم</th>
                       <th className="text-right px-3 py-3 font-medium">اللقب</th>
-                      <th className="text-right px-3 py-3 font-medium">اسم الأب</th>
-                      <th className="text-right px-3 py-3 font-medium">اسم الأم</th>
-                      <th className="text-right px-3 py-3 font-medium">هاتف الأب</th>
-                      <th className="text-right px-3 py-3 font-medium">هاتف الأم</th>
+                      {shownColumns.map((column) => (
+                        <th key={column.key} className="text-right px-3 py-3 font-medium">{column.label}</th>
+                      ))}
                       <th className="px-3 py-3" style={{ width: '7rem' }} />
                     </tr>
                   </thead>
@@ -470,10 +584,16 @@ export function RosterPage() {
                             <td className="px-3 py-2" style={{ color: C.muted }}>{i + 1}</td>
                             <td className="px-2 py-1.5"><input value={editDraft.first_name} onChange={(e) => setEditDraft({ ...editDraft, first_name: e.target.value })} className={inputCls} style={inputStyle} /></td>
                             <td className="px-2 py-1.5"><input value={editDraft.last_name} onChange={(e) => setEditDraft({ ...editDraft, last_name: e.target.value })} className={inputCls} style={inputStyle} /></td>
-                            <td className="px-2 py-1.5"><input value={editDraft.father_name || ''} onChange={(e) => setEditDraft({ ...editDraft, father_name: e.target.value })} className={inputCls} style={inputStyle} /></td>
-                            <td className="px-2 py-1.5"><input value={editDraft.mother_name || ''} onChange={(e) => setEditDraft({ ...editDraft, mother_name: e.target.value })} className={inputCls} style={inputStyle} /></td>
-                            <td className="px-2 py-1.5"><input value={editDraft.father_phone || ''} onChange={(e) => setEditDraft({ ...editDraft, father_phone: e.target.value })} className={inputCls} style={{ ...inputStyle, direction: 'ltr' }} /></td>
-                            <td className="px-2 py-1.5"><input value={editDraft.mother_phone || ''} onChange={(e) => setEditDraft({ ...editDraft, mother_phone: e.target.value })} className={inputCls} style={{ ...inputStyle, direction: 'ltr' }} /></td>
+                            {shownColumns.map((column) => (
+                              <td key={column.key} className="px-2 py-1.5">
+                                <input
+                                  value={readField(editDraft, column.key)}
+                                  onChange={(e) => setEditDraft(withField(editDraft, column.key, e.target.value))}
+                                  className={inputCls}
+                                  style={column.kind === 'phone' ? { ...inputStyle, direction: 'ltr' } : inputStyle}
+                                />
+                              </td>
+                            ))}
                             <td className="px-3 py-2 flex gap-1">
                               <button onClick={() => void saveEdit()} disabled={editSaving} title="حفظ" className="p-1.5 rounded-lg" style={{ backgroundColor: C.forest }}>
                                 <Save size={14} color="#fff" />
@@ -488,10 +608,15 @@ export function RosterPage() {
                             <td className="px-3 py-2.5" style={{ color: C.muted }}>{i + 1}</td>
                             <td className="px-3 py-2.5" style={{ color: C.ink }}>{s.first_name}</td>
                             <td className="px-3 py-2.5" style={{ color: C.ink }}>{s.last_name}</td>
-                            <td className="px-3 py-2.5" style={{ color: C.ink }}>{s.father_name || '—'}</td>
-                            <td className="px-3 py-2.5" style={{ color: C.ink }}>{s.mother_name || '—'}</td>
-                            <td className="px-3 py-2.5 text-xs" style={{ color: C.ink, direction: 'ltr', textAlign: 'right' }}>{s.father_phone || '—'}</td>
-                            <td className="px-3 py-2.5 text-xs" style={{ color: C.ink, direction: 'ltr', textAlign: 'right' }}>{s.mother_phone || '—'}</td>
+                            {shownColumns.map((column) => (
+                              <td
+                                key={column.key}
+                                className={column.kind === 'phone' ? 'px-3 py-2.5 tabular-nums' : 'px-3 py-2.5'}
+                                style={column.kind === 'phone' ? { color: C.ink, direction: 'ltr', textAlign: 'right', letterSpacing: '0.5px' } : { color: C.ink }}
+                              >
+                                {cellText(s, column.key, column.kind)}
+                              </td>
+                            ))}
                             <td className="px-3 py-2.5 flex gap-1">
                               <button onClick={() => startEdit(s)} title="تعديل" className="p-1.5 rounded-lg bg-gray-50">
                                 <Pencil size={14} color={C.forest} />
@@ -515,7 +640,7 @@ export function RosterPage() {
         )}
       </div>
 
-      {/* ===== Add modal ===== */}
+      {/* ===== نافذة الإضافة ===== */}
       {addOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 no-print" style={{ backgroundColor: 'rgba(31,38,28,0.45)' }}>
           <div className="bg-white rounded-2xl w-full max-w-4xl max-h-[90vh] overflow-y-auto p-6" dir="rtl">
@@ -524,7 +649,6 @@ export function RosterPage() {
               <button onClick={() => setAddOpen(false)}><X size={20} color={C.muted} /></button>
             </div>
 
-            {/* Toolbar */}
             <div className="flex items-center gap-2 mb-4 flex-wrap">
               <button onClick={addRow} className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm" style={{ border: '1px solid ' + C.line, color: C.forest }}>
                 <Plus size={16} /><span>سطر جديد</span>
@@ -532,22 +656,20 @@ export function RosterPage() {
               <button onClick={() => fileRef.current?.click()} className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm" style={{ border: '1px solid ' + C.line, color: C.forest }}>
                 <Upload size={16} /><span>استيراد CSV</span>
               </button>
-              <input ref={fileRef} type="file" accept=".csv,text/csv" style={{ display: 'none' }} onChange={(e) => { const f = e.target.files?.[0]; if (f) void handleFile(f); }} />
+              <input ref={fileRef} id="roster_csv_file" name="roster_csv_file" type="file" accept=".csv,text/csv" style={{ display: 'none' }} onChange={(e) => { const f = e.target.files?.[0]; if (f) void handleFile(f); }} />
               <button onClick={() => setShowPaste(!showPaste)} className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm" style={{ border: '1px solid ' + C.line, color: C.forest }}>
                 <ClipboardList size={16} /><span>لصق من Excel</span>
               </button>
             </div>
 
-            {/* Paste area */}
             {showPaste && (
               <div className="mb-4">
-                <p className="text-xs mb-2" style={{ color: C.muted }}>الصق من Excel (كل سطر = تلميذ، الأعمدة: الاسم، اللقب، الأب، الأم، هاتف الأب، هاتف الأم)</p>
-                <textarea value={pasteText} onChange={(e) => setPasteText(e.target.value)} rows={6} className="w-full px-3 py-2.5 rounded-xl text-sm" style={{ border: '1px solid ' + C.line, color: C.ink }} placeholder={'أحمد\tخطاب\tمحمد\tفاطمة\t12345678\t87654321'} />
+                <label htmlFor="roster_paste" className="text-xs mb-2 block" style={{ color: C.muted }}>الصق من Excel (كل سطر = تلميذ، الأعمدة: الاسم، اللقب، الأب، الأم، هاتف الأب، هاتف الأم)</label>
+                <textarea id="roster_paste" name="roster_paste" value={pasteText} onChange={(e) => setPasteText(e.target.value)} rows={6} className="w-full px-3 py-2.5 rounded-xl text-sm" style={{ border: '1px solid ' + C.line, color: C.ink }} placeholder={'أحمد\tخطاب\tمحمد\tفاطمة\t12345678\t87654321'} />
                 <button onClick={handlePaste} disabled={!pasteText.trim()} className="mt-2 px-4 py-2 rounded-lg text-white text-sm disabled:opacity-50" style={{ backgroundColor: C.forest }}>إضافة السطور</button>
               </div>
             )}
 
-            {/* Editable table */}
             <div className="overflow-x-auto" style={{ maxHeight: '40vh' }}>
               <table className="w-full text-sm">
                 <thead>

@@ -69,7 +69,6 @@ export function CollectionPage() {
   const [feeAmounts, setFeeAmounts] = useState<Record<number, string>>({});
   const [selectedFees, setSelectedFees] = useState<Record<number, boolean>>({});
   const [monthlyPrice, setMonthlyPrice] = useState('0');
-  const [discount, setDiscount] = useState('0');
   const [method, setMethod] = useState<'cash' | 'bank_transfer' | 'check' | 'card'>('cash');
   const [paymentDate, setPaymentDate] = useState(new Date().toISOString().slice(0, 10));
   const [reference, setReference] = useState('');
@@ -196,7 +195,9 @@ export function CollectionPage() {
 
   const monthsTotal = selectedMonths.length * (parseFloat(monthlyPrice || '0') || 0);
   const itemsTotal = productsTotal + monthsTotal;
-  const total = Math.max(0, itemsTotal - (parseFloat(discount || '0') || 0));
+  // التخفيض لم يعد يُطبَّق عند القبض: صار سعراً سنوياً ثابتاً في enrollment_discounts.
+  // هنا يُدفع السعر الكامل، والتخفيض السنوي يُدار من صفحة التلميذ.
+  const total = itemsTotal;
 
   async function handleSave() {
     if (!picked) return;
@@ -232,7 +233,6 @@ export function CollectionPage() {
         method,
         reference: reference || null,
         notes: notes || null,
-        discount: parseFloat(discount || '0') || 0,
         items: mergedItems,
       } as any);
       const raw = res.receipt || res;
@@ -275,7 +275,6 @@ export function CollectionPage() {
       await refreshLedger(picked.enrollment_id);
       setSelectedMonths([]);
       setSelectedFees({});
-      setDiscount('0');
     } catch (e: any) {
       setError(e.message || 'فشل الحفظ');
     } finally {
@@ -359,7 +358,7 @@ export function CollectionPage() {
           </div>
           <div>
             <h1 className="text-2xl font-bold" style={{ color: C.ink }}>استخلاص الرسوم</h1>
-            <p className="text-sm" style={{ color: C.muted }}>سنة ← قسم ← تلميذ ← أشهر ← معاليم ← تخفيض ← حفظ</p>
+            <p className="text-sm" style={{ color: C.muted }}>سنة ← قسم ← تلميذ ← أشهر ← معاليم ← حفظ</p>
           </div>
         </div>
 
@@ -457,11 +456,6 @@ export function CollectionPage() {
 
             <div className="bg-white rounded-2xl border p-4 grid grid-cols-1 md:grid-cols-2 gap-3" style={{ borderColor: C.line }}>
               <div>
-                <label className="text-sm font-semibold" style={{ color: C.ink }}>التخفيض</label>
-                <input type="number" min="0" step="0.01" value={discount} onChange={(e) => setDiscount(e.target.value)}
-                  className="w-full mt-1 border rounded-xl px-3 py-2 text-sm" style={{ borderColor: C.line, direction: 'ltr' }} />
-              </div>
-              <div>
                 <label className="text-sm font-semibold" style={{ color: C.ink }}>التاريخ</label>
                 <input type="date" value={paymentDate} max={new Date().toISOString().slice(0, 10)} onChange={(e) => setPaymentDate(e.target.value)}
                   className="w-full mt-1 border rounded-xl px-3 py-2 text-sm" style={{ borderColor: C.line }} />
@@ -526,7 +520,7 @@ export function CollectionPage() {
 
             <div className="bg-white rounded-2xl border p-4 flex items-center justify-between" style={{ borderColor: C.line }}>
               <div>
-                <div className="text-xs" style={{ color: C.muted }}>المجموع بعد التخفيض</div>
+                <div className="text-xs" style={{ color: C.muted }}>المجموع</div>
                 <div className="text-2xl font-extrabold" style={{ color: C.forest }}>{total.toFixed(2)} د.ت</div>
               </div>
               <button type="button" onClick={handleSave} disabled={saving || total <= 0}

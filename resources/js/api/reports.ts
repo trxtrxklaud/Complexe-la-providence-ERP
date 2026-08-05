@@ -107,11 +107,40 @@ export type YearRevenueReport = {
   summary: { income: number; expenses: number; net_income: number; balance: number };
 };
 
+/** قسم في قائمة الاختيار: تُعاد كل الأقسام دائماً، وعدد التلاميذ قد يكون صفراً. */
+export type UnpaidMonthlySectionOption = {
+  id: number;
+  name: string;
+  level: string | null;
+  label: string;
+  students_count: number;
+};
+
 export type UnpaidMonthlyOptions = {
   years: Array<{ id: number; name: string; start_date: string; end_date: string; is_active: boolean }>;
   selected_year_id: number | null;
   months: Array<{ value: string; label: string }>;
-  sections: Array<{ id: number; name: string; level: string | null; label: string }>;
+  sections: UnpaidMonthlySectionOption[];
+};
+
+/**
+ * سطر تلميذ غير مسدّد.
+ *
+ * الأب والأم حقول منفصلة لأن القائمة تُطبع وتُوزّع، فيجب أن يُحجب كل حقل
+ * على حدة. حقلا guardian_name و phone محفوظان للتوافق مع النسخة السابقة.
+ */
+export type UnpaidMonthlyRow = {
+  enrollment_id: number;
+  student_id: number;
+  student_code: string | null;
+  student_name: string;
+  guardian_name: string;
+  phone: string | null;
+  father_name: string | null;
+  father_phone: string | null;
+  mother_name: string | null;
+  mother_phone: string | null;
+  enrollment_date: string | null;
 };
 
 export type UnpaidMonthlyReport = {
@@ -123,7 +152,7 @@ export type UnpaidMonthlyReport = {
   generated_at: string;
   report_date: string;
   report_time: string;
-  rows: Array<{ enrollment_id: number; student_id: number; student_code: string | null; student_name: string; guardian_name: string; phone: string | null; enrollment_date: string | null }>;
+  rows: UnpaidMonthlyRow[];
   summary: { unpaid_students_count: number };
 };
 

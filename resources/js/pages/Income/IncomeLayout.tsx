@@ -1,5 +1,5 @@
 import { Outlet } from 'react-router-dom';
-import { Wallet, CreditCard, CalendarDays, TrendingUp, Layers, CalendarRange, ClipboardList } from 'lucide-react';
+import { Wallet, CreditCard, CalendarDays, TrendingUp, Layers, CalendarRange, ClipboardList, FileText } from 'lucide-react';
 import { SectionTabs } from '../../components/SectionTabs';
 import { useAuth } from '../../contexts/AuthContext';
 
@@ -16,6 +16,7 @@ export function IncomeLayout() {
       { to: 'by-date', label: 'المداخيل حسب التاريخ', icon: CalendarDays },
       { to: 'revenue', label: 'مداخيل التلاميذ', icon: TrendingUp },
       { to: 'by-classroom', label: 'المداخيل حسب القسم', icon: Layers },
+      { to: 'by-classroom/roster', label: 'كشف مداخيل القسم', icon: FileText },
       { to: 'by-year', label: 'المداخيل حسب السنة', icon: CalendarRange },
       { to: 'unpaid-monthly', label: 'المتخلفون شهريًا', icon: ClipboardList },
     ] : []),
