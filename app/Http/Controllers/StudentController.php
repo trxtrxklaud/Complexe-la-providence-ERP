@@ -16,6 +16,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class StudentController extends Controller
 {
@@ -197,6 +198,21 @@ class StudentController extends Controller
     }
 
     // FIX: Route Model Binding instead of int $id + manual lookup
+    /**
+     * Photo via authenticated route - private disk, no public URL.
+     */
+    public function photo(Student $student): StreamedResponse
+    {
+        $path = (string) $student->photo;
+
+        $missing = ($path === '') || (Storage::disk('local')->exists($path) === false);
+        abort_if($missing, 404);
+
+        return Storage::disk('local')->response($path, basename($path), [
+            'Cache-Control' => 'private, max-age=3600',
+        ]);
+    }
+
     public function show(Student $student): JsonResponse
     {
         return response()->json(
@@ -308,9 +324,9 @@ class StudentController extends Controller
 
         if ($request->hasFile('photo')) {
             if ($student->photo) {
-                Storage::disk('public')->delete($student->photo);
+                Storage::disk('local')->delete($student->photo);
             }
-            $validated['photo'] = $request->file('photo')->store('students/photos', 'public');
+            $validated['photo'] = $request->file('photo')->store('students/photos', 'local');
         }
 
         $student->update($validated);
@@ -332,7 +348,7 @@ class StudentController extends Controller
         }
 
         if ($student->photo) {
-            Storage::disk('public')->delete($student->photo);
+            Storage::disk('local')->delete($student->photo);
         }
 
         $student->delete();

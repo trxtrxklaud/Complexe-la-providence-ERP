@@ -22,13 +22,13 @@ class EmployeeAdvanceController extends Controller
             'createdBy:id,first_name,last_name',
             'cancelledBy:id,first_name,last_name',
         ])
-            ->when($request->filled('employee_id'),      fn ($q) => $q->where('employee_id',      $request->integer('employee_id')))
+            ->when($request->filled('employee_id'), fn ($q) => $q->where('employee_id', $request->integer('employee_id')))
             ->when($request->filled('academic_year_id'), fn ($q) => $q->where('academic_year_id', $request->integer('academic_year_id')))
-            ->when($request->filled('status'),           fn ($q) => $q->where('status',           $request->input('status')))
-            ->when($request->filled('type'),             fn ($q) => $q->where('type',             $request->input('type')))
-            ->when($request->boolean('outstanding'),     fn ($q) => $q->outstanding())
+            ->when($request->filled('status'), fn ($q) => $q->where('status', $request->input('status')))
+            ->when($request->filled('type'), fn ($q) => $q->where('type', $request->input('type')))
+            ->when($request->boolean('outstanding'), fn ($q) => $q->outstanding())
             ->when($request->filled('date_from'), fn ($q) => $q->whereDate('advance_date', '>=', $request->input('date_from')))
-            ->when($request->filled('date_to'),   fn ($q) => $q->whereDate('advance_date', '<=', $request->input('date_to')))
+            ->when($request->filled('date_to'), fn ($q) => $q->whereDate('advance_date', '<=', $request->input('date_to')))
             ->when($request->boolean('exclude_cancelled'), fn ($q) => $q->whereNull('cancelled_at'))
             ->latest('advance_date')
             ->latest('id')
@@ -46,27 +46,27 @@ class EmployeeAdvanceController extends Controller
     public function store(Request $request): JsonResponse
     {
         $data = $request->validate([
-            'employee_id'      => ['required', 'integer', 'exists:employees,id'],
+            'employee_id' => ['required', 'integer', 'exists:employees,id'],
             'academic_year_id' => ['nullable', 'integer', 'exists:academic_years,id'],
-            'type'             => ['nullable', 'string', 'in:advance,loan'],
-            'amount'           => ['required', 'numeric', 'min:0.01'],
-            'advance_date'     => ['required', 'date'],
-            'method'           => ['nullable', 'string', 'max:50'],
-            'reason'           => ['nullable', 'string', 'max:200'],
-            'notes'            => ['nullable', 'string'],
-            'is_opening'       => ['nullable', 'boolean'],
+            'type' => ['nullable', 'string', 'in:advance,loan'],
+            'amount' => ['required', 'numeric', 'min:0.01'],
+            'advance_date' => ['required', 'date'],
+            'method' => ['nullable', 'string', 'max:50'],
+            'reason' => ['nullable', 'string', 'max:200'],
+            'notes' => ['nullable', 'string'],
+            'is_opening' => ['nullable', 'boolean'],
         ]);
 
         $data['created_by'] = $request->user()?->id;
-        $data['status']     = EmployeeAdvance::STATUS_PENDING;
-        $data['type']       = $data['type'] ?? EmployeeAdvance::TYPE_ADVANCE;
-        $isOpening          = (bool) ($data['is_opening'] ?? false);
+        $data['status'] = EmployeeAdvance::STATUS_PENDING;
+        $data['type'] = $data['type'] ?? EmployeeAdvance::TYPE_ADVANCE;
+        $isOpening = (bool) ($data['is_opening'] ?? false);
         $data['is_opening'] = $isOpening;
 
         $advance = DB::transaction(function () use ($data, $isOpening) {
             $advance = EmployeeAdvance::create($data);
 
-            if (!$isOpening) {
+            if (! $isOpening) {
                 $this->ledger->recordEmployeeAdvance($advance);
             }
 
@@ -102,28 +102,43 @@ class EmployeeAdvanceController extends Controller
         // تخفيض مبلغ سلفة دون ما رُدّ منها ينتج دَيناً سالباً لا معنى له.
         $repaid = (float) $advance->repayments()->whereNull('cancelled_at')->sum('amount');
 
+        // [M2] سلفة رُدّ منها مال: يُمنع تغيير الإطار أو النوع
+        if ($repaid > 0) {
+            if ($request->filled('employee_id')) {
+                $sameEmployee = (int) $request->input('employee_id') === (int) $advance->employee_id;
+                if ($sameEmployee === false) {
+                    return response()->json(['message' => 'لا يمكن نقل سلفة رُدّ منها مال إلى إطار آخر'], 422);
+                }
+            }
+            if ($request->filled('type')) {
+                $sameType = $request->input('type') === $advance->type;
+                if ($sameType === false) {
+                    return response()->json(['message' => 'لا يمكن تغيير نوع سلفة رُدّ منها مال (تسبقة/سلفة)'], 422);
+                }
+            }
+        }
         if ($request->filled('amount') && (float) $request->input('amount') < $repaid) {
             return response()->json([
-                'message' => 'المبلغ الجديد أقلّ ممّا رُدّ من السلفة (' . number_format($repaid, 2, '.', '') . ')',
+                'message' => 'المبلغ الجديد أقلّ ممّا رُدّ من السلفة ('.number_format($repaid, 2, '.', '').')',
             ], 422);
         }
 
         $data = $request->validate([
-            'employee_id'      => ['sometimes', 'integer', 'exists:employees,id'],
+            'employee_id' => ['sometimes', 'integer', 'exists:employees,id'],
             'academic_year_id' => ['nullable', 'integer', 'exists:academic_years,id'],
-            'type'             => ['sometimes', 'string', 'in:advance,loan'],
-            'amount'           => ['sometimes', 'numeric', 'min:0.01'],
-            'advance_date'     => ['sometimes', 'date'],
-            'method'           => ['nullable', 'string', 'max:50'],
-            'reason'           => ['nullable', 'string', 'max:200'],
-            'notes'            => ['nullable', 'string'],
+            'type' => ['sometimes', 'string', 'in:advance,loan'],
+            'amount' => ['sometimes', 'numeric', 'min:0.01'],
+            'advance_date' => ['sometimes', 'date'],
+            'method' => ['nullable', 'string', 'max:50'],
+            'reason' => ['nullable', 'string', 'max:200'],
+            'notes' => ['nullable', 'string'],
         ]);
 
         $advance = DB::transaction(function () use ($advance, $data) {
             $advance->update($data);
             $fresh = $advance->fresh();
 
-            if (!$fresh->is_opening) {
+            if (! $fresh->is_opening) {
                 $this->ledger->recordEmployeeAdvance($fresh);
             }
 
@@ -160,10 +175,10 @@ class EmployeeAdvanceController extends Controller
     public function settle(Request $request, EmployeeAdvance $advance): JsonResponse
     {
         $data = $request->validate([
-            'amount'    => ['required', 'numeric', 'min:0.01'],
+            'amount' => ['required', 'numeric', 'min:0.01'],
             'repaid_at' => ['nullable', 'date'],
-            'method'    => ['nullable', 'string', 'in:cash,salary_deduction'],
-            'notes'     => ['nullable', 'string', 'max:500'],
+            'method' => ['nullable', 'string', 'in:cash,salary_deduction'],
+            'notes' => ['nullable', 'string', 'max:500'],
         ]);
 
         if ($advance->cancelled_at) {
@@ -183,24 +198,24 @@ class EmployeeAdvanceController extends Controller
                 // القفل يمنع ردّين متزامنين يتجاوز مجموعهما المتبقّي.
                 $locked = EmployeeAdvance::whereKey($advance->getKey())->lockForUpdate()->firstOrFail();
 
-                $repaid    = (float) $locked->repayments()->whereNull('cancelled_at')->sum('amount');
+                $repaid = (float) $locked->repayments()->whereNull('cancelled_at')->sum('amount');
                 $remaining = round((float) $locked->amount - $repaid, 2);
 
                 if ((float) $data['amount'] > $remaining) {
                     throw new RuntimeException(
-                        'المبلغ (' . number_format((float) $data['amount'], 2, '.', '') . ') يتجاوز المتبقّي من السلفة (' . number_format($remaining, 2, '.', '') . ')'
+                        'المبلغ ('.number_format((float) $data['amount'], 2, '.', '').') يتجاوز المتبقّي من السلفة ('.number_format($remaining, 2, '.', '').')'
                     );
                 }
 
                 $repayment = EmployeeAdvanceRepayment::create([
                     'employee_advance_id' => $locked->id,
-                    'employee_id'         => $locked->employee_id,
-                    'academic_year_id'    => $locked->academic_year_id,
-                    'amount'              => number_format((float) $data['amount'], 2, '.', ''),
-                    'repaid_at'           => $data['repaid_at'] ?? now()->toDateString(),
-                    'method'              => $data['method'] ?? EmployeeAdvanceRepayment::METHOD_CASH,
-                    'notes'               => $data['notes'] ?? null,
-                    'created_by'          => $userId,
+                    'employee_id' => $locked->employee_id,
+                    'academic_year_id' => $locked->academic_year_id,
+                    'amount' => number_format((float) $data['amount'], 2, '.', ''),
+                    'repaid_at' => $data['repaid_at'] ?? now()->toDateString(),
+                    'method' => $data['method'] ?? EmployeeAdvanceRepayment::METHOD_CASH,
+                    'notes' => $data['notes'] ?? null,
+                    'created_by' => $userId,
                 ]);
 
                 $this->ledger->recordAdvanceRepayment($repayment);
@@ -215,7 +230,7 @@ class EmployeeAdvanceController extends Controller
 
         return response()->json([
             'repayment' => $repayment->fresh(),
-            'advance'   => $advance->fresh()->load(['employee:id,first_name,last_name']),
+            'advance' => $advance->fresh()->load(['employee:id,first_name,last_name']),
         ], 201);
     }
 
@@ -241,8 +256,8 @@ class EmployeeAdvanceController extends Controller
 
         DB::transaction(function () use ($repayment, $data, $request) {
             $repayment->update([
-                'cancelled_at'        => now(),
-                'cancelled_by'        => $request->user()?->id,
+                'cancelled_at' => now(),
+                'cancelled_by' => $request->user()?->id,
                 'cancellation_reason' => $data['reason'],
             ]);
 
@@ -253,7 +268,7 @@ class EmployeeAdvanceController extends Controller
 
         return response()->json([
             'repayment' => $repayment->fresh(),
-            'advance'   => $repayment->advance?->fresh(),
+            'advance' => $repayment->advance?->fresh(),
         ]);
     }
 
@@ -278,15 +293,15 @@ class EmployeeAdvanceController extends Controller
 
         if ($repaid > 0) {
             return response()->json([
-                'message' => 'هذه السلفة رُدّ منها ' . number_format($repaid, 2, '.', '') . '؛ ألغِ الردّيات أوّلاً',
+                'message' => 'هذه السلفة رُدّ منها '.number_format($repaid, 2, '.', '').'؛ ألغِ الردّيات أوّلاً',
             ], 422);
         }
 
         DB::transaction(function () use ($advance, $data, $request) {
             $advance->update([
-                'status'              => 'cancelled',
-                'cancelled_at'        => now(),
-                'cancelled_by'        => $request->user()?->id,
+                'status' => 'cancelled',
+                'cancelled_at' => now(),
+                'cancelled_by' => $request->user()?->id,
                 'cancellation_reason' => $data['reason'],
             ]);
 
