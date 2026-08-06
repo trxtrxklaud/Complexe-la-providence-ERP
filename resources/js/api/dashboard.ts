@@ -18,6 +18,7 @@ export type DashboardData = {
   new_students_this_year: number;
   total_males: number;
   total_females: number;
+  total_unspecified_gender: number;
   outstanding_balance: number;
   financial_summary: {
     total_expected: number;

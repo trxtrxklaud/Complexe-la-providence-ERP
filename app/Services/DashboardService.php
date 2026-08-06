@@ -78,6 +78,9 @@ class DashboardService
             'new_students_this_year' => $newEnrollments,
             'total_males'            => (int) ($genderCounts['male']   ?? 0),
             'total_females'          => (int) ($genderCounts['female'] ?? 0),
+
+            // المستوردون بلا جنس مُدخل يُحسبون صراحة بدل أصفار مضلّلة
+            'total_unspecified_gender' => (int) ($genderCounts[''] ?? 0),
             'outstanding_balance'    => $outstandingBalance,
             'upcoming_events'        => [],
             'financial_summary'      => [
@@ -140,6 +143,7 @@ class DashboardService
             'new_students_this_year' => 0,
             'total_males'            => 0,
             'total_females'          => 0,
+            'total_unspecified_gender' => 0,
             'outstanding_balance'    => 0,
             'upcoming_events'        => [],
             'financial_summary'      => [
