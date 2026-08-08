@@ -186,6 +186,7 @@ export default function ClubFeesReportPage() {
       {/* Printable CSS style */}
       <style>{`
         @media print {
+          @page { size: A4 portrait; margin: 10mm 8mm; }
           body * {
             visibility: hidden;
           }
@@ -197,10 +198,17 @@ export default function ClubFeesReportPage() {
             left: 0;
             top: 0;
             width: 100%;
-            padding: 15px;
+            padding: 0;
           }
-          .no-print {
+          .no-print, button, input, select {
             display: none !important;
+            visibility: hidden !important;
+          }
+          thead {
+            display: table-header-group !important;
+          }
+          tr {
+            break-inside: avoid !important;
           }
         }
       `}</style>

@@ -152,7 +152,23 @@
     page-break-inside: avoid;
   }
 
-  .no-print {
+  /* Universal print hiding for interactive elements */
+  button,
+  input,
+  select,
+  textarea,
+  nav,
+  aside,
+  .no-print,
+  .print\:hidden,
+  .action-col,
+  .no-print-action {
     display: none !important;
+    visibility: hidden !important;
+  }
+
+  .print-only {
+    display: block !important;
+    visibility: visible !important;
   }
 }
