@@ -177,7 +177,7 @@ class ClubFeesTest extends TestCase
         $res->assertJsonPath('result.created', 1);
     }
 
-    /** 7. الفلترة حسب القسم تعيد كافة التلاميذ النشطين في هذا القسم. */
+    /** 7. الفلترة حسب القسم تعيد كافة التلاميذ النشطين في هذا القسم وتستبعد أقساماً أخرى. */
     public function test_filtering_by_section_displays_all_active_students_in_that_section(): void
     {
         $year = $this->makeAcademicYear();
@@ -199,6 +199,45 @@ class ClubFeesTest extends TestCase
         $studentIds = collect($report['records'])->pluck('student_id')->all();
         $this->assertContains($enrollment1->student_id, $studentIds);
         $this->assertContains($enrollment2->student_id, $studentIds);
+    }
+
+    /** 7b. تغيير القسم يعيد تلاميذ القسم الجديد فقط ولا يدمج تلاميذ القسم السابق. */
+    public function test_changing_section_returns_only_new_section_students_without_leakage(): void
+    {
+        $year = $this->makeAcademicYear();
+        $level = \App\Models\Level::firstOrCreate(['id' => 999], ['name' => 'مستوى تجريبي', 'code' => 'L_TEST999']);
+        $sec1 = \App\Models\Section::firstOrCreate(['id' => 998], ['level_id' => $level->id, 'name' => 'قسم تجريبي 1', 'code' => 'SEC_TEST1']);
+        $sec2 = \App\Models\Section::firstOrCreate(['id' => 999], ['level_id' => $level->id, 'name' => 'قسم تجريبي 2', 'code' => 'SEC_TEST2']);
+
+        $enrSec1 = $this->makeEnrollment($year, null);
+        $enrSec1->update(['section_id' => $sec1->id]);
+
+        $enrSec2 = $this->makeEnrollment($year, null);
+        $enrSec2->update(['section_id' => $sec2->id]);
+
+        $club = $this->makeClub();
+
+        // Query Section 1
+        $report1 = $this->clubService->getReport([
+            'month' => '2026-05',
+            'academic_year_id' => $year->id,
+            'section_id' => $sec1->id,
+            'club_id' => $club->id,
+        ]);
+        $idsSec1 = collect($report1['records'])->pluck('student_id')->all();
+        $this->assertContains($enrSec1->student_id, $idsSec1);
+        $this->assertNotContains($enrSec2->student_id, $idsSec1);
+
+        // Query Section 2
+        $report2 = $this->clubService->getReport([
+            'month' => '2026-05',
+            'academic_year_id' => $year->id,
+            'section_id' => $sec2->id,
+            'club_id' => $club->id,
+        ]);
+        $idsSec2 = collect($report2['records'])->pluck('student_id')->all();
+        $this->assertContains($enrSec2->student_id, $idsSec2);
+        $this->assertNotContains($enrSec1->student_id, $idsSec2);
     }
 
     /** 8. كل تلميذ يعرض حديثاً يبدأ بحالة 'في انتظار الدفع' ولون برتقالي. */

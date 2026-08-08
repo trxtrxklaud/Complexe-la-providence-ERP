@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   fetchClubFeesReport,
   generateClubMonthFees,
@@ -21,6 +21,8 @@ export default function ClubFeesReportPage() {
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
+
+  const activeRequestId = useRef(0);
 
   // Filter options
   const [years, setYears] = useState<AcademicYear[]>([]);
@@ -78,7 +80,9 @@ export default function ClubFeesReportPage() {
   };
 
   const loadReport = async () => {
+    const requestId = ++activeRequestId.current;
     setLoading(true);
+    setReportData(null); // Clear previous section/filter reportData immediately to avoid displaying stale names/totals
     setError(null);
     try {
       const data = await fetchClubFeesReport({
@@ -90,11 +94,27 @@ export default function ClubFeesReportPage() {
         status: selectedStatus || undefined,
         search: search.trim() || undefined,
       });
-      setReportData(data);
+      if (requestId === activeRequestId.current) {
+        setReportData(data);
+      }
     } catch (err: any) {
-      setError(err.message || 'حدث خطأ أثناء تحميل التقرير');
+      if (requestId === activeRequestId.current) {
+        setError(err.message || 'حدث خطأ أثناء تحميل التقرير');
+      }
     } finally {
-      setLoading(false);
+      if (requestId === activeRequestId.current) {
+        setLoading(false);
+      }
+    }
+  };
+
+  const handleLevelChange = (levelIdVal: number | '') => {
+    setSelectedLevelId(levelIdVal);
+    if (levelIdVal && selectedSectionId) {
+      const matchingSec = sections.find((s) => s.id === Number(selectedSectionId));
+      if (matchingSec && matchingSec.level_id !== Number(levelIdVal)) {
+        setSelectedSectionId('');
+      }
     }
   };
 
@@ -297,7 +317,7 @@ export default function ClubFeesReportPage() {
             <label className="block text-xs font-semibold text-gray-600 mb-1">المستوى</label>
             <select
               value={selectedLevelId}
-              onChange={(e) => setSelectedLevelId(e.target.value ? Number(e.target.value) : '')}
+              onChange={(e) => handleLevelChange(e.target.value ? Number(e.target.value) : '')}
               className="w-full text-sm border-gray-300 rounded-lg p-2 bg-gray-50"
             >
               <option value="">كل المستويات</option>
@@ -315,8 +335,12 @@ export default function ClubFeesReportPage() {
               className="w-full text-sm border-gray-300 rounded-lg p-2 bg-gray-50"
             >
               <option value="">كل الأقسام</option>
-              {sections.map((s) => (
-                <option key={s.id} value={s.id}>{s.name}</option>
+              {(selectedLevelId ? sections.filter((s) => s.level_id === Number(selectedLevelId)) : sections).map((s) => (
+                <option key={s.id} value={s.id}>
+                  {selectedLevelId
+                    ? s.name
+                    : `${levels.find((l) => l.id === s.level_id)?.name || ''} - ${s.name}`}
+                </option>
               ))}
             </select>
           </div>
@@ -348,7 +372,11 @@ export default function ClubFeesReportPage() {
       </div>
 
       {/* Report Summary Cards */}
-      {summary && (
+      {loading ? (
+        <div className="p-4 bg-gray-50 rounded-xl border border-gray-200 text-center text-sm text-gray-500 animate-pulse no-print">
+          جاري تحميل بيانات التقرير للقسم المحدد...
+        </div>
+      ) : summary ? (
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 no-print">
           <div className="p-3 bg-white rounded-xl border border-gray-100 text-center">
             <span className="block text-xs text-gray-500">عدد التلاميذ بالمجموعة</span>
@@ -380,7 +408,7 @@ export default function ClubFeesReportPage() {
             <span className="text-xl font-bold text-orange-800">{summary.total_remaining.toFixed(2)} د.ت</span>
           </div>
         </div>
-      )}
+      ) : null}
 
       {/* Main Printable Content Container */}
       <div className="printable-area bg-white rounded-xl shadow-sm border border-gray-100 p-6 space-y-6">

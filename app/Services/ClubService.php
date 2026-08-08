@@ -502,9 +502,15 @@ class ClubService
         }
 
         if ($sectionId) {
-            $query->whereHas('student.enrollments', fn ($q) => $q->where('academic_year_id', $academicYearId)->where('section_id', $sectionId));
+            $query->where(function ($q) use ($academicYearId, $sectionId) {
+                $q->whereHas('enrollment', fn ($eq) => $eq->where('academic_year_id', $academicYearId)->where('section_id', $sectionId))
+                  ->orWhereHas('student.enrollments', fn ($sq) => $sq->where('academic_year_id', $academicYearId)->where('section_id', $sectionId));
+            });
         } elseif ($levelId) {
-            $query->whereHas('student.enrollments', fn ($q) => $q->where('academic_year_id', $academicYearId)->where('level_id', $levelId));
+            $query->where(function ($q) use ($academicYearId, $levelId) {
+                $q->whereHas('enrollment', fn ($eq) => $eq->where('academic_year_id', $academicYearId)->where('level_id', $levelId))
+                  ->orWhereHas('student.enrollments', fn ($sq) => $sq->where('academic_year_id', $academicYearId)->where('level_id', $levelId));
+            });
         }
 
         $records = $query->get();
