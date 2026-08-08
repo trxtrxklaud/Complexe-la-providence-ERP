@@ -1,37 +1,40 @@
 <?php
 
-use Illuminate\Support\Facades\Route;
-use App\Http\Controllers\AuthController;
-use App\Http\Controllers\DashboardController;
-use App\Http\Controllers\UserController;
-use App\Http\Controllers\StudentController;
-use App\Http\Controllers\PaymentController;
-use App\Http\Controllers\FeeTypeController;
-use App\Http\Controllers\CollectionController;
-use App\Http\Controllers\EmployeeController;
-use App\Http\Controllers\SalaryController;
 use App\Http\Controllers\AcademicYearController;
-use App\Http\Controllers\LevelController;
-use App\Http\Controllers\SectionController;
-use App\Http\Controllers\RosterController;
+use App\Http\Controllers\AuthController;
+use App\Http\Controllers\ClassroomRosterController;
+use App\Http\Controllers\ClubController;
+use App\Http\Controllers\ClubReportController;
+use App\Http\Controllers\ClubSubscriptionController;
+use App\Http\Controllers\CollectionController;
+use App\Http\Controllers\DashboardController;
+use App\Http\Controllers\DiscountController;
+use App\Http\Controllers\EmployeeAdvanceController;
+use App\Http\Controllers\EmployeeController;
 use App\Http\Controllers\ExpenseCategoryController;
 use App\Http\Controllers\ExpenseController;
-use App\Http\Controllers\EmployeeAdvanceController;
-use App\Http\Controllers\ClassroomRosterController;
+use App\Http\Controllers\FeeTypeController;
+use App\Http\Controllers\FeeWaiverController;
 use App\Http\Controllers\FinancialReportController;
+use App\Http\Controllers\LevelController;
+use App\Http\Controllers\PaymentController;
+use App\Http\Controllers\RosterController;
+use App\Http\Controllers\SalaryController;
+use App\Http\Controllers\SectionController;
+use App\Http\Controllers\StudentController;
 use App\Http\Controllers\TreasuryController;
 use App\Http\Controllers\TreasuryDaybookController;
 use App\Http\Controllers\TreasuryWithdrawalController;
 use App\Http\Controllers\UnpaidMonthlyReportController;
-use App\Http\Controllers\FeeWaiverController;
-use App\Http\Controllers\DiscountController;
+use App\Http\Controllers\UserController;
+use Illuminate\Support\Facades\Route;
 
 Route::middleware('throttle:5,1')->post('/login', [AuthController::class, 'login']);
 
 // كل المسارات المصادَق عليها تمرّ بـ active فيمنع أي حساب معطَل من الوصول.
 Route::middleware(['auth:sanctum', 'active', 'throttle:120,1'])->group(function () {
     Route::post('/logout', [AuthController::class, 'logout']);
-    Route::get('/user',    [AuthController::class, 'user']);
+    Route::get('/user', [AuthController::class, 'user']);
     Route::get('/dashboard', [DashboardController::class, 'index']);
 
     // قائمة السنوات الدراسية — قراءة فقط تُستعمل في عدة شاشات، متاحة لأي مستخدِم مُفعّل.
@@ -78,7 +81,7 @@ Route::middleware(['auth:sanctum', 'active', 'throttle:120,1'])->group(function 
 
     // التقارير المالية — قراءة فقط، وكلها تُبنى على الدفتر النقدي المركزي
     Route::middleware('permission:view_reports')->group(function () {
-        Route::get('/reports/net-income',         [FinancialReportController::class, 'netIncome']);
+        Route::get('/reports/net-income', [FinancialReportController::class, 'netIncome']);
 
         // الدخل الصافي مجمّعاً: granularity=month|year
         // مسار مستقل لا معامِل داخل net-income، حتّى لا يبتلع مسارٌ ذو {parameter}
@@ -86,13 +89,13 @@ Route::middleware(['auth:sanctum', 'active', 'throttle:120,1'])->group(function 
         Route::get('/reports/net-income/periods', [FinancialReportController::class, 'netIncomePeriods']);
 
         // كشف الخزينة اليومي: من تاريخ مختار إلى اليوم، بطاقة لكل يوم مع التراكمي.
-        Route::get('/reports/treasury-daybook',   [TreasuryDaybookController::class, 'index']);
+        Route::get('/reports/treasury-daybook', [TreasuryDaybookController::class, 'index']);
 
-        Route::get('/reports/income-by-date',     [FinancialReportController::class, 'incomeByDate']);
-        Route::get('/reports/expenses',           [FinancialReportController::class, 'expenses']);
-        Route::get('/reports/revenue/students',   [FinancialReportController::class, 'revenueByStudent']);
+        Route::get('/reports/income-by-date', [FinancialReportController::class, 'incomeByDate']);
+        Route::get('/reports/expenses', [FinancialReportController::class, 'expenses']);
+        Route::get('/reports/revenue/students', [FinancialReportController::class, 'revenueByStudent']);
         Route::get('/reports/revenue/classrooms', [FinancialReportController::class, 'revenueByClassroom']);
-        Route::get('/reports/revenue/years',      [FinancialReportController::class, 'revenueByYear']);
+        Route::get('/reports/revenue/years', [FinancialReportController::class, 'revenueByYear']);
         Route::get('/reports/unpaid-monthly/options', [UnpaidMonthlyReportController::class, 'options']);
         Route::get('/reports/unpaid-monthly', [UnpaidMonthlyReportController::class, 'index']);
 
@@ -103,7 +106,7 @@ Route::middleware(['auth:sanctum', 'active', 'throttle:120,1'])->group(function 
 
         // صفحات التفصيل: قسم واحد أو تلميذ واحد
         Route::get('/reports/revenue/classrooms/{section}', [FinancialReportController::class, 'classroomDetail']);
-        Route::get('/reports/revenue/students/{student}',   [FinancialReportController::class, 'studentDetail']);
+        Route::get('/reports/revenue/students/{student}', [FinancialReportController::class, 'studentDetail']);
     });
 
     // User Management
@@ -141,8 +144,10 @@ Route::middleware(['auth:sanctum', 'active', 'throttle:120,1'])->group(function 
         Route::get('/students/search-options', [StudentController::class, 'searchOptions']);
         Route::get('/students/transfer-roster', [StudentController::class, 'transferRoster']);
         Route::post('/students/transfer', [StudentController::class, 'transfer']);
+        Route::get('/students/{student}/photo', [StudentController::class, 'photo']);
+
         Route::apiResource('/students', StudentController::class);
-        Route::post('/students/{student}/enroll',   [StudentController::class, 'enroll']);
+        Route::post('/students/{student}/enroll', [StudentController::class, 'enroll']);
         Route::post('/students/{student}/reenroll', [StudentController::class, 'reenroll']);
 
         // قبض معلوم الترسيم لتلميذ ترسيمه قائم في السنة النشطة (ترحيل الترقية).
@@ -150,9 +155,9 @@ Route::middleware(['auth:sanctum', 'active', 'throttle:120,1'])->group(function 
         // فلا يُضعف حارس ازدواج الترسيم ولا يخلط مسؤوليتين في مسار واحد.
         Route::post('/students/{student}/registration-payment', [StudentController::class, 'registrationPayment']);
 
-        Route::get('/students/{student}/balance',   [PaymentController::class, 'studentBalance']);
-        Route::get('/students/{student}/fees',      [PaymentController::class, 'studentFees']);
-        Route::get('/students/{student}/payments',  [StudentController::class, 'paymentHistory']);
+        Route::get('/students/{student}/balance', [PaymentController::class, 'studentBalance']);
+        Route::get('/students/{student}/fees', [PaymentController::class, 'studentFees']);
+        Route::get('/students/{student}/payments', [StudentController::class, 'paymentHistory']);
     });
 
     // Payments
@@ -173,13 +178,28 @@ Route::middleware(['auth:sanctum', 'active', 'throttle:120,1'])->group(function 
     // لا يُكتب أي سطر في الخزينة: التنازل لا يحرّك مليماً.
     Route::middleware('permission:waive_fees')->group(function () {
         Route::get('/student-fees/{studentFee}/waivers', [FeeWaiverController::class, 'index']);
-        Route::post('/student-fees/{studentFee}/waive',  [FeeWaiverController::class, 'store']);
-        Route::post('/fee-waivers/{waiver}/cancel',      [FeeWaiverController::class, 'cancel']);
+        Route::post('/student-fees/{studentFee}/waive', [FeeWaiverController::class, 'store']);
+        Route::post('/fee-waivers/{waiver}/cancel', [FeeWaiverController::class, 'cancel']);
 
         // التخفيض السنوي — سعر مخفّض لا دَين. يتبع صلاحية التنازل نفسها:
         // كلاهما يُنقص ما تجنيه المدرسة فلا يملكه القابض. لا سطر في الخزينة.
-        Route::get('/enrollments/{enrollment}/discount',  [DiscountController::class, 'show']);
+        Route::get('/enrollments/{enrollment}/discount', [DiscountController::class, 'show']);
         Route::post('/enrollments/{enrollment}/discount', [DiscountController::class, 'store']);
-        Route::post('/discounts/{discount}/cancel',       [DiscountController::class, 'cancel']);
+        Route::post('/discounts/{discount}/cancel', [DiscountController::class, 'cancel']);
+    });
+
+    // النوادي المدرسية واشتراكاتها
+    Route::middleware('permission:manage_students')->group(function () {
+        Route::apiResource('/clubs', ClubController::class);
+        Route::apiResource('/club-subscriptions', ClubSubscriptionController::class)->except(['update']);
+    });
+
+    // تقارير واستخلاص معلوم النوادي
+    Route::middleware('permission:manage_payments')->group(function () {
+        Route::get('/reports/club-fees', [ClubReportController::class, 'report']);
+        Route::post('/reports/club-fees/generate', [ClubReportController::class, 'generateMonth']);
+        Route::post('/club-monthly-fees/{monthlyFee}/collect', [ClubReportController::class, 'collectPayment']);
+        Route::post('/club-monthly-fees/{monthlyFee}/cancel', [ClubReportController::class, 'cancelPayment']);
+        Route::delete('/club-monthly-fees/{monthlyFee}', [ClubReportController::class, 'destroy']);
     });
 });

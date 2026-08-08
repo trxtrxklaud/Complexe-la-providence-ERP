@@ -88,3 +88,24 @@ Separating the annual discount (التخفيض) from arrears (المتخلّد).
 - **Phase 7 — Tests:** `DiscountServiceTest`, feature `DiscountTest`.
 
 Verification so far: `php artisan test` 67 passing; `npm run lint` clean; `npm run build` OK.
+
+## Security Closure Progress — 2026-08-08
+
+- Canonical copy: `C:\laragon\www\providence`
+- Branch: `audit/security-closure-2026-08-08`
+- Baseline completed.
+- Read-only security audit completed: no CRITICAL findings.
+- HIGH finding fixed: dashboard treasury exposure.
+- `DashboardService` conditionally returns `financial_summary`, `cash`, and `treasury_balance`.
+- Financial access uses existing `manage_treasury` OR `view_reports` permissions, with configured super-role bypass.
+- Cashier/restricted users do not receive those three keys server-side.
+- `outstanding_balance` intentionally remains available for collection workflows.
+- Verification: `php artisan test --filter=DashboardTest` — 4 tests passed, 18 assertions.
+- Next task: review security headers separately.
+- Unrelated Discounts UI changes must remain excluded.
+- CRIT-001 closed: Student deletion blocked when enrollments, payments, or clubSubscriptions exist (`app/Http/Controllers/StudentController.php`).
+- Focused test: `tests/Feature/StudentDeleteProtectionTest.php` (3 passed, 10 assertions).
+- No migrations changed.
+- CRIT-002 closed: Employee deletion blocked when salaries, advances, or repayments exist (`app/Http/Controllers/EmployeeController.php`, `app/Models/Employee.php`).
+- Focused test: `tests/Feature/EmployeeDeleteProtectionTest.php` (4 passed, 15 assertions).
+- No migrations changed.

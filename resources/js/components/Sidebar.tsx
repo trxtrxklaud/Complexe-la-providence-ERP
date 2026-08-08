@@ -1,7 +1,7 @@
 import { NavLink, useNavigate, useLocation } from 'react-router-dom';
 import {
     LayoutDashboard, Users, LogOut, GraduationCap, Tags, Layers,
-    ClipboardList, History, Wallet, Receipt, Landmark, TrendingUp,
+    ClipboardList, History, Wallet, Receipt, Landmark, TrendingUp, BadgePercent, Award,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { setToken } from '../api/http';
@@ -167,6 +167,26 @@ export function Sidebar() {
                     </NavLink>
                 )}
 
+                {canAny('manage_payments', 'view_reports') && (
+                    <NavLink
+                        to="/reports/club-fees"
+                        className={({ isActive }) => linkClass(isActive || startsWith('/reports/club-fees'))}
+                    >
+                        <Award size={20} />
+                        <span>معلوم النوادي</span>
+                    </NavLink>
+                )}
+
+                {hasPermission('manage_students') && (
+                    <NavLink
+                        to="/clubs"
+                        className={({ isActive }) => linkClass(isActive || startsWith('/clubs'))}
+                    >
+                        <Users size={20} />
+                        <span>إدارة النوادي</span>
+                    </NavLink>
+                )}
+
                 {hasPermission('view_reports') && (
                     <NavLink
                         to="/income/unpaid-monthly"
@@ -225,6 +245,16 @@ export function Sidebar() {
                         <span>الوصولات الملغاة</span>
                     </NavLink>
                 )}
+
+{hasPermission('waive_fees') && (
+<NavLink
+to='/discounts'
+className={({ isActive }) => linkClass(isActive || startsWith('/discounts'))}
+>
+<BadgePercent size={20} />
+<span>التخفيضات</span>
+</NavLink>
+)}
 
                 {/* ─── الموارد البشرية ─── */}
                 {showHr && (

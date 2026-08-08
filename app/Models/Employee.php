@@ -28,6 +28,11 @@ class Employee extends Model
         return $this->hasMany(EmployeeAdvance::class);
     }
 
+    public function repayments(): HasMany
+    {
+        return $this->hasMany(EmployeeAdvanceRepayment::class);
+    }
+
     public function getFullNameAttribute(): string
     {
         return trim($this->first_name . ' ' . $this->last_name);

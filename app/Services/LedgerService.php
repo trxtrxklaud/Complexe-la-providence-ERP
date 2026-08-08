@@ -220,6 +220,34 @@ class LedgerService
     }
 
     /**
+     * خلاص معلوم نادي تلميذ → مداخيل في بند معاليم النوادي.
+     */
+    public function recordClubFeePayment(\App\Models\ClubMonthlyFee $monthlyFee): void
+    {
+        if ($monthlyFee->cancelled_at !== null || (float) $monthlyFee->amount_paid <= 0) {
+            $this->cancelFor($monthlyFee, $monthlyFee->cancelled_by, $monthlyFee->cancellation_reason);
+
+            return;
+        }
+
+        $monthlyFee->loadMissing(['student', 'club']);
+
+        $studentName = trim(($monthlyFee->student?->first_name ?? '') . ' ' . ($monthlyFee->student?->last_name ?? ''));
+        $description = 'معلوم نادي ' . ($monthlyFee->club?->name ?? '') . ': ' . $studentName . ' (' . $monthlyFee->month . ')';
+
+        $this->post(
+            source: $monthlyFee,
+            category: CashTransaction::CATEGORY_CLUB_FEE,
+            direction: CashTransaction::DIRECTION_IN,
+            amount: (float) $monthlyFee->amount_paid,
+            date: $monthlyFee->paid_at?->toDateString() ?? now()->toDateString(),
+            academicYearId: $monthlyFee->academic_year_id,
+            description: $description,
+            createdBy: $monthlyFee->created_by,
+        );
+    }
+
+    /**
      * تسبقة أو سلفة إطار → خروج نقدي في بند مستقل عن الأجور.
      *
      * البند في الدفتر واحد للنوعين لأنّ الأثر النقدي واحد، لكن البيان يفرق بينهما:

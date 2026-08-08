@@ -33,6 +33,16 @@ function dinar(value: number | null | undefined): string {
   return `${Number(value ?? 0).toFixed(3)} د`;
 }
 
+/** قيمة نقدية معزولة الاتجاه: إشارة السالب تلتصق بالرقم يساراً دائماً، والقيمة السالبة تُحمرّ. */
+function Money({ value }: { value: number | null | undefined }) {
+  const negative = Number(value ?? 0) < 0;
+  return (
+    <bdi dir='ltr' className={negative ? 'text-[#A03434]' : undefined}>
+      {dinar(value)}
+    </bdi>
+  );
+}
+
 function AnalogClock({ size = 150 }: { size?: number }) {
   const [now, setNow] = useState(new Date());
 
@@ -185,31 +195,31 @@ export default function Dashboard() {
 
       {!loading && data && (
         <>
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
             <KpiCard
               label="مداخيل اليوم"
-              value={dinar(today?.income)}
+              value={<Money value={today?.income} />}
               icon={TrendingUp}
               tint={C.sage}
               iconColor={C.forest}
             />
             <KpiCard
               label="مصاريف اليوم"
-              value={dinar(today?.expenses)}
+              value={<Money value={today?.expenses} />}
               icon={TrendingDown}
               tint={C.rose}
               iconColor="#A46E67"
             />
             <KpiCard
               label="الدخل الصافي اليوم"
-              value={dinar(today?.net_income)}
+              value={<Money value={today?.net_income} />}
               icon={ArrowDownCircle}
               tint={C.beige}
               iconColor="#8A7C57"
             />
             <KpiCard
               label="رصيد الخزينة"
-              value={dinar(data.treasury_balance)}
+              value={<Money value={data.treasury_balance} />}
               icon={Landmark}
               tint={C.blush}
               iconColor="#9A6B7E"
@@ -217,7 +227,7 @@ export default function Dashboard() {
             />
           </div>
 
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
             <KpiCard
               label="إجمالي التلاميذ"
               value={data.total_students}
@@ -228,9 +238,10 @@ export default function Dashboard() {
             />
             <KpiCard label="الإناث" value={data.total_females} icon={UserRound} tint={C.rose} iconColor="#A46E67" />
             <KpiCard label="الذكور" value={data.total_males} icon={Users} tint={C.beige} iconColor="#8A7C57" />
+        <KpiCard label='غير محدّد' value={data.total_unspecified_gender} icon={UserRound} tint={C.beige} iconColor={C.muted} hint='لم يُسجَّل الجنس في الترحيل القديم' />
             <KpiCard
               label="المتخلَّد"
-              value={dinar(data.outstanding_balance)}
+              value={<Money value={data.outstanding_balance} />}
               icon={AlertCircle}
               tint={C.blush}
               iconColor="#9A6B7E"
@@ -246,19 +257,19 @@ export default function Dashboard() {
               <div className="space-y-2 text-sm">
                 <div className="flex items-center justify-between">
                   <span style={{ color: C.muted }}>مجموع المداخيل</span>
-                  <strong style={{ color: C.forest }}>{dinar(month?.income)}</strong>
+                  <strong style={{ color: C.forest }}><Money value={month?.income} /></strong>
                 </div>
                 <div className="flex items-center justify-between">
                   <span style={{ color: C.muted }}>مجموع المصاريف</span>
-                  <strong style={{ color: C.error }}>{dinar(month?.expenses)}</strong>
+                  <strong style={{ color: C.error }}><Money value={month?.expenses} /></strong>
                 </div>
                 <div className="flex items-center justify-between">
                   <span style={{ color: C.muted }}>الدخل الصافي</span>
-                  <strong style={{ color: C.ink }}>{dinar(month?.net_income)}</strong>
+                  <strong style={{ color: C.ink }}><Money value={month?.net_income} /></strong>
                 </div>
                 <div className="flex items-center justify-between">
                   <span style={{ color: C.muted }}>السحوبات</span>
-                  <strong style={{ color: C.muted }}>{dinar(month?.withdrawals)}</strong>
+                  <strong style={{ color: C.muted }}><Money value={month?.withdrawals} /></strong>
                 </div>
               </div>
               <p className="mt-4 text-xs" style={{ color: C.muted }}>

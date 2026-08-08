@@ -64,24 +64,24 @@ class SalaryController extends Controller
     public function store(Request $request): JsonResponse
     {
         $data = $request->validate([
-            'employee_id'      => ['required', 'integer', 'exists:employees,id'],
+            'employee_id' => ['required', 'integer', 'exists:employees,id'],
             'academic_year_id' => ['required', 'integer', 'exists:academic_years,id'],
-            'gross_amount'     => ['nullable', 'numeric', 'min:0.01'],
-            'amount'           => ['nullable', 'numeric', 'min:0.01'],
-            'advance_ids'      => ['nullable', 'array'],
-            'advance_ids.*'    => ['integer', 'exists:employee_advances,id'],
+            'gross_amount' => ['nullable', 'numeric', 'min:0.01'],
+            'amount' => ['nullable', 'numeric', 'min:0.01'],
+            'advance_ids' => ['nullable', 'array'],
+            'advance_ids.*' => ['integer', 'exists:employee_advances,id'],
 
             // أقساط السلف: لكل سلفة مبلغ مستقلّ يختاره القابض.
-            'loan_deductions'          => ['nullable', 'array'],
-            'loan_deductions.*.id'     => ['required', 'integer', 'exists:employee_advances,id'],
+            'loan_deductions' => ['nullable', 'array'],
+            'loan_deductions.*.id' => ['required', 'integer', 'exists:employee_advances,id'],
             'loan_deductions.*.amount' => ['required', 'numeric', 'min:0.01'],
 
-            'period_from'      => ['required', 'date'],
-            'period_to'        => ['required', 'date', 'after_or_equal:period_from'],
-            'paid_at'          => ['nullable', 'date'],
-            'method'           => ['nullable', 'string', 'max:50'],
-            'reference'        => ['nullable', 'string', 'max:100'],
-            'notes'            => ['nullable', 'string'],
+            'period_from' => ['required', 'date'],
+            'period_to' => ['required', 'date', 'after_or_equal:period_from'],
+            'paid_at' => ['nullable', 'date'],
+            'method' => ['nullable', 'string', 'max:50'],
+            'reference' => ['nullable', 'string', 'max:100'],
+            'notes' => ['nullable', 'string'],
         ]);
 
         $gross = (float) ($data['gross_amount'] ?? $data['amount'] ?? 0);
@@ -94,7 +94,7 @@ class SalaryController extends Controller
 
         $loanRows = collect($data['loan_deductions'] ?? [])
             ->map(fn (array $row) => [
-                'id'     => (int) $row['id'],
+                'id' => (int) $row['id'],
                 'amount' => round((float) $row['amount'], 2),
             ])
             ->values();
@@ -109,8 +109,8 @@ class SalaryController extends Controller
 
         try {
             $salary = DB::transaction(function () use ($data, $gross, $advanceIds, $loanRows, $userId) {
-                $advances  = collect();
-                $loans     = collect();
+                $advances = collect();
+                $loans = collect();
                 $deduction = 0.0;
 
                 if ($advanceIds !== []) {
@@ -128,13 +128,13 @@ class SalaryController extends Controller
 
                     foreach ($advances as $advance) {
                         if ($advance->settled_by_salary_id !== null) {
-                            throw new RuntimeException('التسبقة رقم ' . $advance->id . ' مخصومة من راتب آخر');
+                            throw new RuntimeException('التسبقة رقم '.$advance->id.' مخصومة من راتب آخر');
                         }
 
                         $remaining = round((float) $advance->amount - (float) $advance->settled_amount, 2);
 
                         if ($remaining <= 0) {
-                            throw new RuntimeException('التسبقة رقم ' . $advance->id . ' مخلّصة مسبقاً');
+                            throw new RuntimeException('التسبقة رقم '.$advance->id.' مخلّصة مسبقاً');
                         }
 
                         $deduction += $remaining;
@@ -159,16 +159,16 @@ class SalaryController extends Controller
 
                         // المتبقّي يُشتقّ من الردّيات القائمة لا من settled_amount المخزّن،
                         // فالمخزّن قد يكون قديماً إن أُلغي ردّ في نفس اللحظة.
-                        $repaid    = (float) $loan->repayments()->whereNull('cancelled_at')->sum('amount');
+                        $repaid = (float) $loan->repayments()->whereNull('cancelled_at')->sum('amount');
                         $remaining = round((float) $loan->amount - $repaid, 2);
 
                         if ($remaining <= 0) {
-                            throw new RuntimeException('السلفة رقم ' . $loan->id . ' مخلّصة بالكامل');
+                            throw new RuntimeException('السلفة رقم '.$loan->id.' مخلّصة بالكامل');
                         }
 
                         if ($row['amount'] > $remaining) {
                             throw new RuntimeException(
-                                'قسط السلفة رقم ' . $loan->id . ' (' . number_format($row['amount'], 2, '.', '') . ') يتجاوز المتبقّي منها (' . number_format($remaining, 2, '.', '') . ')'
+                                'قسط السلفة رقم '.$loan->id.' ('.number_format($row['amount'], 2, '.', '').') يتجاوز المتبقّي منها ('.number_format($remaining, 2, '.', '').')'
                             );
                         }
 
@@ -177,33 +177,33 @@ class SalaryController extends Controller
                 }
 
                 $deduction = round($deduction, 2);
-                $net       = round($gross - $deduction, 2);
+                $net = round($gross - $deduction, 2);
 
                 if ($net < 0) {
                     throw new RuntimeException(
-                        'مجموع الخصومات (' . number_format($deduction, 2, '.', '') . ') يتجاوز الراتب الخام (' . number_format($gross, 2, '.', '') . ')'
+                        'مجموع الخصومات ('.number_format($deduction, 2, '.', '').') يتجاوز الراتب الخام ('.number_format($gross, 2, '.', '').')'
                     );
                 }
 
                 $salary = Salary::create([
-                    'employee_id'       => $data['employee_id'],
-                    'academic_year_id'  => $data['academic_year_id'],
-                    'gross_amount'      => number_format($gross, 2, '.', ''),
+                    'employee_id' => $data['employee_id'],
+                    'academic_year_id' => $data['academic_year_id'],
+                    'gross_amount' => number_format($gross, 2, '.', ''),
                     'advance_deduction' => number_format($deduction, 2, '.', ''),
-                    'amount'            => number_format($net, 2, '.', ''),
-                    'period_from'       => $data['period_from'],
-                    'period_to'         => $data['period_to'],
-                    'paid_at'           => $data['paid_at']   ?? null,
-                    'method'            => $data['method']    ?? null,
-                    'reference'         => $data['reference'] ?? null,
-                    'notes'             => $data['notes']     ?? null,
-                    'created_by'        => $userId,
+                    'amount' => number_format($net, 2, '.', ''),
+                    'period_from' => $data['period_from'],
+                    'period_to' => $data['period_to'],
+                    'paid_at' => $data['paid_at'] ?? null,
+                    'method' => $data['method'] ?? null,
+                    'reference' => $data['reference'] ?? null,
+                    'notes' => $data['notes'] ?? null,
+                    'created_by' => $userId,
                 ]);
 
                 foreach ($advances as $advance) {
                     $advance->update([
-                        'settled_amount'       => $advance->amount,
-                        'status'               => EmployeeAdvance::STATUS_SETTLED,
+                        'settled_amount' => $advance->amount,
+                        'status' => EmployeeAdvance::STATUS_SETTLED,
                         'settled_by_salary_id' => $salary->id,
                     ]);
                 }
@@ -215,16 +215,16 @@ class SalaryController extends Controller
 
                     EmployeeAdvanceRepayment::create([
                         'employee_advance_id' => $loan->id,
-                        'employee_id'         => $loan->employee_id,
+                        'employee_id' => $loan->employee_id,
                         // السلف القديمة قد تحمل سنة فارغة؛ سنة الراتب تسدّ الفراغ
                         // فلا يسقط القسط خارج كل التقارير السنوية.
-                        'academic_year_id'    => $loan->academic_year_id ?? $data['academic_year_id'],
-                        'amount'              => number_format($row['amount'], 2, '.', ''),
-                        'repaid_at'           => $repaidAt,
-                        'method'              => EmployeeAdvanceRepayment::METHOD_SALARY_DEDUCTION,
-                        'salary_id'           => $salary->id,
-                        'notes'               => 'قسط مخصوم ضمن الراتب رقم ' . $salary->id,
-                        'created_by'          => $userId,
+                        'academic_year_id' => $loan->academic_year_id ?? $data['academic_year_id'],
+                        'amount' => number_format($row['amount'], 2, '.', ''),
+                        'repaid_at' => $repaidAt,
+                        'method' => EmployeeAdvanceRepayment::METHOD_SALARY_DEDUCTION,
+                        'salary_id' => $salary->id,
+                        'notes' => 'قسط مخصوم ضمن الراتب رقم '.$salary->id,
+                        'created_by' => $userId,
                     ]);
 
                     // لا سطر في الدفتر: الخصم من الراتب لا يُدخل مالاً إلى الدرج،
@@ -281,6 +281,16 @@ class SalaryController extends Controller
             ], 422);
         }
 
+        // [M1] راتب عليه خصومات لا يُنقل إلى إطار آخر
+        if ($request->filled('employee_id')) {
+            $sameEmployee = (int) $request->input('employee_id') === (int) $salary->employee_id;
+            if ($sameEmployee === false) {
+                $hasLinkedDeductions = $salary->settledAdvances()->exists() || EmployeeAdvanceRepayment::where('salary_id', $salary->id)->whereNull('cancelled_at')->exists();
+                if ($hasLinkedDeductions) {
+                    return response()->json(['message' => 'لا يمكن نقل راتب يتضمن خصومات إلى إطار آخر؛ ألغِ الراتب ثم سجّله من جديد'], 422);
+                }
+            }
+        }
         $data = $request->validate([
             'employee_id' => ['sometimes', 'integer', 'exists:employees,id'],
             'academic_year_id' => ['sometimes', 'integer', 'exists:academic_years,id'],
@@ -336,8 +346,8 @@ class SalaryController extends Controller
 
         DB::transaction(function () use ($salary, $data, $userId) {
             $salary->update([
-                'cancelled_at'        => now(),
-                'cancelled_by'        => $userId,
+                'cancelled_at' => now(),
+                'cancelled_by' => $userId,
                 'cancellation_reason' => $data['reason'],
             ]);
 
@@ -352,8 +362,8 @@ class SalaryController extends Controller
 
                 $advance->update([
                     'settled_by_salary_id' => null,
-                    'settled_amount'       => number_format(round($repaid, 2), 2, '.', ''),
-                    'status'               => $repaid <= 0
+                    'settled_amount' => number_format(round($repaid, 2), 2, '.', ''),
+                    'status' => $repaid <= 0
                         ? EmployeeAdvance::STATUS_PENDING
                         : ($repaid >= $amount ? EmployeeAdvance::STATUS_SETTLED : EmployeeAdvance::STATUS_PARTIAL),
                 ]);
@@ -367,9 +377,9 @@ class SalaryController extends Controller
 
             foreach ($deductedRepayments as $repayment) {
                 $repayment->update([
-                    'cancelled_at'        => now(),
-                    'cancelled_by'        => $userId,
-                    'cancellation_reason' => 'إلغاء الراتب رقم ' . $salary->id . ': ' . $data['reason'],
+                    'cancelled_at' => now(),
+                    'cancelled_by' => $userId,
+                    'cancellation_reason' => 'إلغاء الراتب رقم '.$salary->id.': '.$data['reason'],
                 ]);
 
                 $repayment->advance?->recalculateSettlement();

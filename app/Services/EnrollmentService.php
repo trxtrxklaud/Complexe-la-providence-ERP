@@ -32,7 +32,7 @@ class EnrollmentService
 
             // الصورة تُخزَّن داخل الـ transaction — لو فشل أي شيء بعدها نحذفها
             if ($photoFile) {
-                $path = $photoFile->store('students/photos', 'public');
+                $path = $photoFile->store('students/photos', 'local');
                 $student->update(['photo' => $path]);
             }
 

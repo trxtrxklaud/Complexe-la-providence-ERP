@@ -54,6 +54,16 @@ class EmployeeController extends Controller
 
     public function destroy(Employee $employee): JsonResponse
     {
+        $hasRelatedRecords = $employee->salaries()->exists()
+            || $employee->advances()->exists()
+            || $employee->repayments()->exists();
+
+        if ($hasRelatedRecords) {
+            return response()->json([
+                'message' => 'لا يمكن حذف موظف لديه رواتب أو سلف أو سجلات مالية مرتبطة',
+            ], 422);
+        }
+
         $employee->delete();
         return response()->json(['message' => 'تم الحذف']);
     }

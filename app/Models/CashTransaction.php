@@ -20,6 +20,7 @@ class CashTransaction extends Model
     // بنود المداخيل
     public const CATEGORY_REGISTRATION_FEE   = 'registration_fee';   // معاليم التسجيل
     public const CATEGORY_MONTHLY_FEE        = 'monthly_fee';        // معاليم الأشهر
+    public const CATEGORY_CLUB_FEE           = 'club_fee';           // معاليم النوادي
     public const CATEGORY_INSTALLMENT        = 'installment';        // خلاص أقساط
     public const CATEGORY_PRODUCT_SALE       = 'product_sale';       // بيع المنتجات
     public const CATEGORY_ADVANCE_REPAYMENT  = 'advance_repayment';  // خلاص سلفة
@@ -36,6 +37,7 @@ class CashTransaction extends Model
     public const INCOME_CATEGORIES = [
         self::CATEGORY_REGISTRATION_FEE,
         self::CATEGORY_MONTHLY_FEE,
+        self::CATEGORY_CLUB_FEE,
         self::CATEGORY_INSTALLMENT,
         self::CATEGORY_PRODUCT_SALE,
         self::CATEGORY_ADVANCE_REPAYMENT,
@@ -52,6 +54,7 @@ class CashTransaction extends Model
     public const CATEGORY_LABELS = [
         self::CATEGORY_REGISTRATION_FEE  => 'معاليم التسجيل',
         self::CATEGORY_MONTHLY_FEE       => 'معاليم الأشهر',
+        self::CATEGORY_CLUB_FEE          => 'معاليم النوادي',
         self::CATEGORY_INSTALLMENT       => 'خلاص أقساط',
         self::CATEGORY_PRODUCT_SALE      => 'بيع المنتجات',
         self::CATEGORY_ADVANCE_REPAYMENT => 'خلاص سلفة',
