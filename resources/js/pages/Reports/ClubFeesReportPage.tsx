@@ -111,6 +111,7 @@ export default function ClubFeesReportPage() {
         academic_year_id: Number(selectedYearId),
         month: selectedMonth,
         club_id: selectedClubId ? Number(selectedClubId) : undefined,
+        section_id: selectedSectionId ? Number(selectedSectionId) : undefined,
       });
       setSuccessMsg(res.message);
       await loadReport();

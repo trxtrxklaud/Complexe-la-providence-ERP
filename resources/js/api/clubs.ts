@@ -160,6 +160,7 @@ export function generateClubMonthFees(data: {
   academic_year_id: number;
   month: string;
   club_id?: number;
+  section_id?: number;
 }): Promise<{ message: string; result: { month: string; created: number; skipped: number } }> {
   return apiFetch('/reports/club-fees/generate', { method: 'POST', body: data });
 }

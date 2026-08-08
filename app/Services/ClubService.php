@@ -161,54 +161,133 @@ class ClubService
     /**
      * توليد سجلات الشهر لتلاميذ النوادي المسجلين وغير المستبعدين.
      */
-    public function generateMonthFees(int $academicYearId, string $month, ?int $clubId = null, ?int $userId = null): array
-    {
-        return DB::transaction(function () use ($academicYearId, $month, $clubId, $userId) {
-            $query = ClubSubscription::with(['club', 'enrollment'])
-                ->where('academic_year_id', $academicYearId)
-                ->where('status', 'active')
-                ->whereNull('excluded_at')
-                ->whereHas('club', fn ($q) => $q->where('is_active', true));
-
-            if ($clubId) {
-                $query->where('club_id', $clubId);
-            }
-
-            $subscriptions = $query->get();
-
+    public function generateMonthFees(
+        int $academicYearId,
+        string $month,
+        ?int $clubId = null,
+        ?int $sectionId = null,
+        ?int $userId = null
+    ): array {
+        return DB::transaction(function () use ($academicYearId, $month, $clubId, $sectionId, $userId) {
             $createdCount = 0;
             $skippedCount = 0;
 
-            foreach ($subscriptions as $sub) {
-                $amountDue = $sub->monthly_fee_override !== null
-                    ? (float) $sub->monthly_fee_override
-                    : (float) ($sub->club?->monthly_fee ?? 0);
-
-                $fee = ClubMonthlyFee::where('student_id', $sub->student_id)
-                    ->where('club_id', $sub->club_id)
-                    ->where('month', $month)
-                    ->where('academic_year_id', $academicYearId)
-                    ->first();
-
-                if ($fee) {
-                    $skippedCount++;
-                    continue;
+            if ($clubId) {
+                $club = Club::with('levels')->findOrFail($clubId);
+                if (! $club->is_active) {
+                    throw new InvalidArgumentException('هذا النادي غير نَشِط حالياً');
                 }
 
-                ClubMonthlyFee::create([
-                    'student_id' => $sub->student_id,
-                    'club_id' => $sub->club_id,
-                    'academic_year_id' => $academicYearId,
-                    'enrollment_id' => $sub->enrollment_id,
-                    'club_subscription_id' => $sub->id,
-                    'month' => $month,
-                    'amount_due' => number_format($amountDue, 2, '.', ''),
-                    'amount_paid' => '0.00',
-                    'status' => ClubMonthlyFee::STATUS_UNPAID,
-                    'created_by' => $userId,
-                ]);
+                $allowedLevels = $club->levels->pluck('id')->all();
 
-                $createdCount++;
+                $enrollmentsQuery = Enrollment::where('academic_year_id', $academicYearId)
+                    ->where('status', 'active');
+
+                if ($sectionId) {
+                    $enrollmentsQuery->where('section_id', $sectionId);
+                }
+
+                if ($allowedLevels !== []) {
+                    $enrollmentsQuery->whereIn('level_id', $allowedLevels);
+                }
+
+                $enrollments = $enrollmentsQuery->get();
+
+                foreach ($enrollments as $enr) {
+                    $sub = ClubSubscription::where('student_id', $enr->student_id)
+                        ->where('club_id', $clubId)
+                        ->where('academic_year_id', $academicYearId)
+                        ->first();
+
+                    if ($sub && $sub->excluded_at !== null) {
+                        continue;
+                    }
+
+                    if (! $sub) {
+                        $sub = ClubSubscription::create([
+                            'student_id' => $enr->student_id,
+                            'club_id' => $clubId,
+                            'academic_year_id' => $academicYearId,
+                            'enrollment_id' => $enr->id,
+                            'start_date' => now()->toDateString(),
+                            'status' => 'active',
+                        ]);
+                    }
+
+                    $amountDue = $sub->monthly_fee_override !== null
+                        ? (float) $sub->monthly_fee_override
+                        : (float) $club->monthly_fee;
+
+                    $fee = ClubMonthlyFee::where('student_id', $enr->student_id)
+                        ->where('club_id', $clubId)
+                        ->where('month', $month)
+                        ->where('academic_year_id', $academicYearId)
+                        ->first();
+
+                    if ($fee) {
+                        $skippedCount++;
+                        continue;
+                    }
+
+                    ClubMonthlyFee::create([
+                        'student_id' => $enr->student_id,
+                        'club_id' => $clubId,
+                        'academic_year_id' => $academicYearId,
+                        'enrollment_id' => $enr->id,
+                        'club_subscription_id' => $sub->id,
+                        'month' => $month,
+                        'amount_due' => number_format($amountDue, 2, '.', ''),
+                        'amount_paid' => '0.00',
+                        'status' => ClubMonthlyFee::STATUS_UNPAID,
+                        'created_by' => $userId,
+                    ]);
+
+                    $createdCount++;
+                }
+            } else {
+                $query = ClubSubscription::with(['club', 'enrollment'])
+                    ->where('academic_year_id', $academicYearId)
+                    ->where('status', 'active')
+                    ->whereNull('excluded_at')
+                    ->whereHas('club', fn ($q) => $q->where('is_active', true));
+
+                if ($sectionId) {
+                    $query->whereHas('enrollment', fn ($q) => $q->where('section_id', $sectionId));
+                }
+
+                $subscriptions = $query->get();
+
+                foreach ($subscriptions as $sub) {
+                    $amountDue = $sub->monthly_fee_override !== null
+                        ? (float) $sub->monthly_fee_override
+                        : (float) ($sub->club?->monthly_fee ?? 0);
+
+                    $fee = ClubMonthlyFee::where('student_id', $sub->student_id)
+                        ->where('club_id', $sub->club_id)
+                        ->where('month', $month)
+                        ->where('academic_year_id', $academicYearId)
+                        ->first();
+
+                    if ($fee) {
+                        $skippedCount++;
+                        continue;
+                    }
+
+                    ClubMonthlyFee::create([
+                        'student_id' => $sub->student_id,
+                        'club_id' => $sub->club_id,
+                        'academic_year_id' => $academicYearId,
+                        'enrollment_id' => $sub->enrollment_id,
+                        'club_subscription_id' => $sub->id,
+                        'month' => $month,
+                        'amount_due' => number_format($amountDue, 2, '.', ''),
+                        'amount_paid' => '0.00',
+                        'status' => ClubMonthlyFee::STATUS_UNPAID,
+                        'created_by' => $userId,
+                    ]);
+
+                    $createdCount++;
+                }
             }
 
             return [
@@ -318,46 +397,59 @@ class ClubService
         $sectionId = ! empty($filters['section_id']) ? (int) $filters['section_id'] : null;
         $levelId = ! empty($filters['level_id']) ? (int) $filters['level_id'] : null;
         $clubId = ! empty($filters['club_id']) ? (int) $filters['club_id'] : null;
-        $statusFilter = ! empty($filters['status']) ? $filters['status'] : null;
+        $statusFilter = ! empty($filters['status']) && $filters['status'] !== 'all' ? $filters['status'] : null;
         $search = ! empty($filters['search']) ? '%' . trim($filters['search']) . '%' : null;
 
-        // إذا تم اختيار قسم أو مستوى، نجلب كافة التلاميذ الرسميين النشطين
-        if ($sectionId || $levelId) {
-            $enrollmentsQuery = Enrollment::with(['student', 'level:id,name', 'section:id,name'])
-                ->where('academic_year_id', $academicYearId)
-                ->where('status', 'active');
+        if (($sectionId || $levelId) && $clubId) {
+            $club = Club::with('levels')->find($clubId);
+            if ($club && $club->is_active) {
+                $allowedLevels = $club->levels->pluck('id')->all();
 
-            if ($sectionId) {
-                $enrollmentsQuery->where('section_id', $sectionId);
-            } elseif ($levelId) {
-                $enrollmentsQuery->where('level_id', $levelId);
-            }
+                $enrollmentsQuery = Enrollment::where('academic_year_id', $academicYearId)
+                    ->where('status', 'active');
 
-            if ($search) {
-                $enrollmentsQuery->whereHas('student', fn ($q) => $q->where('first_name', 'like', $search)
-                    ->orWhere('last_name', 'like', $search)
-                    ->orWhere('student_code', 'like', $search));
-            }
+                if ($sectionId) {
+                    $enrollmentsQuery->where('section_id', $sectionId);
+                } elseif ($levelId) {
+                    $enrollmentsQuery->where('level_id', $levelId);
+                }
 
-            $activeEnrollments = $enrollmentsQuery->get();
+                if ($allowedLevels !== []) {
+                    $enrollmentsQuery->whereIn('level_id', $allowedLevels);
+                }
 
-            // ضمان وجود سجلات كشف لهؤلاء التلاميذ إن كانوا مشتركين أو كعرض مبدئي (في انتظار الدفع)
-            if ($clubId) {
+                if ($search) {
+                    $enrollmentsQuery->whereHas('student', fn ($q) => $q->where('first_name', 'like', $search)
+                        ->orWhere('last_name', 'like', $search)
+                        ->orWhere('student_code', 'like', $search));
+                }
+
+                $activeEnrollments = $enrollmentsQuery->get();
+
                 foreach ($activeEnrollments as $enr) {
                     $sub = ClubSubscription::where('student_id', $enr->student_id)
                         ->where('club_id', $clubId)
                         ->where('academic_year_id', $academicYearId)
                         ->first();
 
-                    // التلميذ المستبعد لا يظهر كغير مسدد للأشهر الجديدة
                     if ($sub && $sub->excluded_at !== null) {
                         continue;
                     }
 
-                    $club = Club::find($clubId);
-                    $amountDue = $sub?->monthly_fee_override !== null
+                    if (! $sub) {
+                        $sub = ClubSubscription::create([
+                            'student_id' => $enr->student_id,
+                            'club_id' => $clubId,
+                            'academic_year_id' => $academicYearId,
+                            'enrollment_id' => $enr->id,
+                            'start_date' => now()->toDateString(),
+                            'status' => 'active',
+                        ]);
+                    }
+
+                    $amountDue = $sub->monthly_fee_override !== null
                         ? (float) $sub->monthly_fee_override
-                        : (float) ($club?->monthly_fee ?? 0);
+                        : (float) $club->monthly_fee;
 
                     ClubMonthlyFee::firstOrCreate(
                         [
@@ -368,7 +460,7 @@ class ClubService
                         ],
                         [
                             'enrollment_id' => $enr->id,
-                            'club_subscription_id' => $sub?->id,
+                            'club_subscription_id' => $sub->id,
                             'amount_due' => number_format($amountDue, 2, '.', ''),
                             'amount_paid' => '0.00',
                             'status' => ClubMonthlyFee::STATUS_UNPAID,
@@ -396,8 +488,10 @@ class ClubService
         if ($statusFilter) {
             if ($statusFilter === 'pending' || $statusFilter === 'unpaid') {
                 $query->whereIn('status', ['unpaid', 'partial']);
-            } else {
-                $query->where('status', $statusFilter);
+            } elseif ($statusFilter === 'paid') {
+                $query->where('status', 'paid');
+            } elseif ($statusFilter === 'partial') {
+                $query->where('status', 'partial');
             }
         }
 
@@ -422,7 +516,6 @@ class ClubService
         $totalPaid = 0.0;
 
         $items = $records->filter(function ($row) {
-            // استبعاد المشتركين المستبعدين من العرض كـ unpaid للسجلات التلقائية
             if ($row->subscription && $row->subscription->excluded_at !== null && (float) $row->amount_paid <= 0) {
                 return false;
             }
