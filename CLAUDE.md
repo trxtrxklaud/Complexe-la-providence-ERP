@@ -88,3 +88,18 @@ Separating the annual discount (التخفيض) from arrears (المتخلّد).
 - **Phase 7 — Tests:** `DiscountServiceTest`, feature `DiscountTest`.
 
 Verification so far: `php artisan test` 67 passing; `npm run lint` clean; `npm run build` OK.
+
+## Security Closure Progress — 2026-08-08
+
+- Canonical copy: `C:\laragon\www\providence`
+- Branch: `audit/security-closure-2026-08-08`
+- Baseline completed.
+- Read-only security audit completed: no CRITICAL findings.
+- HIGH finding fixed: dashboard treasury exposure.
+- `DashboardService` conditionally returns `financial_summary`, `cash`, and `treasury_balance`.
+- Financial access uses existing `manage_treasury` OR `view_reports` permissions, with configured super-role bypass.
+- Cashier/restricted users do not receive those three keys server-side.
+- `outstanding_balance` intentionally remains available for collection workflows.
+- Verification: `php artisan test --filter=DashboardTest` — 4 tests passed, 18 assertions.
+- Next task: review security headers separately.
+- Unrelated Discounts UI changes must remain excluded.

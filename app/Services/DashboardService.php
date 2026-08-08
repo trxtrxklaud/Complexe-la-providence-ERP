@@ -12,7 +12,7 @@ use Illuminate\Support\Facades\DB;
 
 class DashboardService
 {
-    public function getDashboardData(): array
+    public function getDashboardData(bool $includeFinancials = true): array
     {
         $today      = Carbon::today();
         $activeYear = AcademicYear::where('is_active', true)->first();
@@ -21,14 +21,17 @@ class DashboardService
         // ودفعة أوت لمتخلَّد جوان حركة نقدية يوم أوت مهما كانت السنة الدراسية
         // التي تخصّها. لذلك تُحسب الكروت النقدية قبل التحقّق من السنة النشطة
         // ولا تتوقّف عليها إطلاقاً: صاحبة المدرسة ترى حركة اليوم حتّى في العطلة.
-        $cash = [
+        // الجرد النقدي (رصيد الخزينة، المصاريف، السحوبات، الدخل الصافي) حِكرٌ على
+        // من يملك manage_treasury أو view_reports. القابض يستخلص المال ولا يرى
+        // وضع الخزينة، فلا تُحسب الأرقام النقدية أصلاً حين لا يُسمح بعرضها.
+        $cash = $includeFinancials ? [
             'today'    => $this->cashFigures($today->toDateString(), $today->toDateString()),
             'month'    => $this->cashFigures($today->copy()->startOfMonth()->toDateString(), $today->toDateString()),
             'all_time' => $this->cashFigures(null, $today->toDateString()),
-        ];
+        ] : null;
 
         if (!$activeYear) {
-            return $this->emptyDashboard($cash);
+            return $this->emptyDashboard($cash, $includeFinancials);
         }
 
         $totalStudents = Enrollment::where('academic_year_id', $activeYear->id)
@@ -71,7 +74,7 @@ class DashboardService
             ->whereNull('enrollments.deleted_at')
             ->sum('student_fees.amount_due');
 
-        return [
+        $data = [
             'current_date'           => $today->toDateString(),
             'academic_year'          => $activeYear,
             'total_students'         => $totalStudents,
@@ -83,15 +86,20 @@ class DashboardService
             'total_unspecified_gender' => (int) ($genderCounts[''] ?? 0),
             'outstanding_balance'    => $outstandingBalance,
             'upcoming_events'        => [],
-            'financial_summary'      => [
+        ];
+
+        if ($includeFinancials) {
+            $data['financial_summary'] = [
                 'total_expected'   => $totalExpected,
                 'collected_amount' => $totalCollected,
                 'pending_amount'   => $outstandingBalance,
-            ],
+            ];
             // الجرد النقدي المحيّن: اليوم، الشهر الجاري، ومن بداية السجلّ.
-            'cash'                   => $cash,
-            'treasury_balance'       => $cash['all_time']['balance'],
-        ];
+            $data['cash']             = $cash;
+            $data['treasury_balance'] = $cash['all_time']['balance'];
+        }
+
+        return $data;
     }
 
     /**
@@ -132,11 +140,11 @@ class DashboardService
     }
 
     /**
-     * @param  array<string,array<string,float>>  $cash
+     * @param  array<string,array<string,float>>|null  $cash
      */
-    private function emptyDashboard(array $cash): array
+    private function emptyDashboard(?array $cash, bool $includeFinancials = true): array
     {
-        return [
+        $data = [
             'current_date'           => now()->toDateString(),
             'academic_year'          => null,
             'total_students'         => 0,
@@ -146,14 +154,19 @@ class DashboardService
             'total_unspecified_gender' => 0,
             'outstanding_balance'    => 0,
             'upcoming_events'        => [],
-            'financial_summary'      => [
+        ];
+
+        if ($includeFinancials) {
+            $data['financial_summary'] = [
                 'total_expected'   => 0,
                 'collected_amount' => 0,
                 'pending_amount'   => 0,
-            ],
-            // حتّى بلا سنة نشطة، حركة الصندوق تبقى ظاهرة.
-            'cash'                   => $cash,
-            'treasury_balance'       => $cash['all_time']['balance'],
-        ];
+            ];
+            // حتّى بلا سنة نشطة، حركة الصندوق تبقى ظاهرة لمن يملك رؤيتها.
+            $data['cash']             = $cash;
+            $data['treasury_balance'] = $cash['all_time']['balance'];
+        }
+
+        return $data;
     }
 }
