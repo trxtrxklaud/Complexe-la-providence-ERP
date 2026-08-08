@@ -16,11 +16,15 @@ class ClubSubscription extends Model
         'end_date',
         'status',
         'monthly_fee_override',
+        'excluded_at',
+        'excluded_by',
+        'exclusion_reason',
     ];
 
     protected $casts = [
         'start_date' => 'date',
         'end_date' => 'date',
+        'excluded_at' => 'datetime',
         'monthly_fee_override' => 'decimal:2',
     ];
 
@@ -42,5 +46,10 @@ class ClubSubscription extends Model
     public function enrollment(): BelongsTo
     {
         return $this->belongsTo(Enrollment::class);
+    }
+
+    public function excludedBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'excluded_by');
     }
 }

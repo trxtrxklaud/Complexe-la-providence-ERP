@@ -88,11 +88,43 @@ class DashboardService
             'upcoming_events'        => [],
         ];
 
+        $currentMonth = $today->format('Y-m');
+        $currentMonthStart = $today->copy()->startOfMonth()->toDateString();
+
+        $clubCollected = (float) CashTransaction::whereNull('cancelled_at')
+            ->where('category', CashTransaction::CATEGORY_CLUB_FEE)
+            ->whereDate('transaction_date', '>=', $currentMonthStart)
+            ->whereDate('transaction_date', '<=', $today->toDateString())
+            ->sum('amount');
+
+        $clubMonthlyQuery = DB::table('club_monthly_fees')
+            ->whereNull('cancelled_at')
+            ->where('month', $currentMonth)
+            ->where('academic_year_id', $activeYear->id);
+
+        $clubRemaining = (float) (clone $clubMonthlyQuery)
+            ->selectRaw('COALESCE(SUM(CASE WHEN amount_due - amount_paid > 0 THEN amount_due - amount_paid ELSE 0 END), 0) AS remaining')
+            ->value('remaining') ?? 0;
+
+        $clubPaidCount = (int) (clone $clubMonthlyQuery)
+            ->where('status', 'paid')
+            ->count();
+
+        $clubPendingCount = (int) (clone $clubMonthlyQuery)
+            ->whereIn('status', ['unpaid', 'partial', 'pending'])
+            ->count();
+
         if ($includeFinancials) {
             $data['financial_summary'] = [
                 'total_expected'   => $totalExpected,
                 'collected_amount' => $totalCollected,
                 'pending_amount'   => $outstandingBalance,
+            ];
+            $data['club_revenue'] = [
+                'collected_amount'       => round($clubCollected, 2),
+                'remaining_amount'       => round($clubRemaining, 2),
+                'paid_students_count'    => $clubPaidCount,
+                'pending_students_count' => $clubPendingCount,
             ];
             // الجرد النقدي المحيّن: اليوم، الشهر الجاري، ومن بداية السجلّ.
             $data['cash']             = $cash;

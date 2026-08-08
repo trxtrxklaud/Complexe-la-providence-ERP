@@ -3,6 +3,8 @@ import {
   fetchClubFeesReport,
   generateClubMonthFees,
   collectClubFeePayment,
+  excludeStudentFromClub,
+  restoreStudentToClub,
   fetchClubs,
   ClubReportData,
   ClubReportRecord,
@@ -11,7 +13,7 @@ import {
 import { fetchAcademicYears } from '../../api/years';
 import { fetchLevels, fetchSections } from '../../api/classrooms';
 import { AcademicYear, Level, Section } from '../../types';
-import { Printer, RefreshCw, DollarSign, Search, CheckCircle, AlertCircle, Clock } from 'lucide-react';
+import { Printer, RefreshCw, Search, CheckCircle, AlertCircle, Clock, UserX, RotateCcw } from 'lucide-react';
 
 export default function ClubFeesReportPage() {
   const [reportData, setReportData] = useState<ClubReportData | null>(null);
@@ -147,6 +149,27 @@ export default function ClubFeesReportPage() {
       setError(err.message || 'فشل تسجيل الدفع');
     } finally {
       setSubmittingPayment(false);
+    }
+  };
+
+  const handleExclude = async (subId: number) => {
+    if (!window.confirm('هل تأكد من استبعاد هذا التلميذ من متابعة معلوم النادي بعد سبتمبر؟ لا يحذف التلميذ ولا مدفوعاته القديمة.')) return;
+    try {
+      await excludeStudentFromClub(subId, 'استبعاد من متابعة معلوم النادي');
+      setSuccessMsg('تم استبعاد التلميذ بنجاح دون حذف بياناته القديمة');
+      await loadReport();
+    } catch (err: any) {
+      setError(err.message || 'فشل استبعاد التلميذ');
+    }
+  };
+
+  const handleRestore = async (subId: number) => {
+    try {
+      await restoreStudentToClub(subId);
+      setSuccessMsg('تمت إعادة التلميذ لمتابعة معلوم النادي بنجاح');
+      await loadReport();
+    } catch (err: any) {
+      setError(err.message || 'فشل إعادة التلميذ');
     }
   };
 
@@ -296,9 +319,8 @@ export default function ClubFeesReportPage() {
               className="w-full text-sm border-gray-300 rounded-lg p-2 bg-gray-50"
             >
               <option value="">الكل</option>
-              <option value="paid">مدفوع بالكامل</option>
-              <option value="partial">مدفوع جزئياً</option>
-              <option value="unpaid">غير مسدد</option>
+              <option value="paid">خلاص كامل (أخضر)</option>
+              <option value="pending">في انتظار الدفع (برتقالي)</option>
             </select>
           </div>
         </div>
@@ -319,23 +341,18 @@ export default function ClubFeesReportPage() {
       {summary && (
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 no-print">
           <div className="p-3 bg-white rounded-xl border border-gray-100 text-center">
-            <span className="block text-xs text-gray-500">عدد المسجلين</span>
+            <span className="block text-xs text-gray-500">عدد التلاميذ بالمجموعة</span>
             <span className="text-xl font-bold text-gray-800">{summary.enrolled_count}</span>
           </div>
 
           <div className="p-3 bg-green-50 border border-green-100 rounded-xl text-center">
-            <span className="block text-xs text-green-700">مدفوع بالكامل</span>
+            <span className="block text-xs text-green-700">خلاص كامل</span>
             <span className="text-xl font-bold text-green-800">{summary.paid_count}</span>
           </div>
 
           <div className="p-3 bg-orange-50 border border-orange-100 rounded-xl text-center">
-            <span className="block text-xs text-orange-700">مدفوع جزئياً</span>
-            <span className="text-xl font-bold text-orange-800">{summary.partial_count}</span>
-          </div>
-
-          <div className="p-3 bg-red-50 border border-red-100 rounded-xl text-center">
-            <span className="block text-xs text-red-700">غير مسدد</span>
-            <span className="text-xl font-bold text-red-800">{summary.unpaid_count}</span>
+            <span className="block text-xs text-orange-700">في انتظار الدفع</span>
+            <span className="text-xl font-bold text-orange-800">{summary.pending_count ?? summary.unpaid_count}</span>
           </div>
 
           <div className="p-3 bg-white rounded-xl border border-gray-100 text-center">
@@ -344,8 +361,13 @@ export default function ClubFeesReportPage() {
           </div>
 
           <div className="p-3 bg-green-50 border border-green-100 rounded-xl text-center">
-            <span className="block text-xs text-green-700">إجمالي المدفوع</span>
+            <span className="block text-xs text-green-700">إجمالي المقبوض</span>
             <span className="text-xl font-bold text-green-800">{summary.total_paid.toFixed(2)} د.ت</span>
+          </div>
+
+          <div className="p-3 bg-orange-50 border border-orange-100 rounded-xl text-center">
+            <span className="block text-xs text-orange-700">إجمالي المتبقي</span>
+            <span className="text-xl font-bold text-orange-800">{summary.total_remaining.toFixed(2)} د.ت</span>
           </div>
         </div>
       )}
@@ -358,6 +380,7 @@ export default function ClubFeesReportPage() {
           <p className="text-sm text-gray-600">كشف متابعة معاليم النوادي المدرسية</p>
           <div className="flex justify-between items-center text-xs text-gray-500 mt-2">
             <span>الشهر: {selectedMonth}</span>
+            <span>القسم: {selectedSectionId ? sections.find(s => s.id === Number(selectedSectionId))?.name : 'كل الأقسام'}</span>
             <span>تاريخ الاستخراج: {new Date().toLocaleDateString('ar-TN')}</span>
           </div>
         </div>
@@ -380,7 +403,6 @@ export default function ClubFeesReportPage() {
                   <th className="p-3">اسم التلميذ</th>
                   <th className="p-3">المستوى والقسم</th>
                   <th className="p-3">النادي</th>
-                  <th className="p-3">الشهر</th>
                   <th className="p-3 text-left">المطلوب (د.ت)</th>
                   <th className="p-3 text-left">المدفوع (د.ت)</th>
                   <th className="p-3 text-left">المتبقي (د.ت)</th>
@@ -389,33 +411,31 @@ export default function ClubFeesReportPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
-                {records.map((r) => (
+                {records.map((r: any) => (
                   <tr key={r.id} className="hover:bg-gray-50">
                     <td className="p-3 text-gray-500 font-mono">{r.student_code}</td>
-                    <td className="p-3 font-semibold text-gray-800">{r.student_name}</td>
+                    <td className="p-3 font-semibold text-gray-800">
+                      {r.student_name}
+                      {r.is_excluded && <span className="mr-2 text-xs text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded">(مستبعد)</span>}
+                    </td>
                     <td className="p-3 text-gray-600">{r.level_name} - {r.section_name}</td>
                     <td className="p-3 font-medium text-gray-700">{r.club_name}</td>
-                    <td className="p-3 text-gray-500">{r.month}</td>
                     <td className="p-3 text-left font-mono font-medium">{r.amount_due.toFixed(2)}</td>
                     <td className="p-3 text-left font-mono text-green-700">{r.amount_paid.toFixed(2)}</td>
-                    <td className="p-3 text-left font-mono text-red-600">{r.remaining.toFixed(2)}</td>
+                    <td className="p-3 text-left font-mono text-orange-600">{r.remaining.toFixed(2)}</td>
                     <td className="p-3 text-center">
                       <span
                         className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold ${
                           r.status === 'paid'
                             ? 'bg-green-100 text-green-800'
-                            : r.status === 'partial'
-                            ? 'bg-orange-100 text-orange-800'
-                            : 'bg-red-100 text-red-800'
+                            : 'bg-orange-100 text-orange-800'
                         }`}
                       >
-                        {r.status === 'paid' && <CheckCircle className="w-3.5 h-3.5" />}
-                        {r.status === 'partial' && <Clock className="w-3.5 h-3.5" />}
-                        {r.status === 'unpaid' && <AlertCircle className="w-3.5 h-3.5" />}
-                        {r.status_label}
+                        {r.status === 'paid' ? <CheckCircle className="w-3.5 h-3.5" /> : <Clock className="w-3.5 h-3.5" />}
+                        {r.status === 'paid' ? 'خلاص كامل' : 'في انتظار الدفع'}
                       </span>
                     </td>
-                    <td className="p-3 no-print text-center">
+                    <td className="p-3 no-print text-center flex items-center justify-center gap-2">
                       {r.status !== 'paid' && (
                         <button
                           onClick={() => openCollectModal(r)}
@@ -423,6 +443,25 @@ export default function ClubFeesReportPage() {
                         >
                           تسجيل الدفع
                         </button>
+                      )}
+                      {r.subscription_id && (
+                        r.is_excluded ? (
+                          <button
+                            onClick={() => handleRestore(r.subscription_id)}
+                            title="إعادة التلميذ للمتابعة"
+                            className="p-1 text-gray-500 hover:text-green-600 rounded"
+                          >
+                            <RotateCcw className="w-4 h-4" />
+                          </button>
+                        ) : (
+                          <button
+                            onClick={() => handleExclude(r.subscription_id)}
+                            title="استبعاد من متابعة النادي"
+                            className="p-1 text-gray-400 hover:text-red-600 rounded"
+                          >
+                            <UserX className="w-4 h-4" />
+                          </button>
+                        )
                       )}
                     </td>
                   </tr>
@@ -435,10 +474,10 @@ export default function ClubFeesReportPage() {
         {/* Printable Summary Footer */}
         {summary && (
           <div className="border-t border-gray-200 pt-4 grid grid-cols-2 md:grid-cols-4 gap-4 text-xs font-medium text-gray-700">
-            <div>إجمالي عدد المسجلين: <span className="font-bold">{summary.enrolled_count}</span></div>
+            <div>إجمالي التلاميذ: <span className="font-bold">{summary.enrolled_count}</span></div>
             <div>إجمالي المطلوب: <span className="font-bold">{summary.total_due.toFixed(2)} د.ت</span></div>
             <div>إجمالي المقبوض: <span className="font-bold text-green-700">{summary.total_paid.toFixed(2)} د.ت</span></div>
-            <div>إجمالي المتبقي: <span className="font-bold text-red-600">{summary.total_remaining.toFixed(2)} د.ت</span></div>
+            <div>إجمالي المتبقي: <span className="font-bold text-orange-600">{summary.total_remaining.toFixed(2)} د.ت</span></div>
           </div>
         )}
       </div>
@@ -466,7 +505,7 @@ export default function ClubFeesReportPage() {
                   required
                 />
                 <span className="text-xs text-gray-400 mt-1 block">
-                  المتبقي الذمة: {collectModalRecord.remaining.toFixed(2)} د.ت
+                  المتبقي: {collectModalRecord.remaining.toFixed(2)} د.ت
                 </span>
               </div>
 

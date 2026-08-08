@@ -3,6 +3,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import {
   AlertCircle,
   ArrowDownCircle,
+  Award,
   GraduationCap,
   Landmark,
   TrendingDown,
@@ -247,6 +248,16 @@ export default function Dashboard() {
               iconColor="#9A6B7E"
               hint={`السنة النشطة: ${yearName}`}
             />
+            {data.club_revenue && (
+              <KpiCard
+                label="مداخيل النوادي هذا الشهر"
+                value={<Money value={data.club_revenue.collected_amount} />}
+                icon={Award}
+                tint={C.sage}
+                iconColor={C.forest}
+                hint={`خلاص كامل: ${data.club_revenue.paid_students_count} | في انتظار الدفع: ${data.club_revenue.pending_students_count}`}
+              />
+            )}
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">

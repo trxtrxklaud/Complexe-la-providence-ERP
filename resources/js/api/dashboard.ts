@@ -20,17 +20,23 @@ export type DashboardData = {
   total_females: number;
   total_unspecified_gender: number;
   outstanding_balance: number;
-  financial_summary: {
+  financial_summary?: {
     total_expected: number;
     collected_amount: number;
     pending_amount: number;
   };
-  cash: {
+  club_revenue?: {
+    collected_amount: number;
+    remaining_amount: number;
+    paid_students_count: number;
+    pending_students_count: number;
+  };
+  cash?: {
     today: CashFigures;
     month: CashFigures;
     all_time: CashFigures;
   };
-  treasury_balance: number;
+  treasury_balance?: number;
 };
 
 /**
