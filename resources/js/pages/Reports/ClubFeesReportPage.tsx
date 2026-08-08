@@ -55,6 +55,17 @@ export default function ClubFeesReportPage() {
     loadReport();
   }, [selectedYearId, selectedMonth, selectedClubId, selectedLevelId, selectedSectionId, selectedStatus, search]);
 
+  useEffect(() => {
+    const handleClubFeeUpdated = async () => {
+      await loadOptions();
+      await loadReport();
+    };
+    window.addEventListener('club-fee-updated', handleClubFeeUpdated);
+    return () => {
+      window.removeEventListener('club-fee-updated', handleClubFeeUpdated);
+    };
+  }, []);
+
   const loadOptions = async () => {
     try {
       const [yList, cList, lList, sList] = await Promise.all([

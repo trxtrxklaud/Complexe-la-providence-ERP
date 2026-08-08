@@ -61,9 +61,12 @@ class ClubService
             }
 
             $this->syncFeeTypePrice($club);
-            $this->syncUnpaidCurrentMonthFees($club);
+            $count = $this->syncUnpaidCurrentMonthFees($club);
 
-            return $club->fresh('levels');
+            $fresh = $club->fresh('levels');
+            $fresh->setAttribute('updated_unpaid_count', $count);
+
+            return $fresh;
         });
     }
 

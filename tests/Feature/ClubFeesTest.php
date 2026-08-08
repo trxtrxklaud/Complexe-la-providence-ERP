@@ -597,4 +597,39 @@ class ClubFeesTest extends TestCase
         $this->assertEquals(15.00, $unpaidRecordReport['amount_due']);
         $this->assertEquals(15.00, $unpaidRecordReport['remaining']);
     }
+
+    /** 20. تعديل معلوم النادي عبر API يعيد عدد السجلات المعياري المستحدثة ورقم المبلغ الجديد للمستهلكين في الواجهة. */
+    public function test_api_club_update_returns_updated_unpaid_count_and_new_fee(): void
+    {
+        $user = $this->makeUserWithPermissions('admin', ['manage_students']);
+        Sanctum::actingAs($user);
+
+        $year = $this->makeAcademicYear();
+        $currentMonth = now()->format('Y-m');
+        $enrollment = $this->makeEnrollment($year);
+        $club = $this->makeClub(['monthly_fee' => 50.00]);
+
+        $sub = $this->clubService->subscribeStudent($enrollment->student_id, $club->id, $year->id);
+        $unpaidCurrent = ClubMonthlyFee::create([
+            'student_id' => $enrollment->student_id,
+            'club_id' => $club->id,
+            'academic_year_id' => $year->id,
+            'club_subscription_id' => $sub->id,
+            'month' => $currentMonth,
+            'amount_due' => 50.00,
+            'amount_paid' => 0.00,
+            'status' => ClubMonthlyFee::STATUS_UNPAID,
+        ]);
+
+        $res = $this->putJson("/api/clubs/{$club->id}", [
+            'monthly_fee' => 15.00,
+        ]);
+
+        $res->assertOk();
+        $res->assertJsonPath('monthly_fee', '15.00');
+        $res->assertJsonPath('updated_unpaid_count', 1);
+
+        $unpaidCurrent->refresh();
+        $this->assertEquals(15.00, (float) $unpaidCurrent->amount_due);
+    }
 }
