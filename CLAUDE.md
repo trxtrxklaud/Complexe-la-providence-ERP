@@ -103,3 +103,7 @@ Verification so far: `php artisan test` 67 passing; `npm run lint` clean; `npm r
 - Verification: `php artisan test --filter=DashboardTest` — 4 tests passed, 18 assertions.
 - Next task: review security headers separately.
 - Unrelated Discounts UI changes must remain excluded.
+- CRIT-001 closed: Student deletion blocked when enrollments, payments, or clubSubscriptions exist (`app/Http/Controllers/StudentController.php`).
+- Focused test: `tests/Feature/StudentDeleteProtectionTest.php` (3 passed, 10 assertions).
+- No migrations changed.
+- CRIT-002 remains open.

@@ -334,16 +334,15 @@ class StudentController extends Controller
         return response()->json($student->fresh());
     }
 
-    // NEW: delete student only if no active enrollment
     public function destroy(Student $student): JsonResponse
     {
-        $hasActiveEnrollment = $student->enrollments()
-            ->where('status', 'active')
-            ->exists();
+        $hasRelatedRecords = $student->enrollments()->exists()
+            || $student->payments()->exists()
+            || $student->clubSubscriptions()->exists();
 
-        if ($hasActiveEnrollment) {
+        if ($hasRelatedRecords) {
             return response()->json([
-                'message' => 'لا يمكن حذف طالب لديه تسجيل نشط',
+                'message' => 'لا يمكن حذف تلميذ لديه تسجيلات أو سجلات مالية مرتبطة',
             ], 422);
         }
 
