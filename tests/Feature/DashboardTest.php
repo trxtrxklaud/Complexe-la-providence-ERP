@@ -119,7 +119,7 @@ class DashboardTest extends TestCase
         // Student 3: Null/Unspecified gender
         $unspecifiedStudent = \App\Models\Student::create([
             'student_code' => 'ST_UNK_1',
-            'first_name' => 'سامي',
+            'first_name' => 'غير_معروف_123',
             'last_name' => 'مستورد',
             'gender' => null,
         ]);

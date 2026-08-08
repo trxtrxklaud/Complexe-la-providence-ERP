@@ -247,7 +247,7 @@ export default function Dashboard() {
               hint={`السنة النشطة: ${yearName}`}
             />
             <KpiCard
-              label="الإناث"
+              label="عدد الإناث"
               value={females}
               icon={UserRound}
               tint={C.rose}
@@ -255,7 +255,7 @@ export default function Dashboard() {
               hint={femalePct ? `${femalePct} من الإجمالي` : undefined}
             />
             <KpiCard
-              label="الذكور"
+              label="عدد الذكور"
               value={males}
               icon={Users}
               tint={C.beige}
