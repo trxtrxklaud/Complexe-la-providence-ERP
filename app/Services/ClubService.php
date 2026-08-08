@@ -61,6 +61,7 @@ class ClubService
             }
 
             $this->syncFeeTypePrice($club);
+            $this->syncUnpaidCurrentMonthFees($club);
 
             return $club->fresh('levels');
         });
@@ -85,6 +86,32 @@ class ClubService
                 $feeType->update(['price' => $club->monthly_fee]);
             }
         });
+    }
+
+    /**
+     * مزامنة مبلغ معلوم النادي في السجلات الشهرية الحالية غير المدفوعة للشهر الحالي.
+     * تحمي السجلات المدفوعة بالكامل أو جزئياً، والأشهر السابقة المغلقة، والحركات المطبقة في الخزينة.
+     */
+    private function syncUnpaidCurrentMonthFees(Club $club): int
+    {
+        $activeYearId = AcademicYear::where('is_active', true)->value('id');
+        if (! $activeYearId) {
+            return 0;
+        }
+
+        $currentMonth = now()->format('Y-m');
+
+        return ClubMonthlyFee::where('club_id', $club->id)
+            ->where('academic_year_id', $activeYearId)
+            ->where('month', $currentMonth)
+            ->where('status', ClubMonthlyFee::STATUS_UNPAID)
+            ->where(function ($q) {
+                $q->whereNull('amount_paid')->orWhere('amount_paid', '<=', 0);
+            })
+            ->whereNull('cancelled_at')
+            ->update([
+                'amount_due' => number_format((float) $club->monthly_fee, 2, '.', ''),
+            ]);
     }
 
     /**

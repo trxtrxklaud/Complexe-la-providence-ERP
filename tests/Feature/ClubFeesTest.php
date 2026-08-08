@@ -479,4 +479,122 @@ class ClubFeesTest extends TestCase
         $juneFee = ClubMonthlyFee::where('student_id', $enrollment->student_id)->where('month', '2026-06')->firstOrFail();
         $this->assertEquals(45.00, (float) $juneFee->amount_due);
     }
+
+    /** 19. تغيير مبلغ النادي من 50 إلى 15 يحل حزمة المتطلبات كاملة: تحديث السجلات غير المدفوعة للشهر الحالي مع حماية المدفوع والمستخلص جزئياً والأشهر السابقة والنوادي الأخرى. */
+    public function test_changing_club_fee_from_50_to_15_updates_current_unpaid_records_and_protects_financial_history(): void
+    {
+        $year = $this->makeAcademicYear();
+        $currentMonth = now()->format('Y-m');
+        $pastMonth = '2025-01';
+
+        $club50 = $this->makeClub(['name' => 'نادي التكنولوجيا', 'monthly_fee' => 50.00]);
+        $unrelatedClub = $this->makeClub(['name' => 'نادي الفنون', 'monthly_fee' => 30.00]);
+
+        $enr1 = $this->makeEnrollment($year);
+        $enr2 = $this->makeEnrollment($year);
+        $enr3 = $this->makeEnrollment($year);
+        $enr4 = $this->makeEnrollment($year);
+        $enr5 = $this->makeEnrollment($year);
+
+        // Subscriptions
+        $sub1 = $this->clubService->subscribeStudent($enr1->student_id, $club50->id, $year->id);
+        $sub2 = $this->clubService->subscribeStudent($enr2->student_id, $club50->id, $year->id);
+        $sub3 = $this->clubService->subscribeStudent($enr3->student_id, $club50->id, $year->id);
+        $sub4 = $this->clubService->subscribeStudent($enr4->student_id, $club50->id, $year->id);
+        $subUnrelated = $this->clubService->subscribeStudent($enr5->student_id, $unrelatedClub->id, $year->id);
+
+        // 1. Current Month Records for club50
+        // Record 1: Current month unpaid (should be updated from 50 to 15)
+        $unpaidCurrent = ClubMonthlyFee::create([
+            'student_id' => $enr1->student_id,
+            'club_id' => $club50->id,
+            'academic_year_id' => $year->id,
+            'club_subscription_id' => $sub1->id,
+            'month' => $currentMonth,
+            'amount_due' => 50.00,
+            'amount_paid' => 0.00,
+            'status' => ClubMonthlyFee::STATUS_UNPAID,
+        ]);
+
+        // Record 2: Current month fully paid (MUST remain 50.00)
+        $paidCurrent = ClubMonthlyFee::create([
+            'student_id' => $enr2->student_id,
+            'club_id' => $club50->id,
+            'academic_year_id' => $year->id,
+            'club_subscription_id' => $sub2->id,
+            'month' => $currentMonth,
+            'amount_due' => 50.00,
+            'amount_paid' => 50.00,
+            'status' => ClubMonthlyFee::STATUS_PAID,
+        ]);
+
+        // Record 3: Current month partially paid (MUST remain 50.00)
+        $partialCurrent = ClubMonthlyFee::create([
+            'student_id' => $enr3->student_id,
+            'club_id' => $club50->id,
+            'academic_year_id' => $year->id,
+            'club_subscription_id' => $sub3->id,
+            'month' => $currentMonth,
+            'amount_due' => 50.00,
+            'amount_paid' => 20.00,
+            'status' => ClubMonthlyFee::STATUS_PARTIAL,
+        ]);
+
+        // Record 4: Past month closed unpaid (MUST remain 50.00)
+        $pastUnpaid = ClubMonthlyFee::create([
+            'student_id' => $enr4->student_id,
+            'club_id' => $club50->id,
+            'academic_year_id' => $year->id,
+            'club_subscription_id' => $sub4->id,
+            'month' => $pastMonth,
+            'amount_due' => 50.00,
+            'amount_paid' => 0.00,
+            'status' => ClubMonthlyFee::STATUS_UNPAID,
+        ]);
+
+        // Record 5: Unrelated club record (MUST remain 30.00)
+        $unrelatedRecord = ClubMonthlyFee::create([
+            'student_id' => $enr5->student_id,
+            'club_id' => $unrelatedClub->id,
+            'academic_year_id' => $year->id,
+            'club_subscription_id' => $subUnrelated->id,
+            'month' => $currentMonth,
+            'amount_due' => 30.00,
+            'amount_paid' => 0.00,
+            'status' => ClubMonthlyFee::STATUS_UNPAID,
+        ]);
+
+        // Perform Fee Update from 50 to 15
+        $this->clubService->updateClub($club50, ['monthly_fee' => 15.00]);
+
+        // Assertions
+        $unpaidCurrent->refresh();
+        $this->assertEquals(15.00, (float) $unpaidCurrent->amount_due);
+        $this->assertEquals(15.00, (float) ($unpaidCurrent->amount_due - $unpaidCurrent->amount_paid));
+
+        $paidCurrent->refresh();
+        $this->assertEquals(50.00, (float) $paidCurrent->amount_due);
+        $this->assertEquals(50.00, (float) $paidCurrent->amount_paid);
+
+        $partialCurrent->refresh();
+        $this->assertEquals(50.00, (float) $partialCurrent->amount_due);
+        $this->assertEquals(20.00, (float) $partialCurrent->amount_paid);
+
+        $pastUnpaid->refresh();
+        $this->assertEquals(50.00, (float) $pastUnpaid->amount_due);
+
+        $unrelatedRecord->refresh();
+        $this->assertEquals(30.00, (float) $unrelatedRecord->amount_due);
+
+        // Verify Report Summary Totals reflect 15.00 for the updated current unpaid student
+        $report = $this->clubService->getReport([
+            'month' => $currentMonth,
+            'academic_year_id' => $year->id,
+            'club_id' => $club50->id,
+        ]);
+
+        $unpaidRecordReport = collect($report['records'])->firstWhere('id', $unpaidCurrent->id);
+        $this->assertEquals(15.00, $unpaidRecordReport['amount_due']);
+        $this->assertEquals(15.00, $unpaidRecordReport['remaining']);
+    }
 }
