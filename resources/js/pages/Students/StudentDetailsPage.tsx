@@ -99,7 +99,7 @@ export function StudentDetailsPage() {
           <ArrowRight size={16} />
           <span>رجوع إلى البحث</span>
         </Link>
-        <button type="button" onClick={() => window.print()} className="inline-flex items-center gap-2 rounded-xl bg-[#3B4A36] px-4 py-2 text-sm font-semibold text-white hover:bg-[#2E3B2A]">
+        <button type="button" onClick={() => window.print()} disabled={loading || !student} className="inline-flex items-center gap-2 rounded-xl bg-[#3B4A36] px-4 py-2 text-sm font-semibold text-white hover:bg-[#2E3B2A] disabled:opacity-50">
           <Printer size={16} />
           <span>طباعة الملف</span>
         </button>

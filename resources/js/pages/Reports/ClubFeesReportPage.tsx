@@ -222,7 +222,8 @@ export default function ClubFeesReportPage() {
           </button>
           <button
             onClick={handlePrint}
-            className="flex items-center gap-2 px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition"
+            disabled={loading || !reportData || records.length === 0}
+            className="flex items-center gap-2 px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition disabled:opacity-50"
           >
             <Printer className="w-4 h-4" />
             طباعة التقرير (A4)
