@@ -79,7 +79,16 @@ export type StudentSearchFilters = {
     birthday?: string;
     year?: string;
     cnte?: string;
+    gender?: string;
     per_page?: number;
+};
+
+export type StudentSearchResponse = {
+    data: Student[];
+    total_count: number;
+    male_count: number;
+    female_count: number;
+    unknown_count: number;
 };
 
 /** قسم واحد من جدول sections، مع عنوان جاهز للعرض مثل «السنة الثالثة ب». */
@@ -158,7 +167,29 @@ export async function getStudents(filters: StudentSearchFilters = {}, signal?: A
         signal,
         fallbackMessage: 'حدث خطأ أثناء جلب قائمة التلاميذ',
     });
-    return Array.isArray(data) ? data : data.data;
+    return Array.isArray(data) ? data : (data.data ?? []);
+}
+
+export async function getStudentsFullResponse(filters: StudentSearchFilters = {}, signal?: AbortSignal): Promise<StudentSearchResponse> {
+    const raw = await apiFetch<any>('/students', {
+        params: filters,
+        signal,
+        fallbackMessage: 'حدث خطأ أثناء جلب قائمة التلاميذ',
+    });
+
+    const rows: Student[] = Array.isArray(raw) ? raw : (raw.data ?? []);
+    const totalCount = raw.total_count ?? (Array.isArray(raw) ? raw.length : (raw.total ?? rows.length));
+    const maleCount = raw.male_count ?? rows.filter((s: Student) => s.gender === 'male' || (s as any).gender === 'ذكر').length;
+    const femaleCount = raw.female_count ?? rows.filter((s: Student) => s.gender === 'female' || (s as any).gender === 'أنثى').length;
+    const unknownCount = raw.unknown_count ?? Math.max(0, totalCount - maleCount - femaleCount);
+
+    return {
+        data: rows,
+        total_count: totalCount,
+        male_count: maleCount,
+        female_count: femaleCount,
+        unknown_count: unknownCount,
+    };
 }
 
 export const getStudentSearchOptions = (signal?: AbortSignal) =>

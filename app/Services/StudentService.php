@@ -76,28 +76,83 @@ class StudentService
             $query->whereHas('enrollments', $filterEnrollments);
         }
 
+        $allStudents = $query->get()
+            ->unique(fn (Student $student) => $this->normalizeStudentName($student))
+            ->map(function (Student $student) {
+                $rawGender = strtolower(trim((string) $student->gender));
+                if (in_array($rawGender, ['male', 'm', 'ذكر'], true)) {
+                    $resolvedGender = 'male';
+                } elseif (in_array($rawGender, ['female', 'f', 'أنثى'], true)) {
+                    $resolvedGender = 'female';
+                } else {
+                    $inferred = $this->inferGenderFromName((string) $student->first_name);
+                    $resolvedGender = $inferred ?? 'unknown';
+                }
+                $student->gender = $resolvedGender;
+                return $student;
+            });
+
+        $totalCount = $allStudents->count();
+        $maleCount = $allStudents->where('gender', 'male')->count();
+        $femaleCount = $allStudents->where('gender', 'female')->count();
+        $unknownCount = $allStudents->where('gender', 'unknown')->count();
+
+        $selectedGender = strtolower(trim((string) ($filters['gender'] ?? 'all')));
+
+        $filteredStudents = $allStudents->filter(function (Student $student) use ($selectedGender) {
+            if ($selectedGender === 'male' || $selectedGender === 'ذكر') {
+                return $student->gender === 'male';
+            }
+            if ($selectedGender === 'female' || $selectedGender === 'أنثى') {
+                return $student->gender === 'female';
+            }
+            if ($selectedGender === 'unknown' || $selectedGender === 'غير محدد') {
+                return $student->gender === 'unknown';
+            }
+            return true;
+        });
+
+        $genderWeights = ['male' => 1, 'female' => 2, 'unknown' => 3];
+
+        $sortedStudents = $filteredStudents->sort(function (Student $a, Student $b) use ($genderWeights) {
+            $wA = $genderWeights[$a->gender] ?? 4;
+            $wB = $genderWeights[$b->gender] ?? 4;
+
+            if ($wA !== $wB) {
+                return $wA <=> $wB;
+            }
+
+            return strcmp($this->normalizeStudentName($a), $this->normalizeStudentName($b));
+        })->values();
+
         $perPage = min((int) ($filters['per_page'] ?? 20), 100);
+        $page = LengthAwarePaginator::resolveCurrentPage();
 
-        if (! empty($filters['section_id'])) {
-            $students = $query->get()
-                ->unique(fn (Student $student) => $this->normalizeStudentName($student))
-                ->sortBy(fn (Student $student) => $this->normalizeStudentName($student), SORT_NATURAL | SORT_FLAG_CASE)
-                ->values();
-            $page = LengthAwarePaginator::resolveCurrentPage();
+        $paginator = new LengthAwarePaginator(
+            $sortedStudents->forPage($page, $perPage)->values(),
+            $sortedStudents->count(),
+            $perPage,
+            $page,
+            [
+                'path' => request()->url(),
+                'query' => request()->query(),
+            ]
+        );
 
-            return new LengthAwarePaginator(
-                $students->forPage($page, $perPage)->values(),
-                $students->count(),
-                $perPage,
-                $page,
-                [
-                    'path' => request()->url(),
-                    'query' => request()->query(),
-                ],
-            );
-        }
+        $responseArray = $paginator->toArray();
+        $responseArray['total_count'] = $totalCount;
+        $responseArray['male_count'] = $maleCount;
+        $responseArray['female_count'] = $femaleCount;
+        $responseArray['unknown_count'] = $unknownCount;
+        $responseArray['active_filters'] = [
+            'gender' => $selectedGender,
+            'level_id' => $filters['level_id'] ?? null,
+            'section_id' => $filters['section_id'] ?? null,
+            'academic_year_id' => $filters['academic_year_id'] ?? null,
+            'search' => $filters['search'] ?? null,
+        ];
 
-        return $query->orderBy('first_name')->orderBy('last_name')->paginate($perPage);
+        return $responseArray;
     }
 
     public function getStudentById(int $id): ?Student
@@ -122,5 +177,75 @@ class StudentService
         $name = str_replace(['أ', 'إ', 'آ', 'ى', 'ة'], ['ا', 'ا', 'ا', 'ي', 'ه'], $name);
 
         return mb_strtolower(preg_replace('/\s+/u', ' ', $name) ?? $name);
+    }
+
+    /**
+     * الاستدلال من الاسم العربي للتلاميذ المستوردين الذين لم يُسجّل جنسهم في قاعدة البيانات.
+     */
+    private function inferGenderFromName(string $firstName): ?string
+    {
+        $name = trim($firstName);
+        if ($name === '') {
+            return null;
+        }
+
+        $parts = preg_split('/\s+/u', $name);
+        $first = $parts[0] ?? '';
+        $normalizedFirst = str_replace(['أ', 'إ', 'آ'], 'ا', $first);
+
+        $knownFemales = [
+            'امنة', 'اية', 'ميار', 'سيرين', 'ريحان', 'مريم', 'ريم', 'سارة', 'ساره', 'لينا', 'ميرال',
+            'نور', 'هبة', 'ياسمين', 'سلمى', 'خديجة', 'فاطمة', 'عائشة', 'زينب', 'نادين', 'شهد',
+            'جنى', 'جودي', 'رتاج', 'ريتاج', 'تالين', 'اريج', 'اسراء', 'ايلاف', 'بلقيس', 'تسنيم',
+            'حنين', 'داليا', 'دانية', 'رغد', 'روضة', 'زينة', 'سمر', 'سندس', 'شذى', 'شيماء',
+            'عبير', 'غادة', 'غفران', 'فرح', 'لمى', 'مارية', 'مروى', 'ملاك', 'منال', 'مها',
+            'ناديا', 'ندى', 'نغم', 'نهى', 'هاجر', 'وئام', 'يسر', 'رنيم', 'اميمة', 'الاء', 'اسماء',
+            'ايناس', 'احلام', 'امال', 'اماني', 'اميرة', 'انسام', 'انصاف', 'انعام', 'ايمان',
+            'بتول', 'بشرى', 'بسمة', 'تقوى', 'جواهر', 'جيهان', 'حسناء', 'حورية', 'خلود',
+            'دعا', 'دعاء', 'ذكرى', 'رحمة', 'رحاب', 'رضوى', 'رنا', 'رندة', 'رهف', 'روان', 'رولا',
+            'زهراء', 'زهرة', 'سلاف', 'سهام', 'سهيلة', 'سوزان', 'سناء', 'شروق', 'صفاء',
+            'ضحى', 'عفاف', 'علا', 'علياء', 'غزلان', 'فاتن', 'فدوى', 'فيروز', 'كوثر', 'لمياء',
+            'ليندا', 'ماجدة', 'مرام', 'مروة', 'منى', 'منيرة', 'مي', 'ميادة', 'ميساء', 'ميسون',
+            'نجلاء', 'نجوى', 'نوال', 'نورها', 'نورهان', 'هالة', 'هناء', 'هنادي', 'هند', 'وفاء',
+            'ولا', 'ولاء', 'يسرى', 'فردوس',
+        ];
+
+        $knownMales = [
+            'خالد', 'اياد', 'ماجد', 'احمد', 'محمد', 'يوسف', 'امين', 'علي', 'عمر', 'حمزة',
+            'بلال', 'انس', 'ريان', 'مهدي', 'وسيم', 'ادم', 'سليم', 'ياسين', 'عزيز', 'خليل',
+            'فادي', 'كريم', 'هادي', 'الهادي', 'مالك', 'هارون', 'مصطفى', 'طه', 'وائل', 'زياد',
+            'وليد', 'رامي', 'سامي', 'غسان', 'عمار', 'لؤي', 'اسامة', 'شريف', 'فريد', 'منتصر',
+            'نضال', 'صابر', 'ضياء', 'عبد', 'سيف', 'فراس', 'ابراهيم', 'اسماعيل', 'ايمن', 'انور',
+            'اشرف', 'ايوب', 'بدر', 'باسم', 'بشير', 'تامر', 'توفيق', 'جاسم', 'جابر', 'جلال',
+            'جمال', 'حسام', 'حسان', 'حسن', 'حسين', 'حلمي', 'حمد', 'حمدي', 'حيدر',
+            'داود', 'ربيع', 'رجب', 'رشيد', 'رضا', 'رمزي', 'زيان', 'سعد', 'سعود', 'سعيد',
+            'سفيان', 'سلمان', 'سليمان', 'سمير', 'شادي', 'صالح', 'صلاح', 'طارق', 'عادل',
+            'عارف', 'عاصم', 'عاطف', 'عباس', 'عبدالله', 'عبدالرحمن', 'عبدالعزيز', 'عبدالمجيد',
+            'عثمان', 'عصام', 'علاء', 'عماد', 'فارس', 'فارق', 'فاروق', 'فاضل', 'فؤاد',
+            'فوزي', 'فيصل', 'قصي', 'قيس', 'مازن', 'ماهر', 'مجدي', 'محمود', 'مروان',
+            'مزهر', 'مسعود', 'معاذ', 'مقداد', 'منير', 'مهند', 'موسى', 'موفق', 'ناجي',
+            'نايف', 'نبيل', 'نجيب', 'نزار', 'نوح', 'نورالدين', 'هاشم', 'هشام', 'هيثم',
+            'وجدي', 'وديع', 'وسام', 'ياسر', 'يحيى', 'يعقوب', 'يونس',
+        ];
+
+        foreach ($knownFemales as $kf) {
+            $normalizedKf = str_replace(['أ', 'إ', 'آ'], 'ا', $kf);
+            if ($normalizedFirst === $normalizedKf) {
+                return 'female';
+            }
+        }
+
+        foreach ($knownMales as $km) {
+            $normalizedKm = str_replace(['أ', 'إ', 'آ'], 'ا', $km);
+            if ($normalizedFirst === $normalizedKm) {
+                return 'male';
+            }
+        }
+
+        if (str_ends_with($first, 'ة') || str_ends_with($first, 'اء')) {
+            return 'female';
+        }
+
+        return null;
     }
 }

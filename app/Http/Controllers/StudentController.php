@@ -74,8 +74,9 @@ class StudentController extends Controller
             'dob' => $request->get('birthday'),
             'student_code' => $request->get('cnte'),
             'level_id' => $request->get('level_id'),
-            'section_id' => $request->get('level'),
+            'section_id' => $request->get('level', $request->get('section_id')),
             'academic_year_id' => $request->get('year'),
+            'gender' => $request->get('gender', 'all'),
             'per_page' => min((int) $request->get('per_page', 20), 100),
         ]);
 

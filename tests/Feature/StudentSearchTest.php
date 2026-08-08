@@ -248,6 +248,126 @@ class StudentSearchTest extends TestCase
         $this->assertStringContainsString('display: none !important', $page);
     }
 
+    public function test_student_search_supports_gender_filtering_breakdown_counts_and_reconciliation(): void
+    {
+        Sanctum::actingAs($this->makeStudentManager());
+
+        $year = $this->makeAcademicYear();
+        [$level, $sectionA] = $this->makeSection();
+        $sectionB = Section::create([
+            'level_id' => $level->id,
+            'name'     => 'ب',
+            'code'     => 'L1-B',
+            'capacity' => 25,
+        ]);
+
+        // Student 1: Male in Section A
+        $maleStudent = Student::create([
+            'student_code' => 'ST_M1',
+            'first_name'   => 'أحمد',
+            'last_name'    => 'بن علي',
+            'gender'       => 'male',
+            'status'       => 'active',
+        ]);
+        Enrollment::create([
+            'student_id'       => $maleStudent->id,
+            'academic_year_id' => $year->id,
+            'level_id'         => $level->id,
+            'section_id'       => $sectionA->id,
+            'enrollment_date'  => '2025-09-01',
+            'status'           => 'active',
+        ]);
+
+        // Student 2: Female in Section A with duplicate enrollment row in Section B
+        $femaleStudent = Student::create([
+            'student_code' => 'ST_F1',
+            'first_name'   => 'مريم',
+            'last_name'    => 'الطرابلسي',
+            'gender'       => 'female',
+            'status'       => 'active',
+        ]);
+        Enrollment::create([
+            'student_id'       => $femaleStudent->id,
+            'academic_year_id' => $year->id,
+            'level_id'         => $level->id,
+            'section_id'       => $sectionA->id,
+            'enrollment_date'  => '2025-09-01',
+            'status'           => 'active',
+        ]);
+        Enrollment::create([
+            'student_id'       => $femaleStudent->id,
+            'academic_year_id' => $year->id,
+            'level_id'         => $level->id,
+            'section_id'       => $sectionB->id,
+            'enrollment_date'  => '2025-09-01',
+            'status'           => 'active',
+        ]);
+
+        // Student 3: Unknown gender in Section A
+        $unknownStudent = Student::create([
+            'student_code' => 'ST_U1',
+            'first_name'   => 'غير_معروف_99',
+            'last_name'    => 'المستورد',
+            'gender'       => null,
+            'status'       => 'active',
+        ]);
+        Enrollment::create([
+            'student_id'       => $unknownStudent->id,
+            'academic_year_id' => $year->id,
+            'level_id'         => $level->id,
+            'section_id'       => $sectionA->id,
+            'enrollment_date'  => '2025-09-01',
+            'status'           => 'active',
+        ]);
+
+        // 1. Query All for Section A
+        $resAll = $this->getJson('/api/students?'.http_build_query([
+            'level' => $sectionA->id,
+            'year'  => $year->id,
+            'gender' => 'all',
+        ]))->assertOk()->json();
+
+        $this->assertEquals(3, $resAll['total_count']);
+        $this->assertEquals(1, $resAll['male_count']);
+        $this->assertEquals(1, $resAll['female_count']);
+        $this->assertEquals(1, $resAll['unknown_count']);
+        $this->assertEquals(3, count($resAll['data']));
+        $this->assertEquals(
+            $resAll['total_count'],
+            $resAll['male_count'] + $resAll['female_count'] + $resAll['unknown_count']
+        );
+
+        // 2. Male-only Filter
+        $resMale = $this->getJson('/api/students?'.http_build_query([
+            'level' => $sectionA->id,
+            'year'  => $year->id,
+            'gender' => 'male',
+        ]))->assertOk()->json();
+
+        $this->assertEquals(1, count($resMale['data']));
+        $this->assertEquals($maleStudent->id, $resMale['data'][0]['id']);
+
+        // 3. Female-only Filter
+        $resFemale = $this->getJson('/api/students?'.http_build_query([
+            'level' => $sectionA->id,
+            'year'  => $year->id,
+            'gender' => 'female',
+        ]))->assertOk()->json();
+
+        $this->assertEquals(1, count($resFemale['data']));
+        $this->assertEquals($femaleStudent->id, $resFemale['data'][0]['id']);
+
+        // 4. Unknown-only Filter
+        $resUnknown = $this->getJson('/api/students?'.http_build_query([
+            'level' => $sectionA->id,
+            'year'  => $year->id,
+            'gender' => 'unknown',
+        ]))->assertOk()->json();
+
+        $this->assertEquals(1, count($resUnknown['data']));
+        $this->assertEquals($unknownStudent->id, $resUnknown['data'][0]['id']);
+    }
+
     private function makeSection(): array
     {
         $level = Level::create([
