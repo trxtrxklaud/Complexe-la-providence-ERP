@@ -8,7 +8,7 @@
 ## Architecture
 
 - **Frontend**: React 19 + TypeScript + Vite + Tailwind (Arabic RTL)
-- **Backend**: Laravel 11 + Sanctum + Horizon (Normalized database + Service Layer)
+- **Backend**: Laravel 12 + Sanctum + Horizon (Normalized database + Service Layer)
 
 ## Installation
 
