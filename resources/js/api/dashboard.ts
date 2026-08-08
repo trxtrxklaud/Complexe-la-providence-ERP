@@ -15,10 +15,14 @@ export type DashboardData = {
   current_date: string;
   academic_year: { id: number; name: string } | null;
   total_students: number;
+  total_active_students?: number;
   new_students_this_year: number;
   total_males: number;
+  male_students_count?: number;
   total_females: number;
+  female_students_count?: number;
   total_unspecified_gender: number;
+  unknown_gender_count?: number;
   outstanding_balance: number;
   financial_summary?: {
     total_expected: number;

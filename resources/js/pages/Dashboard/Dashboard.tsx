@@ -169,6 +169,15 @@ export default function Dashboard() {
   const month = data?.cash?.month;
   const yearName = data?.academic_year?.name ?? '—';
 
+  const totalActive = data ? (data.total_active_students ?? data.total_students ?? 0) : 0;
+  const males = data ? (data.male_students_count ?? data.total_males ?? 0) : 0;
+  const females = data ? (data.female_students_count ?? data.total_females ?? 0) : 0;
+  const unspecified = data ? (data.unknown_gender_count ?? data.total_unspecified_gender ?? 0) : 0;
+
+  const malePct = totalActive > 0 && males > 0 ? `(${((males / totalActive) * 100).toFixed(1)}%)` : '';
+  const femalePct = totalActive > 0 && females > 0 ? `(${((females / totalActive) * 100).toFixed(1)}%)` : '';
+  const unspecifiedPct = totalActive > 0 && unspecified > 0 ? `(${((unspecified / totalActive) * 100).toFixed(1)}%)` : '';
+
   return (
     <div className="p-6 md:p-8" dir="rtl">
       <div className="mb-8">
@@ -231,15 +240,36 @@ export default function Dashboard() {
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
             <KpiCard
               label="إجمالي التلاميذ"
-              value={data.total_students}
+              value={totalActive}
               icon={GraduationCap}
               tint={C.sage}
               iconColor={C.forest}
               hint={`السنة النشطة: ${yearName}`}
             />
-            <KpiCard label="الإناث" value={data.total_females} icon={UserRound} tint={C.rose} iconColor="#A46E67" />
-            <KpiCard label="الذكور" value={data.total_males} icon={Users} tint={C.beige} iconColor="#8A7C57" />
-        <KpiCard label='غير محدّد' value={data.total_unspecified_gender} icon={UserRound} tint={C.beige} iconColor={C.muted} hint='لم يُسجَّل الجنس في الترحيل القديم' />
+            <KpiCard
+              label="الإناث"
+              value={females}
+              icon={UserRound}
+              tint={C.rose}
+              iconColor="#A46E67"
+              hint={femalePct ? `${femalePct} من الإجمالي` : undefined}
+            />
+            <KpiCard
+              label="الذكور"
+              value={males}
+              icon={Users}
+              tint={C.beige}
+              iconColor="#8A7C57"
+              hint={malePct ? `${malePct} من الإجمالي` : undefined}
+            />
+            <KpiCard
+              label="غير محدّد"
+              value={unspecified}
+              icon={UserRound}
+              tint={C.beige}
+              iconColor={C.muted}
+              hint={unspecifiedPct ? `${unspecifiedPct} لم يُسجَّل الجنس` : 'لم يُسجَّل الجنس'}
+            />
             <KpiCard
               label="المتخلَّد"
               value={<Money value={data.outstanding_balance} />}
