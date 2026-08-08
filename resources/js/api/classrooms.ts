@@ -52,3 +52,8 @@ export const updateSection = (id: number, payload: SectionPayload) =>
 
 export const deleteSection = (id: number) =>
   apiFetch<{ message: string }>('/sections/' + id, { method: 'DELETE', fallbackMessage: 'تعذّر حذف القسم' });
+
+export const fetchSections = async (): Promise<Section[]> => {
+  const levels = await fetchLevels();
+  return levels.flatMap((l) => l.sections || []);
+};
