@@ -33,7 +33,7 @@ export interface Student {
     student_code: string | null;
     first_name: string;
     last_name: string;
-    gender: 'male' | 'female';
+    gender: 'male' | 'female' | 'unknown' | null;
     dob: string | null;
     photo?: string | null;
     notes?: string | null;
@@ -111,7 +111,7 @@ export type TransferStudent = {
     first_name: string;
     last_name: string;
     dob: string | null;
-    gender: 'male' | 'female';
+    gender: 'male' | 'female' | 'unknown' | null;
     guardian_name: string;
     mother_name: string | null;
     phone: string | null;
@@ -308,6 +308,27 @@ export async function recordRegistrationPayment(
             firstValidationMessage(err, 'تعذّر تسجيل المبلغ'),
             typeof err?.code === 'string' ? err.code : null,
         );
+    }
+    return res.json();
+}
+
+/**
+ * Update a single student's gender field.
+ * Only authorized student managers can call this.
+ * Sends PATCH /students/{id} with { gender: 'male' | 'female' }.
+ */
+export async function updateStudentGender(
+    studentId: number,
+    gender: 'male' | 'female',
+): Promise<Student> {
+    const res = await fetch(`${API_BASE}/students/${studentId}`, {
+        method: 'PATCH',
+        headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ gender }),
+    });
+    if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(firstValidationMessage(err, 'تعذّر تحديث الجنس'));
     }
     return res.json();
 }

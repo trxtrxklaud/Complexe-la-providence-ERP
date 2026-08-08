@@ -368,6 +368,256 @@ class StudentSearchTest extends TestCase
         $this->assertEquals($unknownStudent->id, $resUnknown['data'][0]['id']);
     }
 
+    public function test_arabic_first_name_does_not_infer_gender_when_column_is_null(): void
+    {
+        Sanctum::actingAs($this->makeStudentManager());
+
+        $year = $this->makeAcademicYear();
+        [$level, $section] = $this->makeSection();
+
+        // Student with common male Arabic first name 'أحمد' but NULL gender column
+        $student = Student::create([
+            'student_code' => 'NO_INF_1',
+            'first_name'   => 'أحمد',
+            'last_name'    => 'بن صالح',
+            'gender'       => null,
+            'status'       => 'active',
+        ]);
+        Enrollment::create([
+            'student_id'       => $student->id,
+            'academic_year_id' => $year->id,
+            'level_id'         => $level->id,
+            'section_id'       => $section->id,
+            'enrollment_date'  => '2025-09-01',
+            'status'           => 'active',
+        ]);
+
+        $res = $this->getJson('/api/students?'.http_build_query([
+            'level' => $section->id,
+            'year'  => $year->id,
+        ]))->assertOk()->json();
+
+        // Must be categorized as unknown (0 males, 0 females, 1 unknown)
+        $this->assertEquals(1, $res['total_count']);
+        $this->assertEquals(0, $res['male_count']);
+        $this->assertEquals(0, $res['female_count']);
+        $this->assertEquals(1, $res['unknown_count']);
+        $this->assertEquals('unknown', $res['data'][0]['gender']);
+    }
+
+    public function test_creating_a_student_with_male_gender_stores_male(): void
+    {
+        Sanctum::actingAs($this->makeStudentManager());
+
+        $year = $this->makeAcademicYear();
+        [$level, $section] = $this->makeSection();
+
+        $res = $this->postJson('/api/students/enroll', [
+            'first_name'          => 'خالد',
+            'last_name'           => 'المبروك',
+            'dob'                 => '2015-05-10',
+            'gender'              => 'male',
+            'guardian_first_name' => 'سالم',
+            'guardian_last_name'  => 'المبروك',
+            'guardian_phone'      => '21000001',
+            'address'             => 'شارع الجمهورية',
+            'section_id'          => $section->id,
+        ])->assertStatus(201)->json();
+
+        $student = Student::find($res['enrollment']['student_id'] ?? null)
+            ?? Student::where('student_code', $res['enrollment']['student']['student_code'] ?? '')->first();
+
+        $this->assertNotNull($student);
+        $this->assertEquals('male', $student->fresh()->gender);
+    }
+
+    public function test_creating_a_student_with_female_gender_stores_female(): void
+    {
+        Sanctum::actingAs($this->makeStudentManager());
+
+        $year = $this->makeAcademicYear();
+        [$level, $section] = $this->makeSection();
+
+        $res = $this->postJson('/api/students/enroll', [
+            'first_name'          => 'سارة',
+            'last_name'           => 'البوسعيدي',
+            'dob'                 => '2016-03-20',
+            'gender'              => 'female',
+            'guardian_first_name' => 'محمد',
+            'guardian_last_name'  => 'البوسعيدي',
+            'guardian_phone'      => '21000002',
+            'address'             => 'حي الرياض',
+            'section_id'          => $section->id,
+        ])->assertStatus(201)->json();
+
+        $student = Student::find($res['enrollment']['student_id'] ?? null)
+            ?? Student::where('student_code', $res['enrollment']['student']['student_code'] ?? '')->first();
+
+        $this->assertNotNull($student);
+        $this->assertEquals('female', $student->fresh()->gender);
+    }
+
+    public function test_creating_a_student_with_invalid_gender_is_rejected(): void
+    {
+        Sanctum::actingAs($this->makeStudentManager());
+        $year = $this->makeAcademicYear();
+        [$level, $section] = $this->makeSection();
+
+        $this->postJson('/api/students/enroll', [
+            'first_name'          => 'تلميذ',
+            'last_name'           => 'اختبار',
+            'dob'                 => '2015-01-01',
+            'gender'              => 'unknown',  // invalid — must be male or female
+            'guardian_first_name' => 'ولي',
+            'guardian_last_name'  => 'الأمر',
+            'guardian_phone'      => '21000003',
+            'address'             => 'عنوان',
+            'section_id'          => $section->id,
+        ])->assertStatus(422);
+    }
+
+    public function test_creating_a_student_without_gender_is_rejected(): void
+    {
+        Sanctum::actingAs($this->makeStudentManager());
+        $year = $this->makeAcademicYear();
+        [$level, $section] = $this->makeSection();
+
+        $this->postJson('/api/students/enroll', [
+            'first_name'          => 'تلميذ',
+            'last_name'           => 'اختبار',
+            'dob'                 => '2015-01-01',
+            // gender omitted — must be rejected
+            'guardian_first_name' => 'ولي',
+            'guardian_last_name'  => 'الأمر',
+            'guardian_phone'      => '21000004',
+            'address'             => 'عنوان',
+            'section_id'          => $section->id,
+        ])->assertStatus(422);
+    }
+
+    public function test_updating_gender_from_null_to_male_succeeds(): void
+    {
+        Sanctum::actingAs($this->makeStudentManager());
+
+        $student = Student::create([
+            'student_code' => 'UPD_M_1',
+            'first_name'   => 'تلميذ',
+            'last_name'    => 'قديم',
+            'gender'       => null,
+            'status'       => 'active',
+        ]);
+
+        $this->patchJson("/api/students/{$student->id}", ['gender' => 'male'])
+            ->assertOk();
+
+        $this->assertEquals('male', $student->fresh()->gender);
+    }
+
+    public function test_updating_gender_from_null_to_female_succeeds(): void
+    {
+        Sanctum::actingAs($this->makeStudentManager());
+
+        $student = Student::create([
+            'student_code' => 'UPD_F_1',
+            'first_name'   => 'تلميذة',
+            'last_name'    => 'قديمة',
+            'gender'       => null,
+            'status'       => 'active',
+        ]);
+
+        $this->patchJson("/api/students/{$student->id}", ['gender' => 'female'])
+            ->assertOk();
+
+        $this->assertEquals('female', $student->fresh()->gender);
+    }
+
+    public function test_updating_gender_to_invalid_value_is_rejected(): void
+    {
+        Sanctum::actingAs($this->makeStudentManager());
+
+        $student = Student::create([
+            'student_code' => 'UPD_INV_1',
+            'first_name'   => 'تلميذ',
+            'last_name'    => 'اختبار',
+            'gender'       => null,
+            'status'       => 'active',
+        ]);
+
+        $this->patchJson("/api/students/{$student->id}", ['gender' => 'unknown'])
+            ->assertStatus(422);
+
+        $this->assertNull($student->fresh()->gender);
+    }
+
+    public function test_unauthorized_user_cannot_update_student_gender(): void
+    {
+        // User with no manage_students permission
+        $user = $this->makeUser('cashier');
+        $user->update(['is_active' => true]);
+        Sanctum::actingAs($user);
+
+        $student = Student::create([
+            'student_code' => 'UNAUTH_1',
+            'first_name'   => 'تلميذ',
+            'last_name'    => 'اختبار',
+            'gender'       => null,
+            'status'       => 'active',
+        ]);
+
+        $this->patchJson("/api/students/{$student->id}", ['gender' => 'male'])
+            ->assertStatus(403);
+
+        $this->assertNull($student->fresh()->gender);
+    }
+
+    public function test_dashboard_counts_update_correctly_after_gender_change(): void
+    {
+        Sanctum::actingAs($this->makeStudentManager());
+
+        $year = $this->makeAcademicYear();
+        [$level, $section] = $this->makeSection();
+
+        // Create student with null gender, enrolled in active year
+        $student = Student::create([
+            'student_code' => 'DASH_UPD_1',
+            'first_name'   => 'تلميذ',
+            'last_name'    => 'اختبار',
+            'gender'       => null,
+            'status'       => 'active',
+        ]);
+        Enrollment::create([
+            'student_id'       => $student->id,
+            'academic_year_id' => $year->id,
+            'level_id'         => $level->id,
+            'section_id'       => $section->id,
+            'enrollment_date'  => '2025-09-01',
+            'status'           => 'active',
+        ]);
+
+        // Initially unknown
+        $res1 = $this->getJson('/api/students?' . http_build_query([
+            'level' => $section->id,
+            'year'  => $year->id,
+        ]))->assertOk()->json();
+        $this->assertEquals(0, $res1['male_count']);
+        $this->assertEquals(1, $res1['unknown_count']);
+
+        // Update gender to male
+        $this->patchJson("/api/students/{$student->id}", ['gender' => 'male'])->assertOk();
+
+        // Now male count should increase
+        $res2 = $this->getJson('/api/students?' . http_build_query([
+            'level' => $section->id,
+            'year'  => $year->id,
+        ]))->assertOk()->json();
+        $this->assertEquals(1, $res2['male_count']);
+        $this->assertEquals(0, $res2['unknown_count']);
+        $this->assertEquals(
+            $res2['total_count'],
+            $res2['male_count'] + $res2['female_count'] + $res2['unknown_count']
+        );
+    }
+
     private function makeSection(): array
     {
         $level = Level::create([

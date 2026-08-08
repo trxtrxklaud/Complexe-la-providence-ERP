@@ -116,7 +116,7 @@ class DashboardTest extends TestCase
             'enrollment_date' => now()->toDateString(),
         ]);
 
-        // Student 3: Null/Unspecified gender
+        // Student 3: Null/Unspecified gender with generic name
         $unspecifiedStudent = \App\Models\Student::create([
             'student_code' => 'ST_UNK_1',
             'first_name' => 'غير_معروف_123',
@@ -132,16 +132,32 @@ class DashboardTest extends TestCase
             'enrollment_date' => now()->toDateString(),
         ]);
 
+        // Student 4: Null/Unspecified gender with male Arabic first name 'محمد'
+        $unspecifiedArabicName = \App\Models\Student::create([
+            'student_code' => 'ST_UNK_2',
+            'first_name' => 'محمد',
+            'last_name' => 'التونسي',
+            'gender' => null,
+        ]);
+        \App\Models\Enrollment::create([
+            'student_id' => $unspecifiedArabicName->id,
+            'academic_year_id' => $year->id,
+            'level_id' => 1,
+            'section_id' => $sec1->id,
+            'status' => 'active',
+            'enrollment_date' => now()->toDateString(),
+        ]);
+
         $data = $this->getJson('/api/dashboard')->assertOk()->json('data');
 
-        $this->assertEquals(3, $data['total_students']);
-        $this->assertEquals(3, $data['total_active_students']);
+        $this->assertEquals(4, $data['total_students']);
+        $this->assertEquals(4, $data['total_active_students']);
         $this->assertEquals(1, $data['male_students_count']);
         $this->assertEquals(1, $data['total_males']);
         $this->assertEquals(1, $data['female_students_count']);
         $this->assertEquals(1, $data['total_females']);
-        $this->assertEquals(1, $data['unknown_gender_count']);
-        $this->assertEquals(1, $data['total_unspecified_gender']);
+        $this->assertEquals(2, $data['unknown_gender_count']);
+        $this->assertEquals(2, $data['total_unspecified_gender']);
 
         // Reconciliation Assertion
         $this->assertEquals(
