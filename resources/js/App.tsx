@@ -25,6 +25,9 @@ import {
 } from './routeLoaders';
 
 const UsersList = lazy(() => loadUsersList().then((module) => ({ default: module.UsersList })));
+const DiscountsPage = lazy(() => import('./pages/Discounts/DiscountsPage').then((module) => ({ default: module.DiscountsPage })));
+const ClubFeesReportPage = lazy(() => import('./pages/Reports/ClubFeesReportPage'));
+const ClubsPage = lazy(() => import('./pages/Clubs/ClubsPage'));
 const UserForm = lazy(() => import('./pages/Users/UserForm').then((module) => ({ default: module.UserForm })));
 const NewStudentWizard = lazy(() => import('./pages/Students/NewStudentWizard').then((module) => ({ default: module.NewStudentWizard })));
 const OldStudentReenroll = lazy(() => import('./pages/Students/OldStudentReenroll').then((module) => ({ default: module.OldStudentReenroll })));
@@ -206,6 +209,18 @@ export default function App() {
                         <Route path="unpaid-monthly" element={<ProtectedRoute permission="view_reports"><UnpaidMonthlyReportPage /></ProtectedRoute>} />
                     </Route>
 
+                    <Route path="/reports/club-fees" element={
+                        <ProtectedRoute anyOf={['manage_payments', 'view_reports']}>
+                            <Layout><ClubFeesReportPage /></Layout>
+                        </ProtectedRoute>
+                    } />
+
+                    <Route path="/clubs" element={
+                        <ProtectedRoute anyOf={['manage_students', 'manage_payments']}>
+                            <Layout><ClubsPage /></Layout>
+                        </ProtectedRoute>
+                    } />
+
                     {/* ═══ المصاريف ═══
                         التسجيل manage_expenses والتقارير view_reports. */}
                     <Route path="/expenses" element={
@@ -252,7 +267,13 @@ export default function App() {
                     {/* استخلاص مستقل (توافق خلفي): يُحوّل إلى تبويب الفوترة داخل المداخيل */}
                     <Route path="/collection" element={<Navigate to="/income/billing" replace />} />
 
-                    {/* Historique — سجل الوصولات الملغاة، يقرأ من /payments */}
+                    {/* التخفيضات السنوية — الخادم يحرسها بصلاحية waive_fees حصراً */}
+<Route path='/discounts' element={
+<ProtectedRoute permission='waive_fees'>
+<Layout><DiscountsPage /></Layout>
+</ProtectedRoute>
+} />
+{/* Historique — سجل الوصولات الملغاة، يقرأ من /payments */}
                     <Route path="/historique" element={
                         <ProtectedRoute permission="manage_payments">
                             <Layout><HistoriquePage /></Layout>

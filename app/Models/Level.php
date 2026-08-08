@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Level extends Model
@@ -27,5 +28,10 @@ class Level extends Model
     public function feePlans(): HasMany
     {
         return $this->hasMany(FeePlan::class);
+    }
+
+    public function clubs(): BelongsToMany
+    {
+        return $this->belongsToMany(Club::class, 'club_levels');
     }
 }

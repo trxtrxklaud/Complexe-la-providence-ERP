@@ -1,0 +1,115 @@
+<?php
+
+namespace App\Http\Controllers;
+
+use App\Models\ClubMonthlyFee;
+use App\Services\ClubService;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
+use InvalidArgumentException;
+
+class ClubReportController extends Controller
+{
+    public function __construct(private readonly ClubService $clubService) {}
+
+    public function report(Request $request): JsonResponse
+    {
+        $request->validate([
+            'month' => ['nullable', 'string', 'regex:/^\d{4}-(0[1-9]|1[0-2])$/'],
+            'academic_year_id' => ['nullable', 'integer', 'exists:academic_years,id'],
+            'club_id' => ['nullable', 'integer', 'exists:clubs,id'],
+            'level_id' => ['nullable', 'integer', 'exists:levels,id'],
+            'section_id' => ['nullable', 'integer', 'exists:sections,id'],
+            'status' => ['nullable', 'string', 'in:paid,unpaid,partial'],
+            'search' => ['nullable', 'string', 'max:100'],
+        ]);
+
+        $report = $this->clubService->getReport($request->all());
+
+        return response()->json($report);
+    }
+
+    public function generateMonth(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'academic_year_id' => ['required', 'integer', 'exists:academic_years,id'],
+            'month' => ['required', 'string', 'regex:/^\d{4}-(0[1-9]|1[0-2])$/'],
+            'club_id' => ['nullable', 'integer', 'exists:clubs,id'],
+        ]);
+
+        $result = $this->clubService->generateMonthFees(
+            (int) $data['academic_year_id'],
+            $data['month'],
+            ! empty($data['club_id']) ? (int) $data['club_id'] : null,
+            $request->user()?->id
+        );
+
+        return response()->json([
+            'message' => "تم توليد سجلات الشهر بنجاح ({$result['created']} سجل جديد، {$result['skipped']} سجل موجود مسبقاً)",
+            'result' => $result,
+        ]);
+    }
+
+    public function collectPayment(Request $request, ClubMonthlyFee $monthlyFee): JsonResponse
+    {
+        $data = $request->validate([
+            'amount_paid' => ['required', 'numeric', 'min:0.01'],
+            'paid_at' => ['required', 'date', 'before_or_equal:today'],
+            'method' => ['required', 'string', 'in:cash,bank_transfer,check,card'],
+            'reference' => ['nullable', 'string', 'max:100'],
+            'notes' => ['nullable', 'string', 'max:500'],
+        ]);
+
+        try {
+            $updated = $this->clubService->recordPayment(
+                $monthlyFee,
+                (float) $data['amount_paid'],
+                $data['paid_at'],
+                $data['method'],
+                $data['reference'] ?? null,
+                $data['notes'] ?? null,
+                $request->user()?->id
+            );
+
+            return response()->json([
+                'message' => 'تم تسجيل استخلاص معلوم النادي بنجاح',
+                'record' => $updated,
+            ]);
+        } catch (InvalidArgumentException $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
+    }
+
+    public function cancelPayment(Request $request, ClubMonthlyFee $monthlyFee): JsonResponse
+    {
+        $data = $request->validate([
+            'reason' => ['required', 'string', 'min:3', 'max:500'],
+        ]);
+
+        try {
+            $cancelled = $this->clubService->cancelPayment(
+                $monthlyFee,
+                $request->user()?->id ?? 1,
+                $data['reason']
+            );
+
+            return response()->json([
+                'message' => 'تم إلغاء استخلاص معلوم النادي',
+                'record' => $cancelled,
+            ]);
+        } catch (InvalidArgumentException $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
+    }
+
+    public function destroy(ClubMonthlyFee $monthlyFee): JsonResponse
+    {
+        try {
+            $this->clubService->deleteFeeRecord($monthlyFee);
+
+            return response()->json(null, 204);
+        } catch (InvalidArgumentException $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
+    }
+}

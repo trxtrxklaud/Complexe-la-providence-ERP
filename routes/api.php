@@ -3,6 +3,9 @@
 use App\Http\Controllers\AcademicYearController;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\ClassroomRosterController;
+use App\Http\Controllers\ClubController;
+use App\Http\Controllers\ClubReportController;
+use App\Http\Controllers\ClubSubscriptionController;
 use App\Http\Controllers\CollectionController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\DiscountController;
@@ -183,5 +186,20 @@ Route::middleware(['auth:sanctum', 'active', 'throttle:120,1'])->group(function 
         Route::get('/enrollments/{enrollment}/discount', [DiscountController::class, 'show']);
         Route::post('/enrollments/{enrollment}/discount', [DiscountController::class, 'store']);
         Route::post('/discounts/{discount}/cancel', [DiscountController::class, 'cancel']);
+    });
+
+    // النوادي المدرسية واشتراكاتها
+    Route::middleware('permission:manage_students')->group(function () {
+        Route::apiResource('/clubs', ClubController::class);
+        Route::apiResource('/club-subscriptions', ClubSubscriptionController::class)->except(['update']);
+    });
+
+    // تقارير واستخلاص معلوم النوادي
+    Route::middleware('permission:manage_payments')->group(function () {
+        Route::get('/reports/club-fees', [ClubReportController::class, 'report']);
+        Route::post('/reports/club-fees/generate', [ClubReportController::class, 'generateMonth']);
+        Route::post('/club-monthly-fees/{monthlyFee}/collect', [ClubReportController::class, 'collectPayment']);
+        Route::post('/club-monthly-fees/{monthlyFee}/cancel', [ClubReportController::class, 'cancelPayment']);
+        Route::delete('/club-monthly-fees/{monthlyFee}', [ClubReportController::class, 'destroy']);
     });
 });

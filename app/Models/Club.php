@@ -6,6 +6,8 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+
 class Club extends Model
 {
     protected $fillable = [
@@ -29,5 +31,10 @@ class Club extends Model
     public function subscriptions(): HasMany
     {
         return $this->hasMany(ClubSubscription::class);
+    }
+
+    public function levels(): BelongsToMany
+    {
+        return $this->belongsToMany(Level::class, 'club_levels');
     }
 }
