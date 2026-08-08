@@ -106,4 +106,6 @@ Verification so far: `php artisan test` 67 passing; `npm run lint` clean; `npm r
 - CRIT-001 closed: Student deletion blocked when enrollments, payments, or clubSubscriptions exist (`app/Http/Controllers/StudentController.php`).
 - Focused test: `tests/Feature/StudentDeleteProtectionTest.php` (3 passed, 10 assertions).
 - No migrations changed.
-- CRIT-002 remains open.
+- CRIT-002 closed: Employee deletion blocked when salaries, advances, or repayments exist (`app/Http/Controllers/EmployeeController.php`, `app/Models/Employee.php`).
+- Focused test: `tests/Feature/EmployeeDeleteProtectionTest.php` (4 passed, 15 assertions).
+- No migrations changed.
