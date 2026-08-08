@@ -108,6 +108,27 @@ export default function ClubFeesReportPage() {
     }
   };
 
+  const handleClubChange = (clubIdVal: number | '') => {
+    setSelectedClubId(clubIdVal);
+    if (clubIdVal) {
+      const selectedClubObj = clubs.find((c) => c.id === Number(clubIdVal));
+      const allowedLevelIds = (selectedClubObj?.levels && selectedClubObj.levels.length > 0)
+        ? selectedClubObj.levels.map((l) => l.id)
+        : [];
+      if (allowedLevelIds.length > 0) {
+        if (selectedLevelId && !allowedLevelIds.includes(Number(selectedLevelId))) {
+          setSelectedLevelId('');
+        }
+        if (selectedSectionId) {
+          const matchingSec = sections.find((s) => s.id === Number(selectedSectionId));
+          if (matchingSec && !allowedLevelIds.includes(matchingSec.level_id)) {
+            setSelectedSectionId('');
+          }
+        }
+      }
+    }
+  };
+
   const handleLevelChange = (levelIdVal: number | '') => {
     setSelectedLevelId(levelIdVal);
     if (levelIdVal && selectedSectionId) {
@@ -117,6 +138,25 @@ export default function ClubFeesReportPage() {
       }
     }
   };
+
+  const selectedClubObj = selectedClubId ? clubs.find((c) => c.id === Number(selectedClubId)) : null;
+  const clubAllowedLevelIds = (selectedClubObj?.levels && selectedClubObj.levels.length > 0)
+    ? selectedClubObj.levels.map((l) => l.id)
+    : [];
+
+  const availableLevels = clubAllowedLevelIds.length > 0
+    ? levels.filter((l) => clubAllowedLevelIds.includes(l.id))
+    : levels;
+
+  const availableSections = sections.filter((s) => {
+    if (clubAllowedLevelIds.length > 0 && !clubAllowedLevelIds.includes(s.level_id)) {
+      return false;
+    }
+    if (selectedLevelId && s.level_id !== Number(selectedLevelId)) {
+      return false;
+    }
+    return true;
+  });
 
   const handleGenerateMonth = async () => {
     if (!selectedYearId || !selectedMonth) {
@@ -303,7 +343,7 @@ export default function ClubFeesReportPage() {
             <label className="block text-xs font-semibold text-gray-600 mb-1">النادي</label>
             <select
               value={selectedClubId}
-              onChange={(e) => setSelectedClubId(e.target.value ? Number(e.target.value) : '')}
+              onChange={(e) => handleClubChange(e.target.value ? Number(e.target.value) : '')}
               className="w-full text-sm border-gray-300 rounded-lg p-2 bg-gray-50"
             >
               <option value="">كل النوادي</option>
@@ -321,7 +361,7 @@ export default function ClubFeesReportPage() {
               className="w-full text-sm border-gray-300 rounded-lg p-2 bg-gray-50"
             >
               <option value="">كل المستويات</option>
-              {levels.map((l) => (
+              {availableLevels.map((l) => (
                 <option key={l.id} value={l.id}>{l.name}</option>
               ))}
             </select>
@@ -335,7 +375,7 @@ export default function ClubFeesReportPage() {
               className="w-full text-sm border-gray-300 rounded-lg p-2 bg-gray-50"
             >
               <option value="">كل الأقسام</option>
-              {(selectedLevelId ? sections.filter((s) => s.level_id === Number(selectedLevelId)) : sections).map((s) => (
+              {availableSections.map((s) => (
                 <option key={s.id} value={s.id}>
                   {selectedLevelId
                     ? s.name

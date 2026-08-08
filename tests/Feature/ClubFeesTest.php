@@ -442,4 +442,41 @@ class ClubFeesTest extends TestCase
         $this->assertEquals(2, $result['created']);
         $this->assertEquals(2, ClubMonthlyFee::where('student_id', $enrollment->student_id)->where('month', '2026-05')->count());
     }
+
+    /** 18. تعديل مبلغ معلوم النادي يحفظ المبلغ الجديد ويزامنه مع أنواع المعاليم العامة ويدرج في الأشهر الجديدة مع حماية السجلات السابقة المدفوعة. */
+    public function test_updating_club_fee_persists_new_amount_and_synchronizes_fee_type_and_future_months_while_protecting_paid_history(): void
+    {
+        $year = $this->makeAcademicYear();
+        $enrollment = $this->makeEnrollment($year);
+        $mentalClub = Club::where('name', 'الحساب الذهني')->firstOrFail();
+
+        // 1. Generate and pay month 1 (May) with original fee 40.00
+        $sub = $this->clubService->subscribeStudent($enrollment->student_id, $mentalClub->id, $year->id);
+        $this->clubService->generateMonthFees($year->id, '2026-05');
+
+        $mayFee = ClubMonthlyFee::where('student_id', $enrollment->student_id)->where('month', '2026-05')->firstOrFail();
+        $this->clubService->recordPayment($mayFee, 40.00, '2026-05-10', 'cash');
+
+        // 2. Update Club fee to 45.00
+        $this->clubService->updateClub($mentalClub, ['monthly_fee' => 45.00]);
+
+        // 3. Verify Club model and FeeType table are synchronized
+        $mentalClub->refresh();
+        $this->assertEquals(45.00, (float) $mentalClub->monthly_fee);
+
+        $feeType = \App\Models\FeeType::where('name_ar', 'like', '%حساب%')->first();
+        if ($feeType) {
+            $this->assertEquals(45.00, (float) $feeType->price);
+        }
+
+        // 4. Verify historical paid record for May remains 40.00
+        $mayFee->refresh();
+        $this->assertEquals(40.00, (float) $mayFee->amount_due);
+        $this->assertEquals(40.00, (float) $mayFee->amount_paid);
+
+        // 5. Generate month 2 (June) with updated fee 45.00
+        $this->clubService->generateMonthFees($year->id, '2026-06');
+        $juneFee = ClubMonthlyFee::where('student_id', $enrollment->student_id)->where('month', '2026-06')->firstOrFail();
+        $this->assertEquals(45.00, (float) $juneFee->amount_due);
+    }
 }

@@ -42,6 +42,8 @@ class ClubService
                 $club->levels()->sync($levelIds);
             }
 
+            $this->syncFeeTypePrice($club);
+
             return $club->fresh('levels');
         });
     }
@@ -58,7 +60,30 @@ class ClubService
                 $club->levels()->sync($levelIds);
             }
 
+            $this->syncFeeTypePrice($club);
+
             return $club->fresh('levels');
+        });
+    }
+
+    /**
+     * مزامنة مبلغ معلوم النادي مع قائمة أنواع المعاليم العامة.
+     */
+    private function syncFeeTypePrice(Club $club): void
+    {
+        $normalizedClubName = \App\Models\FeeType::normalize($club->name);
+
+        \App\Models\FeeType::all()->each(function ($feeType) use ($normalizedClubName, $club) {
+            $normalizedFeeTypeName = \App\Models\FeeType::normalize($feeType->name_ar);
+            if (
+                $normalizedClubName === $normalizedFeeTypeName ||
+                str_contains($normalizedClubName, $normalizedFeeTypeName) ||
+                str_contains($normalizedFeeTypeName, $normalizedClubName) ||
+                (str_contains($normalizedClubName, 'روبوت') && str_contains($normalizedFeeTypeName, 'روبوت')) ||
+                (str_contains($normalizedClubName, 'حساب') && str_contains($normalizedFeeTypeName, 'حساب'))
+            ) {
+                $feeType->update(['price' => $club->monthly_fee]);
+            }
         });
     }
 
