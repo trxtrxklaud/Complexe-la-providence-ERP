@@ -173,7 +173,7 @@ export function MonthlyDiscountsPage() {
         if (!enrollmentId) throw new Error('يرجى اختيار تلميذ');
         await createTuitionMonthlyDiscount(enrollmentId, {
           discount_type: discountType,
-          monthly_amount: discountType === 'humanitarian_fixed' ? parseFloat(monthlyAmount) : null,
+          monthly_amount: discountType === 'full_waiver' ? null : parseFloat(monthlyAmount),
           reason: reason.trim(),
           notes: notes.trim() || undefined,
         });
@@ -181,11 +181,12 @@ export function MonthlyDiscountsPage() {
         if (!subscriptionId) throw new Error('يرجى اختيار اشتراك نادي');
         await createClubMonthlyDiscount(subscriptionId, {
           discount_type: discountType,
-          monthly_amount: discountType === 'humanitarian_fixed' ? parseFloat(monthlyAmount) : null,
+          monthly_amount: discountType === 'full_waiver' ? null : parseFloat(monthlyAmount),
           reason: reason.trim(),
           notes: notes.trim() || undefined,
         });
       }
+
       setNotice('تم تسجيل التخفيض الشهري بنجاح');
       setReason('');
       setMonthlyAmount('');

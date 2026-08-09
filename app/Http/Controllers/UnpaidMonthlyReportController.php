@@ -163,10 +163,20 @@ class UnpaidMonthlyReportController extends Controller
                     ->sum('amount');
 
 
-                $humanitarianDisc = $enrollment->monthlyDiscounts
-                    ->firstWhere('discount_type', \App\Models\MonthlyDiscount::TYPE_HUMANITARIAN_FIXED);
+                $monthlyDisc = $enrollment->monthlyDiscounts
+                    ->first(fn ($d) => in_array($d->discount_type, [\App\Models\MonthlyDiscount::TYPE_HUMANITARIAN_FIXED, \App\Models\MonthlyDiscount::TYPE_NORMAL_MONTHLY], true));
 
-                $discountAmount = $humanitarianDisc ? (float) $humanitarianDisc->monthly_amount : 0.0;
+                $annualDisc = null;
+                if ($monthlyDisc) {
+                    $discountAmount = (float) $monthlyDisc->monthly_amount;
+                    $discountType = $monthlyDisc->discount_type;
+                    $discountReason = $monthlyDisc->reason;
+                } else {
+                    $annualDisc = $enrollment->activeDiscount($year->id);
+                    $discountAmount = $annualDisc ? (float) $annualDisc->amount : 0.0;
+                    $discountType = $annualDisc ? 'normal' : null;
+                    $discountReason = $annualDisc ? $annualDisc->reason : null;
+                }
                 $netDue = max(0.0, round($monthlyFee - $discountAmount, 2));
 
                 return [
@@ -185,9 +195,10 @@ class UnpaidMonthlyReportController extends Controller
                     'discount_amount' => $discountAmount,
                     'net_due'         => $netDue,
                     'remaining_amount'=> $netDue,
-                    'discount_type'   => $humanitarianDisc ? 'humanitarian_fixed' : null,
-                    'discount_reason' => $humanitarianDisc?->reason,
+                    'discount_type'   => $discountType,
+                    'discount_reason' => $discountReason,
                 ];
+
             });
 
         $generatedAt = now();

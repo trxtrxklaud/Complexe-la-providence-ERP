@@ -394,8 +394,9 @@ class CollectionService
                 if ($annualDisc && (float) $annualDisc->amount > 0) {
                     $discType = 'normal';
                     $discReason = $annualDisc->reason;
-                    $discAmount = round((float) $annualDisc->amount / 10, 2);
+                    $discAmount = (float) $annualDisc->amount;
                 }
+
             }
 
 

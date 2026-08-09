@@ -91,13 +91,14 @@ class MonthlyDiscountTest extends TestCase
 
         $discountService = app(DiscountService::class);
 
-        // 300 TND is within 320 cap -> succeeds
-        $d = $discountService->createForEnrollment($enrollment->id, 300.0, 'تخفيض عادي', '2025-09-01');
+        // 30 TND per month is within 32 TND monthly cap (20% of 160 TND) -> succeeds
+        $d = $discountService->createForEnrollment($enrollment->id, 30.0, 'تخفيض عادي', '2025-09-01');
         $this->assertNotNull($d);
 
-        // Exceeding 320 cap with additional discount throws InvalidArgumentException
+        // Exceeding 32 TND monthly cap with additional discount throws InvalidArgumentException
         $this->expectException(\InvalidArgumentException::class);
-        $discountService->validate20PercentCap($enrollment->id, 50.0);
+        $discountService->validate20PercentCap($enrollment->id, 10.0);
+
     }
 
     /**
@@ -688,8 +689,9 @@ class MonthlyDiscountTest extends TestCase
         $enrollment = $this->makeEnrollment($year);
         $this->makeFeePlan($year, $enrollment->level_id, 160.0);
 
-        // Annual normal discount: 200 TND (= 20 TND/month)
-        app(DiscountService::class)->createForEnrollment($enrollment->id, 200.0, 'تخفيض عادي', '2025-09-01');
+        // Annual normal discount: 20 TND/month
+        app(DiscountService::class)->createForEnrollment($enrollment->id, 20.0, 'تخفيض عادي', '2025-09-01');
+
 
         // Recurring monthly humanitarian discount: 50 TND
         app(MonthlyDiscountService::class)->createDiscount($enrollment->id, 'humanitarian_fixed', 50.0, 'خصم إنساني');
@@ -920,15 +922,16 @@ class MonthlyDiscountTest extends TestCase
         $enrollment = $this->makeEnrollment($year);
         $this->makeFeePlan($year, $enrollment->level_id, 160.0);
 
-        // 100 TND annual normal discount = 10 TND / month
+        // 10 TND / month per-month discount
         \App\Models\EnrollmentDiscount::create([
             'enrollment_id' => $enrollment->id,
             'academic_year_id' => $year->id,
             'type' => 'fixed',
-            'amount' => 100.0,
+            'amount' => 10.0,
             'reason' => 'خصم عادي سنوي',
             'applied_date' => now(),
         ]);
+
 
 
         $prev = app(\App\Services\CollectionService::class)->preview($enrollment->id, ['2025-09']);
@@ -1089,5 +1092,56 @@ class MonthlyDiscountTest extends TestCase
             $this->assertEquals(10.0, $item['discount_amount']);
             $this->assertEquals(150.0, $item['net_due']);
         }
+    }
+
+    /**
+     * Test 43: Regression test for bi-monthly 300 TND fee (150 TND/month) and 10 TND per-month discount:
+     * - Monthly: 150 TND gross, 10 TND discount, 140 TND net.
+     * - 2-Month: 300 TND gross, 20 TND discount, 280 TND net.
+     * - 10-Month Academic Year: 1500 TND gross, 100 TND discount, 1400 TND net.
+     */
+    public function test_43_two_month_and_annual_discount_calculations(): void
+    {
+        $year = $this->makeAcademicYear('2025-2026');
+        $enrollment = $this->makeEnrollment($year);
+        $this->makeFeePlan($year, $enrollment->level_id, 150.0); // 150 TND/month -> 1500 TND annual
+
+        // 10 TND per-month discount
+        $disc = app(DiscountService::class)->createForEnrollment($enrollment->id, 10.0, 'تخفيض عادي 10 د شهرياً', '2025-09-01');
+        $this->assertEquals(10.0, $disc->amount);
+
+        $collectionService = app(\App\Services\CollectionService::class);
+
+        // 1. Single month calculation (150 gross, 10 disc, 140 net)
+        $prev1 = $collectionService->preview($enrollment->id, ['2025-09']);
+        $this->assertEquals(150.0, $prev1['gross_amount']);
+        $this->assertEquals(10.0, $prev1['discount_amount']);
+        $this->assertEquals(140.0, $prev1['net_due']);
+
+        // 2. Two-month calculation (300 gross, 20 disc, 280 net)
+        $prev2 = $collectionService->preview($enrollment->id, ['2025-09', '2025-10']);
+        $this->assertEquals(300.0, $prev2['gross_amount']);
+        $this->assertEquals(20.0, $prev2['discount_amount']);
+        $this->assertEquals(280.0, $prev2['net_due']);
+
+        // 3. Ten-month academic year calculation (1500 gross, 100 disc, 1400 net)
+        $allMonths = $collectionService->getAcademicYearMonths($year);
+        $prev10 = $collectionService->preview($enrollment->id, $allMonths);
+        $this->assertEquals(1500.0, $prev10['gross_amount']);
+        $this->assertEquals(100.0, $prev10['discount_amount']);
+        $this->assertEquals(1400.0, $prev10['net_due']);
+
+        // 4. DiscountController show summary
+        $user = $this->makeWaiverUser();
+        Sanctum::actingAs($user);
+
+        $showResponse = $this->getJson("/api/enrollments/{$enrollment->id}/discount");
+
+        $showResponse->assertOk()
+            ->assertJsonPath('enrollment.annual_fees', 1500)
+            ->assertJsonPath('enrollment.discount_cap', 30)
+            ->assertJsonPath('enrollment.active_discount', 10)
+            ->assertJsonPath('enrollment.annual_discount', 100)
+            ->assertJsonPath('enrollment.net_fees', 1400);
     }
 }
