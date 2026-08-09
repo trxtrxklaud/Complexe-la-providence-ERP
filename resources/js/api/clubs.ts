@@ -131,6 +131,19 @@ export function cancelClubSubscription(id: number): Promise<{ message: string }>
   return apiFetch<{ message: string }>(`/club-subscriptions/${id}`, { method: 'DELETE' });
 }
 
+export function excludeStudentFromClub(
+  subscriptionId: number,
+  reason?: string
+): Promise<{ message: string; subscription: ClubSubscriptionItem }> {
+  return apiFetch(`/club-subscriptions/${subscriptionId}/exclude`, { method: 'POST', body: { reason } });
+}
+
+export function restoreStudentToClub(
+  subscriptionId: number
+): Promise<{ message: string; subscription: ClubSubscriptionItem }> {
+  return apiFetch(`/club-subscriptions/${subscriptionId}/restore`, { method: 'POST' });
+}
+
 export function fetchClubFeesReport(params: {
   month?: string;
   academic_year_id?: number;
@@ -147,6 +160,7 @@ export function generateClubMonthFees(data: {
   academic_year_id: number;
   month: string;
   club_id?: number;
+  section_id?: number;
 }): Promise<{ message: string; result: { month: string; created: number; skipped: number } }> {
   return apiFetch('/reports/club-fees/generate', { method: 'POST', body: data });
 }

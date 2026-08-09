@@ -94,6 +94,23 @@ export function CollectionPage() {
         setFeeAmounts(am);
       })
       .catch((e) => setError(e.message || 'فشل التحميل'));
+
+    const handleClubFeeUpdated = () => {
+      getFeeTypes().then((f) => {
+        const fees = Array.isArray(f) ? f : [];
+        const active = fees.filter((x: any) => x.is_active !== false);
+        const tuition = active.find((x: any) => x.name_ar === TUITION_AR) || null;
+        setTuitionFee(tuition);
+        setFeeTypes(active.filter((x: any) => !tuition || x.id !== tuition.id));
+        const am: Record<number, string> = {};
+        fees.forEach((x: any) => { am[x.id] = String(x.price ?? 0); });
+        setFeeAmounts(am);
+      }).catch(console.error);
+    };
+    window.addEventListener('club-fee-updated', handleClubFeeUpdated);
+    return () => {
+      window.removeEventListener('club-fee-updated', handleClubFeeUpdated);
+    };
   }, []);
 
   async function onYearChange(id: string) {

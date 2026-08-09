@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
-import { AlertCircle, ArrowRight, Phone, Printer, UserRound, Wallet } from 'lucide-react';
+import { AlertCircle, ArrowRight, CheckCircle2, Pencil, Phone, Printer, UserRound, Wallet, X } from 'lucide-react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
-import { getStudent, getStudentPaymentHistory, type Student, type StudentPaymentHistoryEntry } from '../../api/students';
+import { getStudent, getStudentPaymentHistory, updateStudentGender, type Student, type StudentPaymentHistoryEntry } from '../../api/students';
 import { studentFeesApi } from '../../api/payments';
 import type { StudentFeesEnrollment } from '../../types';
 import { PageDataSkeleton } from '../../components/DataSkeleton';
@@ -32,6 +32,12 @@ export function StudentDetailsPage() {
   const [balance, setBalance] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+
+  // Gender update state
+  const [genderEditing, setGenderEditing] = useState(false);
+  const [genderSaving, setGenderSaving] = useState(false);
+  const [genderError, setGenderError] = useState('');
+  const [genderSelected, setGenderSelected] = useState<'male' | 'female' | ''>('');
 
   useEffect(() => {
     if (!studentId) return;
@@ -83,6 +89,39 @@ export function StudentDetailsPage() {
   const enrollment = student?.enrollments?.[0];
   const backQuery = searchParams.toString() ? `?${searchParams.toString()}` : '';
 
+  function genderLabel(g: string | null | undefined): string {
+    if (g === 'male') return 'ذكر';
+    if (g === 'female') return 'أنثى';
+    return 'غير محدد';
+  }
+
+  async function handleGenderSave() {
+    if (!student || !genderSelected) {
+      setGenderError('اختر قيمة الجنس قبل الحفظ.');
+      return;
+    }
+    setGenderSaving(true);
+    setGenderError('');
+    try {
+      const updated = await updateStudentGender(student.id, genderSelected);
+      setStudent((prev) => prev ? { ...prev, gender: updated.gender } : prev);
+      setGenderEditing(false);
+      setGenderSelected('');
+    } catch (err) {
+      setGenderError(err instanceof Error ? err.message : 'تعذّر حفظ الجنس');
+    } finally {
+      setGenderSaving(false);
+    }
+  }
+
+  function handleGenderEditOpen() {
+    setGenderSelected(
+      student?.gender === 'male' ? 'male' : student?.gender === 'female' ? 'female' : ''
+    );
+    setGenderError('');
+    setGenderEditing(true);
+  }
+
   return (
     <div className="student-print-profile mx-auto max-w-6xl p-6 md:p-8" dir="rtl">
       <style>{`
@@ -99,7 +138,7 @@ export function StudentDetailsPage() {
           <ArrowRight size={16} />
           <span>رجوع إلى البحث</span>
         </Link>
-        <button type="button" onClick={() => window.print()} className="inline-flex items-center gap-2 rounded-xl bg-[#3B4A36] px-4 py-2 text-sm font-semibold text-white hover:bg-[#2E3B2A]">
+        <button type="button" onClick={() => window.print()} disabled={loading || !student} className="inline-flex items-center gap-2 rounded-xl bg-[#3B4A36] px-4 py-2 text-sm font-semibold text-white hover:bg-[#2E3B2A] disabled:opacity-50">
           <Printer size={16} />
           <span>طباعة الملف</span>
         </button>
@@ -120,7 +159,58 @@ export function StudentDetailsPage() {
                   </div>
                 </div>
                 <div className="mt-5 grid grid-cols-1 gap-3 border-t border-slate-100 pt-4 text-sm text-slate-600 sm:grid-cols-2 lg:grid-cols-4">
-                  <p><span className="font-semibold text-slate-800">الجنس:</span> {student.gender === 'female' ? 'أنثى' : 'ذكر'}</p>
+                  <p className="flex items-center gap-1.5 flex-wrap">
+                    <span className="font-semibold text-slate-800">الجنس:</span>
+                    {!genderEditing ? (
+                      <>
+                        <span className={student.gender === 'female' ? 'text-[#A46E67] font-medium' : student.gender === 'male' ? 'text-[#8A7C57] font-medium' : 'text-slate-400 italic'}>{genderLabel(student.gender)}</span>
+                        <button
+                          type="button"
+                          onClick={handleGenderEditOpen}
+                          title="تعديل الجنس"
+                          className="print:hidden inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2 py-0.5 text-xs text-slate-500 hover:border-[#3B4A36] hover:text-[#3B4A36] transition"
+                        >
+                          <Pencil size={12} />
+                          تعديل
+                        </button>
+                      </>
+                    ) : (
+                      <span className="print:hidden inline-flex flex-col gap-1 mt-1">
+                        <span className="inline-flex items-center gap-2">
+                          <select
+                            id="gender_edit_select"
+                            value={genderSelected}
+                            onChange={(e) => { setGenderSelected(e.target.value as 'male' | 'female' | ''); setGenderError(''); }}
+                            disabled={genderSaving}
+                            className="rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-sm outline-none focus:border-[#3B4A36] focus:ring-1 focus:ring-[#3B4A36]/20"
+                          >
+                            <option value="">اختر الجنس…</option>
+                            <option value="male">ذكر</option>
+                            <option value="female">أنثى</option>
+                          </select>
+                          <button
+                            type="button"
+                            onClick={handleGenderSave}
+                            disabled={genderSaving || !genderSelected}
+                            className="inline-flex items-center gap-1 rounded-lg bg-[#3B4A36] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[#2E3B2A] disabled:opacity-50 transition"
+                          >
+                            <CheckCircle2 size={13} />
+                            {genderSaving ? 'جارٍ الحفظ…' : 'حفظ'}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => { setGenderEditing(false); setGenderError(''); setGenderSelected(''); }}
+                            disabled={genderSaving}
+                            className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-500 hover:border-red-300 hover:text-red-600 transition"
+                          >
+                            <X size={13} />
+                            إلغاء
+                          </button>
+                        </span>
+                        {genderError && <span className="text-xs text-red-600 flex items-center gap-1"><AlertCircle size={12} />{genderError}</span>}
+                      </span>
+                    )}
+                  </p>
                   <p><span className="font-semibold text-slate-800">تاريخ الولادة:</span> {student.dob || 'غير مسجّل'}</p>
                   <p><span className="font-semibold text-slate-800">القسم:</span> {[enrollment?.level?.name, enrollment?.section?.name].filter(Boolean).join(' ') || 'غير مسجّل'}</p>
                   <p><span className="font-semibold text-slate-800">الحالة:</span> {studentStatusLabel(student.status || enrollment?.status)}</p>

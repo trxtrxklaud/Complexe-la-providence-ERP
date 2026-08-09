@@ -60,4 +60,32 @@ class ClubSubscriptionController extends Controller
 
         return response()->json(['message' => 'تم إلغاء اشتراك التلميذ في النادي']);
     }
+
+    public function exclude(Request $request, ClubSubscription $subscription): JsonResponse
+    {
+        $data = $request->validate([
+            'reason' => ['nullable', 'string', 'max:500'],
+        ]);
+
+        $excluded = $this->clubService->excludeStudent(
+            $subscription,
+            $request->user()?->id ?? 1,
+            $data['reason'] ?? null
+        );
+
+        return response()->json([
+            'message' => 'تم استبعاد التلميذ من متابعة النادي لهذه السنة الدراسية دون حذف بياناته أو مدفوعاته القديمة',
+            'subscription' => $excluded,
+        ]);
+    }
+
+    public function restore(ClubSubscription $subscription): JsonResponse
+    {
+        $restored = $this->clubService->restoreStudent($subscription);
+
+        return response()->json([
+            'message' => 'تمت إعادة التلميذ لمتابعة معلوم النادي',
+            'subscription' => $restored,
+        ]);
+    }
 }

@@ -192,6 +192,8 @@ Route::middleware(['auth:sanctum', 'active', 'throttle:120,1'])->group(function 
     Route::middleware('permission:manage_students')->group(function () {
         Route::apiResource('/clubs', ClubController::class);
         Route::apiResource('/club-subscriptions', ClubSubscriptionController::class)->except(['update']);
+        Route::post('/club-subscriptions/{subscription}/exclude', [ClubSubscriptionController::class, 'exclude']);
+        Route::post('/club-subscriptions/{subscription}/restore', [ClubSubscriptionController::class, 'restore']);
     });
 
     // تقارير واستخلاص معلوم النوادي

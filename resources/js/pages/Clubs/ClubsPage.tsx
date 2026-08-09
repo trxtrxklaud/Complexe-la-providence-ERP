@@ -93,25 +93,34 @@ export default function ClubsPage() {
     setSavingClub(true);
     setError(null);
     try {
+      let savedRes: ClubItem;
       if (editingClub) {
-        await updateClub(editingClub.id, {
+        savedRes = await updateClub(editingClub.id, {
           name: clubName.trim(),
           description: clubDesc.trim() || undefined,
           monthly_fee: Number(clubFee),
           is_active: clubActive,
           level_ids: selectedLevels,
         });
-        setSuccessMsg('تم تحديث النادي بنجاح');
+        const updatedCount = (savedRes as any)?.updated_unpaid_count ?? 0;
+        const feeFormatted = Number(clubFee).toFixed(2);
+        setSuccessMsg(
+          `تم تحديث النادي بنجاح بمبلغ ${feeFormatted} د.ت${
+            updatedCount > 0 ? ` وتحديث ${updatedCount} سجلاً غير مدفوع للشهر الحالي` : ''
+          }`
+        );
       } else {
-        await createClub({
+        savedRes = await createClub({
           name: clubName.trim(),
           description: clubDesc.trim() || undefined,
           monthly_fee: Number(clubFee),
           is_active: clubActive,
           level_ids: selectedLevels,
         });
-        setSuccessMsg('تم إنشاء النادي بنجاح');
+        setSuccessMsg(`تم إنشاء النادي بنجاح بمبلغ ${Number(clubFee).toFixed(2)} د.ت`);
       }
+
+      window.dispatchEvent(new CustomEvent('club-fee-updated', { detail: savedRes }));
       setShowClubModal(false);
       loadData();
     } catch (err: any) {

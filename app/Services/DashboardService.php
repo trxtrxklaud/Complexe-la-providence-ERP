@@ -34,20 +34,38 @@ class DashboardService
             return $this->emptyDashboard($cash, $includeFinancials);
         }
 
-        $totalStudents = Enrollment::where('academic_year_id', $activeYear->id)
-            ->where('status', 'active')
-            ->count();
+        $activeStudents = DB::table('enrollments')
+            ->join('students', 'enrollments.student_id', '=', 'students.id')
+            ->where('enrollments.academic_year_id', $activeYear->id)
+            ->where('enrollments.status', 'active')
+            ->whereNull('enrollments.deleted_at')
+            ->select('students.id', 'students.gender')
+            ->get()
+            ->unique('id');
+
+        $malesCount = 0;
+        $femalesCount = 0;
+        $unknownCount = 0;
+
+        foreach ($activeStudents as $student) {
+            $g = strtolower(trim((string) $student->gender));
+            if (in_array($g, ['male', 'm', 'ذكر'], true)) {
+                $malesCount++;
+            } elseif (in_array($g, ['female', 'f', 'أنثى'], true)) {
+                $femalesCount++;
+            } else {
+                $unknownCount++;
+            }
+        }
+
+        $totalStudents = $malesCount + $femalesCount + $unknownCount;
 
         $newEnrollments = Enrollment::where('academic_year_id', $activeYear->id)
+            ->where('status', 'active')
+            ->whereNull('deleted_at')
             ->whereDate('enrollment_date', '>=', $activeYear->start_date)
-            ->count();
-
-        $genderCounts = Student::whereHas('enrollments', fn ($q) =>
-            $q->where('academic_year_id', $activeYear->id)->where('status', 'active')
-        )
-        ->selectRaw('gender, COUNT(*) as count')
-        ->groupBy('gender')
-        ->pluck('count', 'gender');
+            ->distinct('student_id')
+            ->count('student_id');
 
         $outstandingBalance = (float) DB::table('student_fees')
             ->join('enrollments', 'student_fees.enrollment_id', '=', 'enrollments.id')
@@ -78,21 +96,55 @@ class DashboardService
             'current_date'           => $today->toDateString(),
             'academic_year'          => $activeYear,
             'total_students'         => $totalStudents,
+            'total_active_students'  => $totalStudents,
             'new_students_this_year' => $newEnrollments,
-            'total_males'            => (int) ($genderCounts['male']   ?? 0),
-            'total_females'          => (int) ($genderCounts['female'] ?? 0),
-
-            // المستوردون بلا جنس مُدخل يُحسبون صراحة بدل أصفار مضلّلة
-            'total_unspecified_gender' => (int) ($genderCounts[''] ?? 0),
+            'total_males'            => $malesCount,
+            'male_students_count'    => $malesCount,
+            'total_females'          => $femalesCount,
+            'female_students_count'  => $femalesCount,
+            'total_unspecified_gender' => $unknownCount,
+            'unknown_gender_count'   => $unknownCount,
             'outstanding_balance'    => $outstandingBalance,
             'upcoming_events'        => [],
         ];
+
+        $currentMonth = $today->format('Y-m');
+        $currentMonthStart = $today->copy()->startOfMonth()->toDateString();
+
+        $clubCollected = (float) CashTransaction::whereNull('cancelled_at')
+            ->where('category', CashTransaction::CATEGORY_CLUB_FEE)
+            ->whereDate('transaction_date', '>=', $currentMonthStart)
+            ->whereDate('transaction_date', '<=', $today->toDateString())
+            ->sum('amount');
+
+        $clubMonthlyQuery = DB::table('club_monthly_fees')
+            ->whereNull('cancelled_at')
+            ->where('month', $currentMonth)
+            ->where('academic_year_id', $activeYear->id);
+
+        $clubRemaining = (float) (clone $clubMonthlyQuery)
+            ->selectRaw('COALESCE(SUM(CASE WHEN amount_due - amount_paid > 0 THEN amount_due - amount_paid ELSE 0 END), 0) AS remaining')
+            ->value('remaining') ?? 0;
+
+        $clubPaidCount = (int) (clone $clubMonthlyQuery)
+            ->where('status', 'paid')
+            ->count();
+
+        $clubPendingCount = (int) (clone $clubMonthlyQuery)
+            ->whereIn('status', ['unpaid', 'partial', 'pending'])
+            ->count();
 
         if ($includeFinancials) {
             $data['financial_summary'] = [
                 'total_expected'   => $totalExpected,
                 'collected_amount' => $totalCollected,
                 'pending_amount'   => $outstandingBalance,
+            ];
+            $data['club_revenue'] = [
+                'collected_amount'       => round($clubCollected, 2),
+                'remaining_amount'       => round($clubRemaining, 2),
+                'paid_students_count'    => $clubPaidCount,
+                'pending_students_count' => $clubPendingCount,
             ];
             // الجرد النقدي المحيّن: اليوم، الشهر الجاري، ومن بداية السجلّ.
             $data['cash']             = $cash;
@@ -148,10 +200,14 @@ class DashboardService
             'current_date'           => now()->toDateString(),
             'academic_year'          => null,
             'total_students'         => 0,
+            'total_active_students'  => 0,
             'new_students_this_year' => 0,
             'total_males'            => 0,
+            'male_students_count'    => 0,
             'total_females'          => 0,
+            'female_students_count'  => 0,
             'total_unspecified_gender' => 0,
+            'unknown_gender_count'   => 0,
             'outstanding_balance'    => 0,
             'upcoming_events'        => [],
         ];

@@ -12,13 +12,13 @@ class ClubMonthlyFee extends Model
     public const STATUS_PAID    = 'paid';
 
     public const STATUS_LABELS = [
-        self::STATUS_UNPAID  => 'غير مسدد',
-        self::STATUS_PARTIAL => 'مدفوع جزئياً',
-        self::STATUS_PAID    => 'مدفوع بالكامل',
+        self::STATUS_UNPAID  => 'في انتظار الدفع',
+        self::STATUS_PARTIAL => 'في انتظار الدفع',
+        self::STATUS_PAID    => 'خلاص كامل',
     ];
 
     public const STATUS_COLORS = [
-        self::STATUS_UNPAID  => 'red',
+        self::STATUS_UNPAID  => 'orange',
         self::STATUS_PARTIAL => 'orange',
         self::STATUS_PAID    => 'green',
     ];

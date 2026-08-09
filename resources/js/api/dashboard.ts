@@ -15,22 +15,32 @@ export type DashboardData = {
   current_date: string;
   academic_year: { id: number; name: string } | null;
   total_students: number;
+  total_active_students?: number;
   new_students_this_year: number;
   total_males: number;
+  male_students_count?: number;
   total_females: number;
+  female_students_count?: number;
   total_unspecified_gender: number;
+  unknown_gender_count?: number;
   outstanding_balance: number;
-  financial_summary: {
+  financial_summary?: {
     total_expected: number;
     collected_amount: number;
     pending_amount: number;
   };
-  cash: {
+  club_revenue?: {
+    collected_amount: number;
+    remaining_amount: number;
+    paid_students_count: number;
+    pending_students_count: number;
+  };
+  cash?: {
     today: CashFigures;
     month: CashFigures;
     all_time: CashFigures;
   };
-  treasury_balance: number;
+  treasury_balance?: number;
 };
 
 /**

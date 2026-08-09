@@ -1,8 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   fetchClubFeesReport,
   generateClubMonthFees,
   collectClubFeePayment,
+  excludeStudentFromClub,
+  restoreStudentToClub,
   fetchClubs,
   ClubReportData,
   ClubReportRecord,
@@ -11,7 +13,7 @@ import {
 import { fetchAcademicYears } from '../../api/years';
 import { fetchLevels, fetchSections } from '../../api/classrooms';
 import { AcademicYear, Level, Section } from '../../types';
-import { Printer, RefreshCw, DollarSign, Search, CheckCircle, AlertCircle, Clock } from 'lucide-react';
+import { Printer, RefreshCw, Search, CheckCircle, AlertCircle, Clock, UserX, RotateCcw } from 'lucide-react';
 
 export default function ClubFeesReportPage() {
   const [reportData, setReportData] = useState<ClubReportData | null>(null);
@@ -19,6 +21,8 @@ export default function ClubFeesReportPage() {
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
+
+  const activeRequestId = useRef(0);
 
   // Filter options
   const [years, setYears] = useState<AcademicYear[]>([]);
@@ -51,6 +55,17 @@ export default function ClubFeesReportPage() {
     loadReport();
   }, [selectedYearId, selectedMonth, selectedClubId, selectedLevelId, selectedSectionId, selectedStatus, search]);
 
+  useEffect(() => {
+    const handleClubFeeUpdated = async () => {
+      await loadOptions();
+      await loadReport();
+    };
+    window.addEventListener('club-fee-updated', handleClubFeeUpdated);
+    return () => {
+      window.removeEventListener('club-fee-updated', handleClubFeeUpdated);
+    };
+  }, []);
+
   const loadOptions = async () => {
     try {
       const [yList, cList, lList, sList] = await Promise.all([
@@ -76,7 +91,9 @@ export default function ClubFeesReportPage() {
   };
 
   const loadReport = async () => {
+    const requestId = ++activeRequestId.current;
     setLoading(true);
+    setReportData(null); // Clear previous section/filter reportData immediately to avoid displaying stale names/totals
     setError(null);
     try {
       const data = await fetchClubFeesReport({
@@ -88,13 +105,69 @@ export default function ClubFeesReportPage() {
         status: selectedStatus || undefined,
         search: search.trim() || undefined,
       });
-      setReportData(data);
+      if (requestId === activeRequestId.current) {
+        setReportData(data);
+      }
     } catch (err: any) {
-      setError(err.message || 'حدث خطأ أثناء تحميل التقرير');
+      if (requestId === activeRequestId.current) {
+        setError(err.message || 'حدث خطأ أثناء تحميل التقرير');
+      }
     } finally {
-      setLoading(false);
+      if (requestId === activeRequestId.current) {
+        setLoading(false);
+      }
     }
   };
+
+  const handleClubChange = (clubIdVal: number | '') => {
+    setSelectedClubId(clubIdVal);
+    if (clubIdVal) {
+      const selectedClubObj = clubs.find((c) => c.id === Number(clubIdVal));
+      const allowedLevelIds = (selectedClubObj?.levels && selectedClubObj.levels.length > 0)
+        ? selectedClubObj.levels.map((l) => l.id)
+        : [];
+      if (allowedLevelIds.length > 0) {
+        if (selectedLevelId && !allowedLevelIds.includes(Number(selectedLevelId))) {
+          setSelectedLevelId('');
+        }
+        if (selectedSectionId) {
+          const matchingSec = sections.find((s) => s.id === Number(selectedSectionId));
+          if (matchingSec && !allowedLevelIds.includes(matchingSec.level_id)) {
+            setSelectedSectionId('');
+          }
+        }
+      }
+    }
+  };
+
+  const handleLevelChange = (levelIdVal: number | '') => {
+    setSelectedLevelId(levelIdVal);
+    if (levelIdVal && selectedSectionId) {
+      const matchingSec = sections.find((s) => s.id === Number(selectedSectionId));
+      if (matchingSec && matchingSec.level_id !== Number(levelIdVal)) {
+        setSelectedSectionId('');
+      }
+    }
+  };
+
+  const selectedClubObj = selectedClubId ? clubs.find((c) => c.id === Number(selectedClubId)) : null;
+  const clubAllowedLevelIds = (selectedClubObj?.levels && selectedClubObj.levels.length > 0)
+    ? selectedClubObj.levels.map((l) => l.id)
+    : [];
+
+  const availableLevels = clubAllowedLevelIds.length > 0
+    ? levels.filter((l) => clubAllowedLevelIds.includes(l.id))
+    : levels;
+
+  const availableSections = sections.filter((s) => {
+    if (clubAllowedLevelIds.length > 0 && !clubAllowedLevelIds.includes(s.level_id)) {
+      return false;
+    }
+    if (selectedLevelId && s.level_id !== Number(selectedLevelId)) {
+      return false;
+    }
+    return true;
+  });
 
   const handleGenerateMonth = async () => {
     if (!selectedYearId || !selectedMonth) {
@@ -109,6 +182,7 @@ export default function ClubFeesReportPage() {
         academic_year_id: Number(selectedYearId),
         month: selectedMonth,
         club_id: selectedClubId ? Number(selectedClubId) : undefined,
+        section_id: selectedSectionId ? Number(selectedSectionId) : undefined,
       });
       setSuccessMsg(res.message);
       await loadReport();
@@ -150,6 +224,27 @@ export default function ClubFeesReportPage() {
     }
   };
 
+  const handleExclude = async (subId: number) => {
+    if (!window.confirm('هل تأكد من استبعاد هذا التلميذ من متابعة معلوم النادي بعد سبتمبر؟ لا يحذف التلميذ ولا مدفوعاته القديمة.')) return;
+    try {
+      await excludeStudentFromClub(subId, 'استبعاد من متابعة معلوم النادي');
+      setSuccessMsg('تم استبعاد التلميذ بنجاح دون حذف بياناته القديمة');
+      await loadReport();
+    } catch (err: any) {
+      setError(err.message || 'فشل استبعاد التلميذ');
+    }
+  };
+
+  const handleRestore = async (subId: number) => {
+    try {
+      await restoreStudentToClub(subId);
+      setSuccessMsg('تمت إعادة التلميذ لمتابعة معلوم النادي بنجاح');
+      await loadReport();
+    } catch (err: any) {
+      setError(err.message || 'فشل إعادة التلميذ');
+    }
+  };
+
   const handlePrint = () => {
     window.print();
   };
@@ -162,6 +257,7 @@ export default function ClubFeesReportPage() {
       {/* Printable CSS style */}
       <style>{`
         @media print {
+          @page { size: A4 portrait; margin: 10mm 8mm; }
           body * {
             visibility: hidden;
           }
@@ -173,10 +269,17 @@ export default function ClubFeesReportPage() {
             left: 0;
             top: 0;
             width: 100%;
-            padding: 15px;
+            padding: 0;
           }
-          .no-print {
+          .no-print, button, input, select {
             display: none !important;
+            visibility: hidden !important;
+          }
+          thead {
+            display: table-header-group !important;
+          }
+          tr {
+            break-inside: avoid !important;
           }
         }
       `}</style>
@@ -198,7 +301,8 @@ export default function ClubFeesReportPage() {
           </button>
           <button
             onClick={handlePrint}
-            className="flex items-center gap-2 px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition"
+            disabled={loading || !reportData || records.length === 0}
+            className="flex items-center gap-2 px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition disabled:opacity-50"
           >
             <Printer className="w-4 h-4" />
             طباعة التقرير (A4)
@@ -250,7 +354,7 @@ export default function ClubFeesReportPage() {
             <label className="block text-xs font-semibold text-gray-600 mb-1">النادي</label>
             <select
               value={selectedClubId}
-              onChange={(e) => setSelectedClubId(e.target.value ? Number(e.target.value) : '')}
+              onChange={(e) => handleClubChange(e.target.value ? Number(e.target.value) : '')}
               className="w-full text-sm border-gray-300 rounded-lg p-2 bg-gray-50"
             >
               <option value="">كل النوادي</option>
@@ -264,11 +368,11 @@ export default function ClubFeesReportPage() {
             <label className="block text-xs font-semibold text-gray-600 mb-1">المستوى</label>
             <select
               value={selectedLevelId}
-              onChange={(e) => setSelectedLevelId(e.target.value ? Number(e.target.value) : '')}
+              onChange={(e) => handleLevelChange(e.target.value ? Number(e.target.value) : '')}
               className="w-full text-sm border-gray-300 rounded-lg p-2 bg-gray-50"
             >
               <option value="">كل المستويات</option>
-              {levels.map((l) => (
+              {availableLevels.map((l) => (
                 <option key={l.id} value={l.id}>{l.name}</option>
               ))}
             </select>
@@ -282,8 +386,12 @@ export default function ClubFeesReportPage() {
               className="w-full text-sm border-gray-300 rounded-lg p-2 bg-gray-50"
             >
               <option value="">كل الأقسام</option>
-              {sections.map((s) => (
-                <option key={s.id} value={s.id}>{s.name}</option>
+              {availableSections.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {selectedLevelId
+                    ? s.name
+                    : `${levels.find((l) => l.id === s.level_id)?.name || ''} - ${s.name}`}
+                </option>
               ))}
             </select>
           </div>
@@ -296,9 +404,8 @@ export default function ClubFeesReportPage() {
               className="w-full text-sm border-gray-300 rounded-lg p-2 bg-gray-50"
             >
               <option value="">الكل</option>
-              <option value="paid">مدفوع بالكامل</option>
-              <option value="partial">مدفوع جزئياً</option>
-              <option value="unpaid">غير مسدد</option>
+              <option value="paid">خلاص كامل (أخضر)</option>
+              <option value="pending">في انتظار الدفع (برتقالي)</option>
             </select>
           </div>
         </div>
@@ -316,26 +423,25 @@ export default function ClubFeesReportPage() {
       </div>
 
       {/* Report Summary Cards */}
-      {summary && (
+      {loading ? (
+        <div className="p-4 bg-gray-50 rounded-xl border border-gray-200 text-center text-sm text-gray-500 animate-pulse no-print">
+          جاري تحميل بيانات التقرير للقسم المحدد...
+        </div>
+      ) : summary ? (
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 no-print">
           <div className="p-3 bg-white rounded-xl border border-gray-100 text-center">
-            <span className="block text-xs text-gray-500">عدد المسجلين</span>
+            <span className="block text-xs text-gray-500">عدد التلاميذ بالمجموعة</span>
             <span className="text-xl font-bold text-gray-800">{summary.enrolled_count}</span>
           </div>
 
           <div className="p-3 bg-green-50 border border-green-100 rounded-xl text-center">
-            <span className="block text-xs text-green-700">مدفوع بالكامل</span>
+            <span className="block text-xs text-green-700">خلاص كامل</span>
             <span className="text-xl font-bold text-green-800">{summary.paid_count}</span>
           </div>
 
           <div className="p-3 bg-orange-50 border border-orange-100 rounded-xl text-center">
-            <span className="block text-xs text-orange-700">مدفوع جزئياً</span>
-            <span className="text-xl font-bold text-orange-800">{summary.partial_count}</span>
-          </div>
-
-          <div className="p-3 bg-red-50 border border-red-100 rounded-xl text-center">
-            <span className="block text-xs text-red-700">غير مسدد</span>
-            <span className="text-xl font-bold text-red-800">{summary.unpaid_count}</span>
+            <span className="block text-xs text-orange-700">في انتظار الدفع</span>
+            <span className="text-xl font-bold text-orange-800">{summary.pending_count ?? summary.unpaid_count}</span>
           </div>
 
           <div className="p-3 bg-white rounded-xl border border-gray-100 text-center">
@@ -344,11 +450,16 @@ export default function ClubFeesReportPage() {
           </div>
 
           <div className="p-3 bg-green-50 border border-green-100 rounded-xl text-center">
-            <span className="block text-xs text-green-700">إجمالي المدفوع</span>
+            <span className="block text-xs text-green-700">إجمالي المقبوض</span>
             <span className="text-xl font-bold text-green-800">{summary.total_paid.toFixed(2)} د.ت</span>
           </div>
+
+          <div className="p-3 bg-orange-50 border border-orange-100 rounded-xl text-center">
+            <span className="block text-xs text-orange-700">إجمالي المتبقي</span>
+            <span className="text-xl font-bold text-orange-800">{summary.total_remaining.toFixed(2)} د.ت</span>
+          </div>
         </div>
-      )}
+      ) : null}
 
       {/* Main Printable Content Container */}
       <div className="printable-area bg-white rounded-xl shadow-sm border border-gray-100 p-6 space-y-6">
@@ -358,6 +469,7 @@ export default function ClubFeesReportPage() {
           <p className="text-sm text-gray-600">كشف متابعة معاليم النوادي المدرسية</p>
           <div className="flex justify-between items-center text-xs text-gray-500 mt-2">
             <span>الشهر: {selectedMonth}</span>
+            <span>القسم: {selectedSectionId ? sections.find(s => s.id === Number(selectedSectionId))?.name : 'كل الأقسام'}</span>
             <span>تاريخ الاستخراج: {new Date().toLocaleDateString('ar-TN')}</span>
           </div>
         </div>
@@ -380,7 +492,6 @@ export default function ClubFeesReportPage() {
                   <th className="p-3">اسم التلميذ</th>
                   <th className="p-3">المستوى والقسم</th>
                   <th className="p-3">النادي</th>
-                  <th className="p-3">الشهر</th>
                   <th className="p-3 text-left">المطلوب (د.ت)</th>
                   <th className="p-3 text-left">المدفوع (د.ت)</th>
                   <th className="p-3 text-left">المتبقي (د.ت)</th>
@@ -389,33 +500,31 @@ export default function ClubFeesReportPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
-                {records.map((r) => (
+                {records.map((r: any) => (
                   <tr key={r.id} className="hover:bg-gray-50">
                     <td className="p-3 text-gray-500 font-mono">{r.student_code}</td>
-                    <td className="p-3 font-semibold text-gray-800">{r.student_name}</td>
+                    <td className="p-3 font-semibold text-gray-800">
+                      {r.student_name}
+                      {r.is_excluded && <span className="mr-2 text-xs text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded">(مستبعد)</span>}
+                    </td>
                     <td className="p-3 text-gray-600">{r.level_name} - {r.section_name}</td>
                     <td className="p-3 font-medium text-gray-700">{r.club_name}</td>
-                    <td className="p-3 text-gray-500">{r.month}</td>
                     <td className="p-3 text-left font-mono font-medium">{r.amount_due.toFixed(2)}</td>
                     <td className="p-3 text-left font-mono text-green-700">{r.amount_paid.toFixed(2)}</td>
-                    <td className="p-3 text-left font-mono text-red-600">{r.remaining.toFixed(2)}</td>
+                    <td className="p-3 text-left font-mono text-orange-600">{r.remaining.toFixed(2)}</td>
                     <td className="p-3 text-center">
                       <span
                         className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold ${
                           r.status === 'paid'
                             ? 'bg-green-100 text-green-800'
-                            : r.status === 'partial'
-                            ? 'bg-orange-100 text-orange-800'
-                            : 'bg-red-100 text-red-800'
+                            : 'bg-orange-100 text-orange-800'
                         }`}
                       >
-                        {r.status === 'paid' && <CheckCircle className="w-3.5 h-3.5" />}
-                        {r.status === 'partial' && <Clock className="w-3.5 h-3.5" />}
-                        {r.status === 'unpaid' && <AlertCircle className="w-3.5 h-3.5" />}
-                        {r.status_label}
+                        {r.status === 'paid' ? <CheckCircle className="w-3.5 h-3.5" /> : <Clock className="w-3.5 h-3.5" />}
+                        {r.status === 'paid' ? 'خلاص كامل' : 'في انتظار الدفع'}
                       </span>
                     </td>
-                    <td className="p-3 no-print text-center">
+                    <td className="p-3 no-print text-center flex items-center justify-center gap-2">
                       {r.status !== 'paid' && (
                         <button
                           onClick={() => openCollectModal(r)}
@@ -423,6 +532,25 @@ export default function ClubFeesReportPage() {
                         >
                           تسجيل الدفع
                         </button>
+                      )}
+                      {r.subscription_id && (
+                        r.is_excluded ? (
+                          <button
+                            onClick={() => handleRestore(r.subscription_id)}
+                            title="إعادة التلميذ للمتابعة"
+                            className="p-1 text-gray-500 hover:text-green-600 rounded"
+                          >
+                            <RotateCcw className="w-4 h-4" />
+                          </button>
+                        ) : (
+                          <button
+                            onClick={() => handleExclude(r.subscription_id)}
+                            title="استبعاد من متابعة النادي"
+                            className="p-1 text-gray-400 hover:text-red-600 rounded"
+                          >
+                            <UserX className="w-4 h-4" />
+                          </button>
+                        )
                       )}
                     </td>
                   </tr>
@@ -435,10 +563,10 @@ export default function ClubFeesReportPage() {
         {/* Printable Summary Footer */}
         {summary && (
           <div className="border-t border-gray-200 pt-4 grid grid-cols-2 md:grid-cols-4 gap-4 text-xs font-medium text-gray-700">
-            <div>إجمالي عدد المسجلين: <span className="font-bold">{summary.enrolled_count}</span></div>
+            <div>إجمالي التلاميذ: <span className="font-bold">{summary.enrolled_count}</span></div>
             <div>إجمالي المطلوب: <span className="font-bold">{summary.total_due.toFixed(2)} د.ت</span></div>
             <div>إجمالي المقبوض: <span className="font-bold text-green-700">{summary.total_paid.toFixed(2)} د.ت</span></div>
-            <div>إجمالي المتبقي: <span className="font-bold text-red-600">{summary.total_remaining.toFixed(2)} د.ت</span></div>
+            <div>إجمالي المتبقي: <span className="font-bold text-orange-600">{summary.total_remaining.toFixed(2)} د.ت</span></div>
           </div>
         )}
       </div>
@@ -466,7 +594,7 @@ export default function ClubFeesReportPage() {
                   required
                 />
                 <span className="text-xs text-gray-400 mt-1 block">
-                  المتبقي الذمة: {collectModalRecord.remaining.toFixed(2)} د.ت
+                  المتبقي: {collectModalRecord.remaining.toFixed(2)} د.ت
                 </span>
               </div>
 

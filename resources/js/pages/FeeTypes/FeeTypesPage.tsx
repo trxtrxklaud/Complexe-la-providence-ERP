@@ -38,7 +38,14 @@ export function FeeTypesPage() {
     const [saving, setSaving]       = useState(false);
     const [formError, setFormError] = useState<string | null>(null);
 
-    useEffect(() => { load(); }, []);
+    useEffect(() => {
+        load();
+        const handleClubFeeUpdated = () => { load(); };
+        window.addEventListener('club-fee-updated', handleClubFeeUpdated);
+        return () => {
+            window.removeEventListener('club-fee-updated', handleClubFeeUpdated);
+        };
+    }, []);
 
     async function load() {
         try {

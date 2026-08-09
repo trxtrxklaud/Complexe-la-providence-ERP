@@ -76,28 +76,82 @@ class StudentService
             $query->whereHas('enrollments', $filterEnrollments);
         }
 
+        $allStudents = $query->get()
+            ->unique(fn (Student $student) => $this->normalizeStudentName($student))
+            ->map(function (Student $student) {
+                $rawGender = strtolower(trim((string) $student->gender));
+                if (in_array($rawGender, ['male', 'm', 'ذكر'], true)) {
+                    $resolvedGender = 'male';
+                } elseif (in_array($rawGender, ['female', 'f', 'أنثى'], true)) {
+                    $resolvedGender = 'female';
+                } else {
+                    $resolvedGender = 'unknown';
+                }
+                $student->gender = $resolvedGender;
+                return $student;
+            });
+
+        $totalCount = $allStudents->count();
+        $maleCount = $allStudents->where('gender', 'male')->count();
+        $femaleCount = $allStudents->where('gender', 'female')->count();
+        $unknownCount = $allStudents->where('gender', 'unknown')->count();
+
+        $selectedGender = strtolower(trim((string) ($filters['gender'] ?? 'all')));
+
+        $filteredStudents = $allStudents->filter(function (Student $student) use ($selectedGender) {
+            if ($selectedGender === 'male' || $selectedGender === 'ذكر') {
+                return $student->gender === 'male';
+            }
+            if ($selectedGender === 'female' || $selectedGender === 'أنثى') {
+                return $student->gender === 'female';
+            }
+            if ($selectedGender === 'unknown' || $selectedGender === 'غير محدد') {
+                return $student->gender === 'unknown';
+            }
+            return true;
+        });
+
+        $genderWeights = ['male' => 1, 'female' => 2, 'unknown' => 3];
+
+        $sortedStudents = $filteredStudents->sort(function (Student $a, Student $b) use ($genderWeights) {
+            $wA = $genderWeights[$a->gender] ?? 4;
+            $wB = $genderWeights[$b->gender] ?? 4;
+
+            if ($wA !== $wB) {
+                return $wA <=> $wB;
+            }
+
+            return strcmp($this->normalizeStudentName($a), $this->normalizeStudentName($b));
+        })->values();
+
         $perPage = min((int) ($filters['per_page'] ?? 20), 100);
+        $page = LengthAwarePaginator::resolveCurrentPage();
 
-        if (! empty($filters['section_id'])) {
-            $students = $query->get()
-                ->unique(fn (Student $student) => $this->normalizeStudentName($student))
-                ->sortBy(fn (Student $student) => $this->normalizeStudentName($student), SORT_NATURAL | SORT_FLAG_CASE)
-                ->values();
-            $page = LengthAwarePaginator::resolveCurrentPage();
+        $paginator = new LengthAwarePaginator(
+            $sortedStudents->forPage($page, $perPage)->values(),
+            $sortedStudents->count(),
+            $perPage,
+            $page,
+            [
+                'path' => request()->url(),
+                'query' => request()->query(),
+            ]
+        );
 
-            return new LengthAwarePaginator(
-                $students->forPage($page, $perPage)->values(),
-                $students->count(),
-                $perPage,
-                $page,
-                [
-                    'path' => request()->url(),
-                    'query' => request()->query(),
-                ],
-            );
-        }
+        $responseArray = $paginator->toArray();
+        $responseArray['total_count'] = $totalCount;
+        $responseArray['male_count'] = $maleCount;
+        $responseArray['female_count'] = $femaleCount;
+        $responseArray['unknown_count'] = $unknownCount;
+        $responseArray['active_filters'] = [
+            'gender' => $selectedGender,
+            'level_id' => $filters['level_id'] ?? null,
+            'section_id' => $filters['section_id'] ?? null,
+            'academic_year_id' => $filters['academic_year_id'] ?? null,
+            'search' => $filters['search'] ?? null,
+        ];
 
-        return $query->orderBy('first_name')->orderBy('last_name')->paginate($perPage);
+        return $responseArray;
     }
 
     public function getStudentById(int $id): ?Student

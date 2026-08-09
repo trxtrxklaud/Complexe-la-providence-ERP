@@ -20,11 +20,16 @@ class ClubReportController extends Controller
             'club_id' => ['nullable', 'integer', 'exists:clubs,id'],
             'level_id' => ['nullable', 'integer', 'exists:levels,id'],
             'section_id' => ['nullable', 'integer', 'exists:sections,id'],
-            'status' => ['nullable', 'string', 'in:paid,unpaid,partial'],
+            'status' => ['nullable', 'string', 'in:paid,unpaid,partial,pending,all'],
             'search' => ['nullable', 'string', 'max:100'],
         ]);
 
-        $report = $this->clubService->getReport($request->all());
+        $params = $request->all();
+        if (isset($params['status']) && ($params['status'] === 'all' || $params['status'] === '')) {
+            $params['status'] = null;
+        }
+
+        $report = $this->clubService->getReport($params);
 
         return response()->json($report);
     }
@@ -35,12 +40,14 @@ class ClubReportController extends Controller
             'academic_year_id' => ['required', 'integer', 'exists:academic_years,id'],
             'month' => ['required', 'string', 'regex:/^\d{4}-(0[1-9]|1[0-2])$/'],
             'club_id' => ['nullable', 'integer', 'exists:clubs,id'],
+            'section_id' => ['nullable', 'integer', 'exists:sections,id'],
         ]);
 
         $result = $this->clubService->generateMonthFees(
             (int) $data['academic_year_id'],
             $data['month'],
             ! empty($data['club_id']) ? (int) $data['club_id'] : null,
+            ! empty($data['section_id']) ? (int) $data['section_id'] : null,
             $request->user()?->id
         );
 
