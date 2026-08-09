@@ -97,8 +97,12 @@ export function CollectionPage() {
       .then((res) => {
         setPreviewData(res);
         if (res.items && res.items.length > 0) {
-          setMonthlyPrice(String(res.remaining_amount));
+          const perMonthNet = selectedMonths.length > 0
+            ? Math.round((res.remaining_amount / selectedMonths.length) * 100) / 100
+            : res.remaining_amount;
+          setMonthlyPrice(String(perMonthNet));
         }
+
       })
       .catch((e) => {
         setError(e.message || 'فشل جلب المعاينة والتخفيض');

@@ -68,20 +68,25 @@ class CollectionService
                 $this->validateMonths($months, $enrollment);
 
                 // إعادة حساب المعاينة والتخفيضات على مستوى الخادم لحماية الاستخلاص
-                $preview = $this->preview($enrollment->id, $months, $data['items'][0]['fee_type_id'] ?? null);
+                $tuitionFeeTypeId = $data['items'][0]['fee_type_id'] ?? null;
+                $preview = $this->preview($enrollment->id, $months, $tuitionFeeTypeId);
 
                 if ($preview['is_fully_waived']) {
                     throw new \InvalidArgumentException('هذا المعلوم معفى كلياً ولا يوجد مبلغ مستحق.');
                 }
 
                 $maxPayable = (float) $preview['remaining_amount'];
-                $itemsTotal = round((float) array_sum(array_column($data['items'], 'amount')), 2);
+                $tuitionItem = collect($data['items'])->firstWhere('fee_type_id', $tuitionFeeTypeId);
+                $tuitionAmount = $tuitionItem ? round((float) $tuitionItem['amount'], 2) : 0.0;
 
-                if ($itemsTotal > $maxPayable) {
+                if ($tuitionAmount > $maxPayable + 0.001) {
                     throw new \InvalidArgumentException(
-                        'المبلغ المدفوع (' . number_format($itemsTotal, 2, '.', '') . ') يتجاوز المبلغ المتبقي المستحق (' . number_format($maxPayable, 2, '.', '') . ')'
+                        'المبلغ المدفوع (' . number_format($tuitionAmount, 2, '.', '') . ') يتجاوز المبلغ المتبقي المستحق (' . number_format($maxPayable, 2, '.', '') . ')'
                     );
                 }
+
+
+                $itemsTotal = round((float) array_sum(array_column($data['items'], 'amount')), 2);
 
                 $monthsLabel = implode(' / ', array_map(
                     fn ($m) => (self::MONTH_NAMES_AR[substr($m, 5)] ?? $m) . ' ' . substr($m, 0, 4),
@@ -89,6 +94,7 @@ class CollectionService
                 ));
 
                 $total = $itemsTotal;
+
 
                 $payment = Payment::create([
 
@@ -409,10 +415,8 @@ class CollectionService
                       ->whereNull('cancelled_at')
                       ->whereJsonContains('months', $m);
                 })
-                ->whereHas('studentFee', function ($q) {
-                    $q->whereNull('cancelled_at');
-                })
                 ->sum('amount_allocated');
+
 
             $monthRemaining = max(0.0, round($monthNetDue - $monthPaid, 2));
 

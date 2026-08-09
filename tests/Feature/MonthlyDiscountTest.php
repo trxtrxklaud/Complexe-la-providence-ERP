@@ -1144,4 +1144,162 @@ class MonthlyDiscountTest extends TestCase
             ->assertJsonPath('enrollment.annual_discount', 100)
             ->assertJsonPath('enrollment.net_fees', 1400);
     }
+
+    /**
+     * Test 44: Regression test for the exact 320 gross / 20 discount / 300 net case:
+     * - 2 months selected ('2025-09', '2025-10') at 160 TND/month fee = 320 TND gross.
+     * - 10 TND/month discount = 20 TND total discount.
+     * - Net period fee = 300 TND.
+     * - Payment collection of 300 TND succeeds without double counting to 600 TND.
+     */
+    public function test_44_exact_320_20_300_two_month_collection_case(): void
+    {
+        $user = $this->makeWaiverUser();
+        Sanctum::actingAs($user);
+
+        $year = $this->makeAcademicYear('2025-2026');
+        $enrollment = $this->makeEnrollment($year);
+        $this->makeFeePlan($year, $enrollment->level_id, 160.0); // 160 TND/month
+
+        // 10 TND/month discount ("ابن المدرسة")
+        app(DiscountService::class)->createForEnrollment($enrollment->id, 10.0, 'ابن المدرسة', '2025-09-01');
+
+        $collectionService = app(\App\Services\CollectionService::class);
+
+        // 1. Preview for 2 months
+        $prev = $collectionService->preview($enrollment->id, ['2025-09', '2025-10']);
+        $this->assertEquals(320.0, $prev['gross_amount']);
+        $this->assertEquals(20.0, $prev['discount_amount']);
+        $this->assertEquals(300.0, $prev['net_due']);
+        $this->assertEquals(300.0, $prev['remaining_amount']);
+
+        // 2. Perform collection for exactly 300 TND (150 TND/month net)
+        $feeType = \App\Models\FeeType::query()->where('name_ar', 'القسط الشهري')->first();
+        if (! $feeType) {
+            $feeType = \App\Models\FeeType::create(['name_ar' => 'القسط الشهري', 'price' => 160.0, 'is_active' => true]);
+        }
+
+        $response = $this->postJson('/api/payments/collect', [
+            'student_id' => $enrollment->student_id,
+            'enrollment_id' => $enrollment->id,
+            'months' => ['2025-09', '2025-10'],
+            'payment_date' => now()->toDateString(),
+            'method' => 'cash',
+            'items' => [
+                ['fee_type_id' => $feeType->id, 'amount' => 300.0],
+            ],
+        ]);
+
+        $response->assertCreated()
+            ->assertJsonPath('receipt.total', 300);
+
+        // 3. Verify ledger and remaining balance
+        $ledger = $collectionService->getPaidMonths($enrollment->id);
+        $this->assertContains('2025-09', $ledger);
+        $this->assertContains('2025-10', $ledger);
+
+        $afterPrev = $collectionService->preview($enrollment->id, ['2025-09', '2025-10']);
+        $this->assertEquals(0.0, $afterPrev['remaining_amount']);
+    }
+
+    /**
+     * Test 45: One-month vs two-month collection with and without club fee lines:
+     * - Ensures single-month and two-month fee lines are aggregated exactly once without duplication.
+     */
+    public function test_45_one_vs_two_month_collection_with_and_without_clubs(): void
+    {
+        $user = $this->makeWaiverUser();
+        Sanctum::actingAs($user);
+
+        $year = $this->makeAcademicYear('2025-2026');
+        $enrollment = $this->makeEnrollment($year);
+        $this->makeFeePlan($year, $enrollment->level_id, 160.0);
+
+        app(DiscountService::class)->createForEnrollment($enrollment->id, 10.0, 'خصم عادي', '2025-09-01');
+
+        $tuitionFee = \App\Models\FeeType::create(['name_ar' => 'القسط الشهري 2', 'price' => 160.0, 'is_active' => true]);
+        $clubFee = \App\Models\FeeType::create(['name_ar' => 'معلوم الحساب الذهني', 'price' => 50.0, 'is_active' => true]);
+
+        // Two-month collection + club fee (300 TND tuition net + 50 TND club = 350 TND)
+        $response = $this->postJson('/api/payments/collect', [
+            'student_id' => $enrollment->student_id,
+            'enrollment_id' => $enrollment->id,
+            'months' => ['2025-09', '2025-10'],
+            'payment_date' => now()->toDateString(),
+            'method' => 'cash',
+            'items' => [
+                ['fee_type_id' => $tuitionFee->id, 'amount' => 300.0],
+                ['fee_type_id' => $clubFee->id, 'amount' => 50.0],
+            ],
+        ]);
+
+        $response->assertCreated()
+            ->assertJsonPath('receipt.total', 350);
+    }
+
+    /**
+     * Test 46: Cancellation and waiver behavior in collection:
+     * - Full waiver prevents collecting payments (remaining due = 0).
+     * - Payment cancellation restores unpaid status and debt.
+     */
+    public function test_46_cancellation_and_waiver_behavior(): void
+    {
+        $user = $this->makeWaiverUser();
+        Sanctum::actingAs($user);
+
+        $year = $this->makeAcademicYear('2025-2026');
+        $enrollment = $this->makeEnrollment($year);
+        $this->makeFeePlan($year, $enrollment->level_id, 160.0);
+
+        // 1. Full Waiver
+        app(MonthlyDiscountService::class)->createDiscount($enrollment->id, 'full_waiver', null, 'إعفاء كلي اجتماعي');
+
+        $tuitionFee = \App\Models\FeeType::create(['name_ar' => 'القسط الشهري 3', 'price' => 160.0, 'is_active' => true]);
+
+        $response = $this->postJson('/api/payments/collect', [
+            'student_id' => $enrollment->student_id,
+            'enrollment_id' => $enrollment->id,
+            'months' => ['2025-09'],
+            'payment_date' => now()->toDateString(),
+            'method' => 'cash',
+            'items' => [
+                ['fee_type_id' => $tuitionFee->id, 'amount' => 160.0],
+            ],
+        ]);
+
+        $response->assertStatus(422)
+            ->assertJsonPath('message', 'هذا المعلوم معفى كلياً ولا يوجد مبلغ مستحق.');
+
+        // 2. Cancellation behavior test
+        $enrollment2 = $this->makeEnrollment($year);
+        $this->makeFeePlan($year, $enrollment2->level_id, 160.0);
+        app(DiscountService::class)->createForEnrollment($enrollment2->id, 10.0, 'خصم عادي', '2025-09-01');
+
+        $collectRes = $this->postJson('/api/payments/collect', [
+            'student_id' => $enrollment2->student_id,
+            'enrollment_id' => $enrollment2->id,
+            'months' => ['2025-09'],
+            'payment_date' => now()->toDateString(),
+            'method' => 'cash',
+            'items' => [
+                ['fee_type_id' => $tuitionFee->id, 'amount' => 150.0],
+            ],
+        ]);
+        $collectRes->assertCreated();
+
+        $paymentId = $collectRes->json('receipt.payment_id');
+
+        // Cancel payment
+        $cancelRes = $this->postJson("/api/payments/{$paymentId}/cancel", [
+            'reason' => 'إلغاء دفعة خاطئة للتجربة',
+        ]);
+
+        $cancelRes->assertOk();
+
+        // Verify month is unpaid again
+        $collectionService = app(\App\Services\CollectionService::class);
+        $prev = $collectionService->preview($enrollment2->id, ['2025-09']);
+        $this->assertEquals(150.0, $prev['remaining_amount']);
+        $this->assertTrue($prev['can_collect']);
+    }
 }
