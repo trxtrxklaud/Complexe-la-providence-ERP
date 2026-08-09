@@ -26,6 +26,8 @@ import {
 
 const UsersList = lazy(() => loadUsersList().then((module) => ({ default: module.UsersList })));
 const DiscountsPage = lazy(() => import('./pages/Discounts/DiscountsPage').then((module) => ({ default: module.DiscountsPage })));
+const MonthlyDiscountsPage = lazy(() => import('./pages/Discounts/MonthlyDiscountsPage').then((module) => ({ default: module.MonthlyDiscountsPage })));
+
 const ClubFeesReportPage = lazy(() => import('./pages/Reports/ClubFeesReportPage'));
 const ClubsPage = lazy(() => import('./pages/Clubs/ClubsPage'));
 const UserForm = lazy(() => import('./pages/Users/UserForm').then((module) => ({ default: module.UserForm })));
@@ -273,6 +275,12 @@ export default function App() {
 <Layout><DiscountsPage /></Layout>
 </ProtectedRoute>
 } />
+<Route path='/discounts/monthly' element={
+<ProtectedRoute permission='waive_fees'>
+<Layout><MonthlyDiscountsPage /></Layout>
+</ProtectedRoute>
+} />
+
 {/* Historique — سجل الوصولات الملغاة، يقرأ من /payments */}
                     <Route path="/historique" element={
                         <ProtectedRoute permission="manage_payments">

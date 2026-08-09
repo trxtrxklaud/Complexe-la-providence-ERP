@@ -10,6 +10,8 @@ use App\Models\PaymentAllocation;
 use App\Models\StudentFee;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
+
 
 class CollectionService
 {
@@ -65,19 +67,31 @@ class CollectionService
                 sort($months);
                 $this->validateMonths($months, $enrollment);
 
+                // إعادة حساب المعاينة والتخفيضات على مستوى الخادم لحماية الاستخلاص
+                $preview = $this->preview($enrollment->id, $months, $data['items'][0]['fee_type_id'] ?? null);
+
+                if ($preview['is_fully_waived']) {
+                    throw new \InvalidArgumentException('هذا المعلوم معفى كلياً ولا يوجد مبلغ مستحق.');
+                }
+
+                $maxPayable = (float) $preview['remaining_amount'];
+                $itemsTotal = round((float) array_sum(array_column($data['items'], 'amount')), 2);
+
+                if ($itemsTotal > $maxPayable) {
+                    throw new \InvalidArgumentException(
+                        'المبلغ المدفوع (' . number_format($itemsTotal, 2, '.', '') . ') يتجاوز المبلغ المتبقي المستحق (' . number_format($maxPayable, 2, '.', '') . ')'
+                    );
+                }
+
                 $monthsLabel = implode(' / ', array_map(
                     fn ($m) => (self::MONTH_NAMES_AR[substr($m, 5)] ?? $m) . ' ' . substr($m, 0, 4),
                     $months
                 ));
 
-                // التخفيض لم يعد يُطبَّق عند الاستخلاص: صار سعراً سنوياً ثابتاً
-                // يُدار في enrollment_discounts عبر DiscountService. هنا يُخزَّن السعر
-                // الكامل لكل بند، فلا يضيع أصل ما طُولب به التلميذ، ويُطرح التخفيض
-                // في التقارير والمتخلّد لا في صفوف الرسوم.
-                $itemsTotal = round((float) array_sum(array_column($data['items'], 'amount')), 2);
                 $total = $itemsTotal;
 
                 $payment = Payment::create([
+
                     'student_id'      => $data['student_id'],
                     'enrollment_id'   => $data['enrollment_id'],
                     'months'          => $months,
@@ -317,5 +331,132 @@ class CollectionService
             $first = self::MONTH_NAMES_AR[substr($unpaidMonths[0], 5)] ?? $unpaidMonths[0];
             throw new \InvalidArgumentException('يجب البدء بدفع شهر ' . $first . ' قبل الشهر المختار');
         }
+    }
+
+    /**
+     * معاينة الاستخلاص وحساب التخفيضات والصافي والمتبقي آلياً على مستوى الخادم.
+     */
+    public function preview(int $enrollmentId, array $months, ?int $feeTypeId = null): array
+    {
+        $enrollment = Enrollment::with(['student', 'academicYear', 'level'])->findOrFail($enrollmentId);
+        $academicYear = $enrollment->academicYear;
+
+        // 1. المعلوم الشهري المحدد في المخطط أو سعر نوع الرسم
+        $grossPerMonth = (float) \App\Models\FeePlan::query()
+            ->where('academic_year_id', $academicYear->id)
+            ->where('level_id', $enrollment->level_id)
+            ->where('frequency', 'monthly')
+            ->sum('amount');
+
+        if ($grossPerMonth <= 0 && $feeTypeId) {
+            $feeType = \App\Models\FeeType::find($feeTypeId);
+            $grossPerMonth = $feeType ? (float) $feeType->price : 0.0;
+        }
+
+
+        $items = [];
+        $totalGross = 0.0;
+        $totalDiscount = 0.0;
+        $totalNetDue = 0.0;
+        $totalPaid = 0.0;
+        $totalRemaining = 0.0;
+        $hasFullWaiver = false;
+        $activeDiscountType = null;
+        $activeDiscountReason = null;
+
+        foreach ($months as $m) {
+            $monthGross = $grossPerMonth;
+
+            // 1. التخفيض الشهري المتكرر (monthly_discounts) — normal_monthly, full_waiver & humanitarian_fixed
+            $monthlyDisc = \App\Models\MonthlyDiscount::query()
+                ->where('enrollment_id', $enrollment->id)
+                ->where('academic_year_id', $academicYear->id)
+                ->active()
+                ->where('start_month', '<=', $m)
+                ->where('end_month', '>=', $m)
+                ->first();
+
+            $discAmount = 0.0;
+            $discType = null;
+            $discReason = null;
+
+            if ($monthlyDisc) {
+                $discType = $monthlyDisc->discount_type;
+                $discReason = $monthlyDisc->reason;
+                if ($discType === \App\Models\MonthlyDiscount::TYPE_FULL_WAIVER) {
+                    $discAmount = $monthGross;
+                } elseif ($discType === \App\Models\MonthlyDiscount::TYPE_HUMANITARIAN_FIXED || $discType === \App\Models\MonthlyDiscount::TYPE_NORMAL_MONTHLY) {
+                    $discAmount = (float) $monthlyDisc->monthly_amount;
+                }
+            } else {
+                // 2. التخفيض السنوي العادي (enrollment_discounts)
+                $annualDisc = $enrollment->activeDiscount($academicYear->id);
+                if ($annualDisc && (float) $annualDisc->amount > 0) {
+                    $discType = 'normal';
+                    $discReason = $annualDisc->reason;
+                    $discAmount = round((float) $annualDisc->amount / 10, 2);
+                }
+            }
+
+
+            $monthNetDue = max(0.0, round($monthGross - $discAmount, 2));
+
+            // المبالغ المدفوعة مسبقاً لهذا الشهر
+            $monthPaid = (float) PaymentAllocation::query()
+                ->whereHas('payment', function ($q) use ($enrollment, $m) {
+                    $q->where('enrollment_id', $enrollment->id)
+                      ->whereNull('cancelled_at')
+                      ->whereJsonContains('months', $m);
+                })
+                ->whereHas('studentFee', function ($q) {
+                    $q->whereNull('cancelled_at');
+                })
+                ->sum('amount_allocated');
+
+            $monthRemaining = max(0.0, round($monthNetDue - $monthPaid, 2));
+
+            if ($discType === \App\Models\MonthlyDiscount::TYPE_FULL_WAIVER) {
+                $hasFullWaiver = true;
+            }
+
+            if ($discType && ! $activeDiscountType) {
+                $activeDiscountType = $discType;
+                $activeDiscountReason = $discReason;
+            }
+
+            $totalGross += $monthGross;
+            $totalDiscount += $discAmount;
+            $totalNetDue += $monthNetDue;
+            $totalPaid += $monthPaid;
+            $totalRemaining += $monthRemaining;
+
+            $items[] = [
+                'month'            => $m,
+                'gross_amount'     => $monthGross,
+                'discount_type'    => $discType,
+                'discount_amount'  => $discAmount,
+                'net_due'          => $monthNetDue,
+                'amount_paid'      => $monthPaid,
+                'remaining_amount' => $monthRemaining,
+                'is_fully_waived'  => $discType === \App\Models\MonthlyDiscount::TYPE_FULL_WAIVER,
+                'discount_reason'  => $discReason,
+            ];
+        }
+
+        return [
+            'enrollment_id'    => $enrollment->id,
+            'student_id'       => $enrollment->student_id,
+            'months'           => $months,
+            'gross_amount'     => round($totalGross, 2),
+            'discount_type'    => $activeDiscountType,
+            'discount_amount'  => round($totalDiscount, 2),
+            'net_due'          => round($totalNetDue, 2),
+            'amount_paid'      => round($totalPaid, 2),
+            'remaining_amount' => round($totalRemaining, 2),
+            'is_fully_waived'  => $hasFullWaiver || round($totalRemaining, 2) <= 0.0,
+            'discount_reason'  => $activeDiscountReason,
+            'can_collect'      => ! $hasFullWaiver && round($totalRemaining, 2) > 0.0,
+            'items'            => $items,
+        ];
     }
 }

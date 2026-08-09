@@ -6,6 +6,8 @@ use App\Http\Controllers\ClassroomRosterController;
 use App\Http\Controllers\ClubController;
 use App\Http\Controllers\ClubReportController;
 use App\Http\Controllers\ClubSubscriptionController;
+use App\Http\Controllers\ClubMonthlyDiscountController;
+
 use App\Http\Controllers\CollectionController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\DiscountController;
@@ -17,6 +19,7 @@ use App\Http\Controllers\FeeTypeController;
 use App\Http\Controllers\FeeWaiverController;
 use App\Http\Controllers\FinancialReportController;
 use App\Http\Controllers\LevelController;
+use App\Http\Controllers\MonthlyDiscountController;
 use App\Http\Controllers\PaymentController;
 use App\Http\Controllers\RosterController;
 use App\Http\Controllers\SalaryController;
@@ -169,7 +172,9 @@ Route::middleware(['auth:sanctum', 'active', 'throttle:120,1'])->group(function 
         Route::get('/collection/years', [CollectionController::class, 'years']);
         Route::get('/collection/years/{year}/sections', [CollectionController::class, 'sectionsByYear']);
         Route::get('/collection/sections/{section}/students', [CollectionController::class, 'studentsBySection']);
+        Route::get('/payments/collect/preview', [CollectionController::class, 'preview']);
         Route::post('/payments/collect', [CollectionController::class, 'collect']);
+
         Route::get('/enrollments/{enrollment}/ledger', [CollectionController::class, 'ledger']);
     });
 
@@ -186,7 +191,17 @@ Route::middleware(['auth:sanctum', 'active', 'throttle:120,1'])->group(function 
         Route::get('/enrollments/{enrollment}/discount', [DiscountController::class, 'show']);
         Route::post('/enrollments/{enrollment}/discount', [DiscountController::class, 'store']);
         Route::post('/discounts/{discount}/cancel', [DiscountController::class, 'cancel']);
+
+        // التخفيضات الشهرية المتكررة (دراسي / نوادي)
+        Route::get('/enrollments/{enrollment}/monthly-discounts', [MonthlyDiscountController::class, 'index']);
+        Route::post('/enrollments/{enrollment}/monthly-discounts', [MonthlyDiscountController::class, 'store']);
+        Route::post('/monthly-discounts/{discount}/cancel', [MonthlyDiscountController::class, 'cancel']);
+
+        Route::get('/club-subscriptions/{subscription}/monthly-discounts', [ClubMonthlyDiscountController::class, 'index']);
+        Route::post('/club-subscriptions/{subscription}/monthly-discounts', [ClubMonthlyDiscountController::class, 'store']);
+        Route::post('/club-monthly-discounts/{discount}/cancel', [ClubMonthlyDiscountController::class, 'cancel']);
     });
+
 
     // النوادي المدرسية واشتراكاتها
     Route::middleware('permission:manage_students')->group(function () {

@@ -135,3 +135,54 @@ export async function getStudentsBySection(sectionId: number, yearId: number) {
   if (!res.ok) throw new Error('فشل جلب التلاميذ');
   return res.json();
 }
+
+export type CollectionPreview = {
+  enrollment_id: number;
+  student_id: number;
+  months: string[];
+  gross_amount: number;
+  discount_type: 'full_waiver' | 'humanitarian_fixed' | 'normal' | null;
+  discount_amount: number;
+  net_due: number;
+  amount_paid: number;
+  remaining_amount: number;
+  is_fully_waived: boolean;
+  discount_reason: string | null;
+  can_collect: boolean;
+  items: Array<{
+    month: string;
+    gross_amount: number;
+    discount_type: string | null;
+    discount_amount: number;
+    net_due: number;
+    amount_paid: number;
+    remaining_amount: number;
+    is_fully_waived: boolean;
+    discount_reason: string | null;
+  }>;
+};
+
+export async function getCollectionPreview(enrollmentId: number, months: string[], feeTypeId?: number): Promise<CollectionPreview> {
+  const params = new URLSearchParams();
+  params.append('enrollment_id', String(enrollmentId));
+  months.forEach((m) => params.append('months[]', m));
+  if (feeTypeId) params.append('fee_type_id', String(feeTypeId));
+
+  const res = await fetch(API_BASE + '/payments/collect/preview?' + params.toString(), { headers: getHeaders() });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    let msg = err.message || 'فشل معاينة الاستخلاص والتخفيضات';
+    if (err.errors && typeof err.errors === 'object') {
+      const firstKey = Object.keys(err.errors)[0];
+      if (firstKey && Array.isArray(err.errors[firstKey]) && err.errors[firstKey][0]) {
+        msg = err.errors[firstKey][0];
+      }
+    }
+    if (typeof msg === 'string' && (msg.includes('SQLSTATE') || msg.includes('no such table'))) {
+      msg = 'حدث خطأ غير متوقع في قاعدة البيانات أثناء معاينة التخفيضات';
+    }
+    throw new Error(msg);
+  }
+  return res.json();
+
+}

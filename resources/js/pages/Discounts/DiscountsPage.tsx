@@ -417,7 +417,7 @@ export function DiscountsPage() {
                 <div className="flex gap-2">
                   <button
                     onClick={() => void doDelete()}
-                    disabled={buzy}
+                    disabled={busy}
                     className="rounded-xl px-4 py-2 text-sm text-white disabled:opacity-50"
                     style={{ backgroundColor: C.error }}
                   >
