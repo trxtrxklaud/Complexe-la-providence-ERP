@@ -17,7 +17,7 @@ return new class extends Migration
             $table->date('start_date');
             $table->date('end_date')->nullable();
             $table->enum('status', ['active', 'paused', 'cancelled'])->default('active');
-            $table->decimal('monthly_fee_override', 10, 2)->nullable();
+            $table->decimal('monthly_fee_override', 12, 3)->nullable();
             $table->timestamps();
 
             $table->index(['student_id', 'academic_year_id']);

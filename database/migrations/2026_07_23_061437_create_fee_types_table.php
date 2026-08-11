@@ -12,7 +12,7 @@ return new class extends Migration
             $table->id();
             $table->string('name_ar');
             $table->string('name_fr')->nullable();
-            $table->decimal('price', 10, 2)->default(0);
+            $table->decimal('price', 12, 3)->default(0);
             $table->boolean('is_active')->default(true);
             $table->timestamps();
         });

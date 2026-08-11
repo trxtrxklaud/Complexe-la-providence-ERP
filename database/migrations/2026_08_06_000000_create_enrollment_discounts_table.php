@@ -28,9 +28,9 @@ return new class extends Migration
             $table->unsignedBigInteger('enrollment_id');
             $table->unsignedBigInteger('academic_year_id');
 
-            $table->decimal('amount', 10, 2);
+            $table->decimal('amount', 12, 3);
             // نسبة مرجعية للعرض فقط؛ المبلغ الثابت هو مصدر الحقيقة في الحساب.
-            $table->decimal('percentage', 5, 2)->nullable();
+            $table->decimal('percentage', 6, 3)->nullable();
             $table->string('reason', 500);
             $table->date('applied_date');
 
