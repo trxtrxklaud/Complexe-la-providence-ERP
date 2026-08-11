@@ -15,7 +15,7 @@ return new class extends Migration
             $table->string('phone')->nullable();
             $table->string('email')->nullable();
             $table->string('job_title')->nullable();
-            $table->decimal('default_salary', 12, 3)->nullable();
+            $table->decimal('default_salary', 10, 2)->nullable();
             $table->boolean('is_active')->default(true);
             $table->text('notes')->nullable();
             $table->timestamps();

@@ -86,7 +86,7 @@ class DashboardTest extends TestCase
         \App\Models\Enrollment::create([
             'student_id' => $maleStudent->id,
             'academic_year_id' => $year->id,
-            'level_id' => $level->id,
+            'level_id' => 1,
             'section_id' => $sec1->id,
             'status' => 'active',
             'enrollment_date' => now()->toDateString(),
@@ -102,7 +102,7 @@ class DashboardTest extends TestCase
         \App\Models\Enrollment::create([
             'student_id' => $femaleStudent->id,
             'academic_year_id' => $year->id,
-            'level_id' => $level->id,
+            'level_id' => 1,
             'section_id' => $sec1->id,
             'status' => 'active',
             'enrollment_date' => now()->toDateString(),
@@ -110,7 +110,7 @@ class DashboardTest extends TestCase
         \App\Models\Enrollment::create([
             'student_id' => $femaleStudent->id,
             'academic_year_id' => $year->id,
-            'level_id' => $level->id,
+            'level_id' => 1,
             'section_id' => $sec2->id,
             'status' => 'active',
             'enrollment_date' => now()->toDateString(),
@@ -126,7 +126,7 @@ class DashboardTest extends TestCase
         \App\Models\Enrollment::create([
             'student_id' => $unspecifiedStudent->id,
             'academic_year_id' => $year->id,
-            'level_id' => $level->id,
+            'level_id' => 1,
             'section_id' => $sec1->id,
             'status' => 'active',
             'enrollment_date' => now()->toDateString(),
@@ -142,7 +142,7 @@ class DashboardTest extends TestCase
         \App\Models\Enrollment::create([
             'student_id' => $unspecifiedArabicName->id,
             'academic_year_id' => $year->id,
-            'level_id' => $level->id,
+            'level_id' => 1,
             'section_id' => $sec1->id,
             'status' => 'active',
             'enrollment_date' => now()->toDateString(),

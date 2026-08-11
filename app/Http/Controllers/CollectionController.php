@@ -141,22 +141,4 @@ class CollectionController extends Controller
                 : [],
         ]);
     }
-
-    public function preview(Request $request): JsonResponse
-    {
-        $data = $request->validate([
-            'enrollment_id' => ['required', 'integer', 'exists:enrollments,id'],
-            'months'        => ['required', 'array', 'min:1'],
-            'months.*'      => ['required', 'string', 'regex:/^\d{4}-(0[1-9]|1[0-2])$/'],
-            'fee_type_id'   => ['nullable', 'integer', 'exists:fee_types,id'],
-        ]);
-
-        $preview = $this->collectionService->preview(
-            (int) $data['enrollment_id'],
-            $data['months'],
-            isset($data['fee_type_id']) ? (int) $data['fee_type_id'] : null
-        );
-
-        return response()->json($preview);
-    }
 }

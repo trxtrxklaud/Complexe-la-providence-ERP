@@ -12,8 +12,8 @@ return new class extends Migration
             $table->id();
             $table->foreignId('student_id')->constrained()->cascadeOnDelete();
             $table->foreignId('academic_year_id')->constrained()->cascadeOnDelete();
-            $table->decimal('amount', 12, 3);
-            $table->decimal('paid_amount', 12, 3)->default(0);
+            $table->decimal('amount', 10, 2);
+            $table->decimal('paid_amount', 10, 2)->default(0);
             $table->enum('status', ['paid', 'unpaid', 'partial'])->default('unpaid');
             $table->timestamps();
         });

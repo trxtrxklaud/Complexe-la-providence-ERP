@@ -171,12 +171,7 @@ class DiscountService
      */
     public function capForEnrollment(Enrollment $enrollment): float
     {
-        $annualFees = $this->calculateAnnualFees($enrollment);
-        if ($annualFees <= 0) {
-            return 0.0;
-        }
-
-        return round(($annualFees / self::SCHOOL_MONTHS_COUNT) * self::MAX_DISCOUNT_RATE, 2);
+        return round($this->calculateAnnualFees($enrollment) * self::MAX_DISCOUNT_RATE, 2);
     }
 
     /**
@@ -191,17 +186,15 @@ class DiscountService
             );
         }
 
-        $monthlyFee   = $annualFees / self::SCHOOL_MONTHS_COUNT;
-        $monthlyCap   = round($monthlyFee * self::MAX_DISCOUNT_RATE, 2);
-        $totalMonthly = round($existingTotal + $proposedAmount, 2);
+        $cap   = round($annualFees * self::MAX_DISCOUNT_RATE, 2);
+        $total = round($existingTotal + $proposedAmount, 2);
 
         // هامش مليم واحد يمتصّ فروق التقريب فلا يُرفض تخفيض مساوٍ للسقف تماماً.
-        if ($totalMonthly > $monthlyCap + 0.001) {
+        if ($total > $cap + 0.001) {
             throw new \InvalidArgumentException(
-                'التخفيض الشهري (' . $totalMonthly . ') يتجاوز السقف المسموح (' . $monthlyCap
-                . ') وهو 20% من المعلوم الشهري (' . round($monthlyFee, 2) . ')'
+                'التخفيض (' . $total . ') يتجاوز السقف المسموح ' . $cap
+                . ' وهو 20% من معاليم السنة (' . $annualFees . ')'
             );
         }
     }
-
 }

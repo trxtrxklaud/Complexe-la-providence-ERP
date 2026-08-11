@@ -130,7 +130,6 @@ class DiscountController extends Controller
             $enrollment->id,
             (int) $enrollment->academic_year_id
         );
-        $annualDiscount  = round($activeDiscount * 10, 2);
 
         return [
             'id'               => $enrollment->id,
@@ -138,9 +137,7 @@ class DiscountController extends Controller
             'annual_fees'      => $annualFees,
             'discount_cap'     => $cap,
             'active_discount'  => $activeDiscount,
-            'annual_discount'  => $annualDiscount,
-            'net_fees'         => round($annualFees - $annualDiscount, 2),
+            'net_fees'         => round($annualFees - $activeDiscount, 2),
         ];
     }
-
 }

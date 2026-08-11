@@ -16,8 +16,8 @@ return new class extends Migration
             $table->foreignId('enrollment_id')->nullable()->constrained()->nullOnDelete();
             $table->foreignId('club_subscription_id')->nullable()->constrained()->nullOnDelete();
             $table->string('month', 7); // YYYY-MM
-            $table->decimal('amount_due', 12, 3);
-            $table->decimal('amount_paid', 12, 3)->default(0);
+            $table->decimal('amount_due', 10, 2);
+            $table->decimal('amount_paid', 10, 2)->default(0);
             $table->enum('status', ['unpaid', 'partial', 'paid'])->default('unpaid');
             $table->date('paid_at')->nullable();
             $table->string('method', 50)->nullable();

@@ -206,8 +206,8 @@ class ClubFeesTest extends TestCase
     {
         $year = $this->makeAcademicYear();
         $level = \App\Models\Level::firstOrCreate(['id' => 999], ['name' => 'مستوى تجريبي', 'code' => 'L_TEST999']);
-        $sec1 = \App\Models\Section::firstOrCreate(['id' => 998], ['level_id' => $level->id, 'name' => 'تجريبي 1', 'code' => 'SEC_TEST1']);
-        $sec2 = \App\Models\Section::firstOrCreate(['id' => 999], ['level_id' => $level->id, 'name' => 'تجريبي 2', 'code' => 'SEC_TEST2']);
+        $sec1 = \App\Models\Section::firstOrCreate(['id' => 998], ['level_id' => $level->id, 'name' => 'قسم تجريبي 1', 'code' => 'SEC_TEST1']);
+        $sec2 = \App\Models\Section::firstOrCreate(['id' => 999], ['level_id' => $level->id, 'name' => 'قسم تجريبي 2', 'code' => 'SEC_TEST2']);
 
         $enrSec1 = $this->makeEnrollment($year, null);
         $enrSec1->update(['section_id' => $sec1->id]);

@@ -28,7 +28,7 @@ return new class extends Migration
 
             // Payment Data
             $table->string('payment_method')->nullable();
-            $table->decimal('registration_amount', 12, 3)->nullable();
+            $table->decimal('registration_amount', 10, 2)->nullable();
             $table->date('payment_date')->nullable();
             $table->text('payment_notes')->nullable();
             

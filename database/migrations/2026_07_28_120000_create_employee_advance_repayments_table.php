@@ -32,7 +32,7 @@ return new class extends Migration
             $table->unsignedBigInteger('employee_id')->index();
             $table->unsignedBigInteger('academic_year_id')->nullable()->index();
 
-            $table->decimal('amount', 12, 3);
+            $table->decimal('amount', 12, 2);
             $table->date('repaid_at')->index();
 
             // cash | salary_deduction

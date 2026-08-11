@@ -14,7 +14,7 @@ return new class extends Migration
             $table->foreignId('level_id')->constrained()->cascadeOnDelete();
             $table->foreignId('fee_category_id')->constrained()->cascadeOnDelete();
             $table->string('name');
-            $table->decimal('amount', 12, 3);
+            $table->decimal('amount', 10, 2);
             $table->enum('frequency', ['monthly', 'quarterly', 'yearly']);
             $table->tinyInteger('due_day')->nullable();
             $table->timestamps();

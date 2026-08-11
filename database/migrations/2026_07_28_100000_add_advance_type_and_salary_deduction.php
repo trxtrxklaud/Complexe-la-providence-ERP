@@ -28,8 +28,8 @@ return new class extends Migration
 
         Schema::table('salaries', function (Blueprint $table) {
             // amount يبقى الصافي المدفوع فعلاً — وهو وحده ما يقرأه الدفتر النقدي.
-            $table->decimal('gross_amount', 12, 3)->nullable();
-            $table->decimal('advance_deduction', 12, 3)->default(0);
+            $table->decimal('gross_amount', 10, 2)->nullable();
+            $table->decimal('advance_deduction', 10, 2)->default(0);
         });
     }
 

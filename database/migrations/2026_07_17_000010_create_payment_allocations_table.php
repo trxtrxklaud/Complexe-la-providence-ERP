@@ -12,7 +12,7 @@ return new class extends Migration
             $table->id();
             $table->foreignId('payment_id')->constrained()->cascadeOnDelete();
             $table->foreignId('student_fee_id')->constrained()->cascadeOnDelete();
-            $table->decimal('amount_allocated', 12, 3);
+            $table->decimal('amount_allocated', 10, 2);
             $table->timestamps();
 
             $table->index('payment_id');

@@ -23,7 +23,7 @@ return new class extends Migration
 
             // مراجع بلا قيود خارجية: SQLite يعيد بناء الجدول عند كل تعديل لاحق.
             $table->unsignedBigInteger('student_fee_id');
-            $table->decimal('amount', 12, 3);
+            $table->decimal('amount', 10, 2);
             $table->string('reason', 500);
             $table->unsignedBigInteger('created_by')->nullable();
 

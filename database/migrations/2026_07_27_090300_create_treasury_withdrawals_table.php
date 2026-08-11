@@ -15,7 +15,7 @@ return new class extends Migration
     {
         Schema::create('treasury_withdrawals', function (Blueprint $table) {
             $table->id();
-            $table->decimal('amount', 12, 3);
+            $table->decimal('amount', 12, 2);
             $table->date('withdrawn_at');
             $table->string('type', 100)->nullable();
             $table->text('note')->nullable();

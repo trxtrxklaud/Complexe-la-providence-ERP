@@ -19,7 +19,7 @@ return new class extends Migration
             $table->enum('type', ['event', 'occasion', 'holiday', 'exam', 'meeting'])->default('event');
             $table->string('color')->nullable();
             $table->string('status')->default('active');
-            $table->foreignId('created_by')->nullable();
+            $table->foreignId('created_by')->nullable()->constrained('users')->nullOnDelete();
             $table->timestamps();
         });
     }

@@ -8,11 +8,8 @@ import {
   getCollectionYears,
   getSectionsByYear,
   getStudentsBySection,
-  getCollectionPreview,
-  type CollectionPreview,
   paymentsApi,
 } from '../../api/payments';
-
 import { ReceiptModal } from './ReceiptModal';
 
 const C = {
@@ -83,36 +80,8 @@ export function CollectionPage() {
   const [receipt, setReceipt] = useState<any>(null);
   const [ledgerRows, setLedgerRows] = useState<any[]>([]);
 
-  const [previewData, setPreviewData] = useState<CollectionPreview | null>(null);
-  const [previewLoading, setPreviewLoading] = useState(false);
-
-
-  useEffect(() => {
-    if (!picked || selectedMonths.length === 0) {
-      setPreviewData(null);
-      return;
-    }
-    setPreviewLoading(true);
-    getCollectionPreview(picked.enrollment_id, selectedMonths, tuitionFee?.id)
-      .then((res) => {
-        setPreviewData(res);
-        if (res.items && res.items.length > 0) {
-          const perMonthNet = selectedMonths.length > 0
-            ? Math.round((res.remaining_amount / selectedMonths.length) * 100) / 100
-            : res.remaining_amount;
-          setMonthlyPrice(String(perMonthNet));
-        }
-
-      })
-      .catch((e) => {
-        setError(e.message || 'فشل جلب المعاينة والتخفيض');
-      })
-      .finally(() => setPreviewLoading(false));
-  }, [picked, selectedMonths, tuitionFee]);
-
   useEffect(() => {
     Promise.all([getCollectionYears(), getFeeTypes()])
-
       .then(([y, f]) => {
         setYears(Array.isArray(y) ? y : []);
         const fees = Array.isArray(f) ? f : [];
@@ -448,49 +417,22 @@ export function CollectionPage() {
 
         {picked && (
           <>
-            {previewData && (
-              <div className={`p-4 rounded-2xl border ${
-                previewData.is_fully_waived
-                  ? 'bg-emerald-50 border-emerald-300 text-emerald-900'
-                  : previewData.discount_type === 'humanitarian_fixed'
-                  ? 'bg-amber-50 border-amber-300 text-amber-900'
-                  : 'bg-blue-50 border-blue-300 text-blue-900'
-              }`}>
-                <div className="font-bold text-sm mb-1">
-                  {previewData.is_fully_waived
-                    ? 'تخفيض كلي — هذا المعلوم معفى كلياً (0 د.ت) ولا يوجد مبلغ مستحق للقبض'
-                    : previewData.discount_type === 'humanitarian_fixed'
-                    ? 'تخفيض حالة إنسانية سارٍ'
-                    : previewData.discount_type === 'normal_monthly' || previewData.discount_type === 'normal'
-                    ? 'تخفيض عادي سارٍ'
-
-                    : 'لا يوجد تخفيض على الأشهر المختارة'}
-                </div>
-                <div className="text-xs space-y-0.5">
-                  <div>المعلوم الأصلي: {previewData.gross_amount} د | التخفيض: {previewData.discount_amount} د | الصافي المستحق: {previewData.remaining_amount} د</div>
-                  {previewData.discount_reason && <div>السبب: {previewData.discount_reason}</div>}
-                </div>
-              </div>
-            )}
-
             <div className="bg-white rounded-2xl border p-4" style={{ borderColor: C.line }}>
               <label className="text-sm font-semibold" style={{ color: C.ink }}>معلوم الشهر (د.ت)</label>
               <input
                 type="number"
                 min="0"
                 step="0.01"
-                disabled={Boolean(previewData?.is_fully_waived)}
                 value={monthlyPrice}
                 onChange={(e) => setMonthlyPrice(e.target.value)}
-                className="w-full mt-1 border rounded-xl px-3 py-2 text-sm disabled:bg-slate-100 disabled:text-slate-400"
+                className="w-full mt-1 border rounded-xl px-3 py-2 text-sm"
                 style={{ borderColor: C.line, direction: 'ltr' }}
                 placeholder="مثال: 150"
               />
               <p className="text-xs mt-1" style={{ color: C.muted }}>
-                {previewData?.is_fully_waived ? 'المعلوم معفى كلياً ولا يمكن تغيير المبلغ' : 'المجموع الشهري يحسب آلياً بناء على التخفيضات والصافي'}
+                المجموع الشهري = عدد الأشهر × معلوم الشهر
               </p>
             </div>
-
 
             <div className="bg-white rounded-2xl border p-4" style={{ borderColor: C.line }}>
               <div className="font-semibold mb-2" style={{ color: C.ink }}>الأشهر</div>
@@ -598,12 +540,11 @@ export function CollectionPage() {
                 <div className="text-xs" style={{ color: C.muted }}>المجموع</div>
                 <div className="text-2xl font-extrabold" style={{ color: C.forest }}>{total.toFixed(2)} د.ت</div>
               </div>
-              <button type="button" onClick={handleSave} disabled={saving || total <= 0 || Boolean(previewData?.is_fully_waived)}
-                className="px-6 py-3 rounded-2xl text-white font-bold transition disabled:opacity-50"
-                style={{ background: saving || total <= 0 || Boolean(previewData?.is_fully_waived) ? C.muted : C.forest }}>
-                {saving ? 'جاري الحفظ...' : previewData?.is_fully_waived ? 'معفى كلياً — لا يمكن القبض' : 'حفظ'}
+              <button type="button" onClick={handleSave} disabled={saving || total <= 0}
+                className="px-6 py-3 rounded-2xl text-white font-bold"
+                style={{ background: saving || total <= 0 ? C.muted : C.forest }}>
+                {saving ? 'جاري الحفظ...' : 'حفظ'}
               </button>
-
             </div>
           </>
         )}

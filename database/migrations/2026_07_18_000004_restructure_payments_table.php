@@ -14,7 +14,7 @@ return new class extends Migration {
                 $table->id();
                 $table->foreignId('student_id')->constrained()->cascadeOnDelete();
                 $table->foreignId('enrollment_id')->nullable()->constrained()->nullOnDelete();
-                $table->decimal('amount', 12, 3);
+                $table->decimal('amount', 10, 2);
                 $table->date('payment_date');
                 $table->string('method', 50)->default('cash');
                 $table->string('reference', 100)->nullable();
@@ -56,8 +56,8 @@ return new class extends Migration {
                 $table->id();
                 $table->foreignId('student_id')->constrained()->cascadeOnDelete();
                 $table->foreignId('academic_year_id')->constrained()->cascadeOnDelete();
-                $table->decimal('amount', 12, 3);
-                $table->decimal('paid_amount', 12, 3)->default(0);
+                $table->decimal('amount', 10, 2);
+                $table->decimal('paid_amount', 10, 2)->default(0);
                 $table->string('status', 20)->default('unpaid');
                 $table->foreignId('created_by')->nullable()->constrained('users')->nullOnDelete();
                 $table->timestamps();
@@ -73,7 +73,7 @@ return new class extends Migration {
             $table->dropForeign(['enrollment_id']);
             $table->dropColumn(['enrollment_id', 'payment_date', 'method', 'reference', 'notes']);
             $table->foreignId('academic_year_id')->constrained()->cascadeOnDelete();
-            $table->decimal('paid_amount', 12, 3)->default(0);
+            $table->decimal('paid_amount', 10, 2)->default(0);
             $table->enum('status', ['paid', 'unpaid', 'partial'])->default('unpaid');
         });
     }

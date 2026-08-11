@@ -18,7 +18,7 @@ return new class extends Migration
             $table->foreignId('expense_category_id')->nullable()->constrained()->nullOnDelete();
             $table->foreignId('academic_year_id')->nullable()->constrained()->nullOnDelete();
             $table->string('label', 200);
-            $table->decimal('amount', 12, 3);
+            $table->decimal('amount', 12, 2);
             $table->date('expense_date');
             $table->string('method', 50)->default('cash');
             $table->string('reference', 100)->nullable();
