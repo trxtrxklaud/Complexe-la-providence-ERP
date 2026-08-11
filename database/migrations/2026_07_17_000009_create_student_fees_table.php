@@ -13,7 +13,7 @@ return new class extends Migration
             $table->foreignId('enrollment_id')->constrained()->cascadeOnDelete();
             $table->foreignId('fee_plan_id')->constrained()->cascadeOnDelete();
             $table->string('description')->nullable();
-            $table->decimal('amount_due', 10, 2);
+            $table->decimal('amount_due', 12, 3);
             $table->date('due_date');
             $table->enum('status', ['pending', 'partial', 'paid', 'overdue'])->default('pending');
             $table->timestamps();

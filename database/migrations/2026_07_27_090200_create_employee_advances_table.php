@@ -17,8 +17,8 @@ return new class extends Migration
             $table->id();
             $table->foreignId('employee_id')->constrained()->cascadeOnDelete();
             $table->foreignId('academic_year_id')->nullable()->constrained()->nullOnDelete();
-            $table->decimal('amount', 12, 2);
-            $table->decimal('settled_amount', 12, 2)->default(0);
+            $table->decimal('amount', 12, 3);
+            $table->decimal('settled_amount', 12, 3)->default(0);
             $table->date('advance_date');
             $table->string('method', 50)->default('cash');
             $table->string('reason', 200)->nullable();

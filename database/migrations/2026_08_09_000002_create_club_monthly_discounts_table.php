@@ -15,7 +15,7 @@ return new class extends Migration
             $table->foreignId('academic_year_id')->constrained('academic_years')->cascadeOnDelete();
 
             $table->string('discount_type', 30); // full_waiver | humanitarian_fixed
-            $table->decimal('monthly_amount', 10, 2)->nullable(); // NULL for full_waiver
+            $table->decimal('monthly_amount', 12, 3)->nullable(); // NULL for full_waiver
 
             $table->char('start_month', 7); // YYYY-MM
             $table->char('end_month', 7);   // YYYY-MM

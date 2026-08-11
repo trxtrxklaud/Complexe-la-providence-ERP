@@ -16,7 +16,7 @@ return new class extends Migration
 
             $table->string('discount_type', 30); // normal_monthly | full_waiver | humanitarian_fixed
 
-            $table->decimal('monthly_amount', 10, 2)->nullable(); // NULL for full_waiver
+            $table->decimal('monthly_amount', 12, 3)->nullable(); // NULL for full_waiver
             $table->string('fee_category', 30)->default('tuition');
 
             $table->char('start_month', 7); // YYYY-MM

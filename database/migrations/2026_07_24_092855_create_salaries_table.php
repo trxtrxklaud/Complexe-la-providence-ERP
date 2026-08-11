@@ -12,7 +12,7 @@ return new class extends Migration
             $table->id();
             $table->foreignId('employee_id')->constrained()->cascadeOnDelete();
             $table->foreignId('academic_year_id')->constrained()->cascadeOnDelete();
-            $table->decimal('amount', 10, 2);
+            $table->decimal('amount', 12, 3);
             $table->date('period_from');
             $table->date('period_to');
             $table->date('paid_at')->nullable();
