@@ -1,8 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
+import type { ComponentType } from 'react';
+
 import { Link, useSearchParams } from 'react-router-dom';
-import { 
+import {
   Users, UserPlus, Search, ArrowRightLeft, CreditCard,
-  GraduationCap, UserRound, HelpCircle, Printer, Filter
+  GraduationCap, UserRound, HelpCircle, Printer, Filter, AlertCircle,
 } from 'lucide-react';
 import {
   getStudentsFullResponse,
@@ -15,37 +17,32 @@ import { TableRowsSkeleton } from '../../components/DataSkeleton';
 
 const C = {
   forest: '#3B4A36',
-  sage: '#E3EBDB',
-  rose: '#F1E4E2',
-  beige: '#EFEAE0',
-  ink: '#1F261C',
-  muted: '#7C8677',
+  sage:   '#E3EBDB',
+  rose:   '#F1E4E2',
+  beige:  '#EFEAE0',
+  muted:  '#7C8677',
 };
 
 function StudentCountCard({
-  label,
-  count,
-  total,
-  icon: Icon,
-  tint,
-  iconColor,
+  label, count, total, icon: Icon, tint, iconColor,
 }: {
-  label: string;
-  count: number;
-  total?: number;
-  icon: any;
-  tint: string;
-  iconColor: string;
+  label: string; count: number; total?: number;
+  icon: ComponentType<{ size?: number }>;
+  tint: string; iconColor: string;
 }) {
-  const percentage = total && total > 0 && count > 0 ? `(${((count / total) * 100).toFixed(1)}%)` : null;
-
+  const pct = total && total > 0 && count > 0
+    ? `(${((count / total) * 100).toFixed(1)}%)`
+    : null;
   return (
-    <div className="rounded-2xl p-5 shadow-sm border border-slate-200/80 flex items-center justify-between" style={{ backgroundColor: tint }}>
+    <div
+      className="rounded-2xl p-5 shadow-sm border border-slate-200/80 flex items-center justify-between"
+      style={{ backgroundColor: tint }}
+    >
       <div>
         <p className="text-xs font-semibold text-slate-600 mb-1">{label}</p>
         <div className="flex items-baseline gap-2">
           <span className="text-2xl font-black text-slate-800">{count}</span>
-          {percentage && <span className="text-xs font-medium text-slate-500">{percentage}</span>}
+          {pct && <span className="text-xs font-medium text-slate-500">{pct}</span>}
         </div>
       </div>
       <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/80" style={{ color: iconColor }}>
@@ -55,98 +52,104 @@ function StudentCountCard({
   );
 }
 
+function genderBadge(gender: string | null | undefined) {
+  if (gender === 'female') return { label: 'أنثى', cls: 'bg-[#F1E4E2] text-[#A46E67]' };
+  if (gender === 'male')   return { label: 'ذكر',  cls: 'bg-[#EFEAE0] text-[#8A7C57]' };
+  return { label: 'غير محدد', cls: 'bg-slate-100 text-slate-500' };
+}
+
 export function StudentsDashboard() {
   const [searchParams, setSearchParams] = useSearchParams();
-  const [students, setStudents] = useState<Student[]>([]);
-  const [counts, setCounts] = useState({ total: 0, males: 0, females: 0, unknown: 0 });
-  const [options, setOptions] = useState<StudentSearchOptions>({ levels: [], years: [] });
-  const [genderFilter, setGenderFilter] = useState(() => searchParams.get('gender') || 'all');
-  const [sectionFilter, setSectionFilter] = useState(() => searchParams.get('level') || '');
-  const [yearFilter, setYearFilter] = useState(() => searchParams.get('year') || '');
-  const [isLoading, setIsLoading] = useState(true);
 
+  // ─── state ───────────────────────────────────────────────────────────────
+  const [students,  setStudents]  = useState<Student[]>([]);
+  const [counts,    setCounts]    = useState({ total: 0, males: 0, females: 0, unknown: 0 });
+  const [options,   setOptions]   = useState<StudentSearchOptions>({ levels: [], years: [] });
+  const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
+
+  // ─── read filters from URL (single source of truth) ──────────────────────
+  const genderFilter  = searchParams.get('gender')  || 'all';
+  const sectionFilter = searchParams.get('level')   || '';
+  const yearFilter    = searchParams.get('year')    || '';
+  const nameSearch    = searchParams.get('search')  || '';
+
+  // ─── load search-options once on mount ───────────────────────────────────
   useEffect(() => {
-    const controller = new AbortController();
-    getStudentSearchOptions(controller.signal)
+    const ctrl = new AbortController();
+    getStudentSearchOptions(ctrl.signal)
       .then(setOptions)
       .catch(() => {});
-    return () => controller.abort();
+    return () => ctrl.abort();
   }, []);
 
-  useEffect(() => {
-    const controller = new AbortController();
+  // ─── load students whenever filters change ────────────────────────────────
+  // Use a ref-based "latest request ID" to prevent stale-response overwriting
+  const reqIdRef = useRef(0);
+
+  const loadStudents = useCallback(() => {
+    const myId = ++reqIdRef.current;
     setIsLoading(true);
+    setLoadError('');
 
-    const queryGender = searchParams.get('gender') || 'all';
-    const querySection = searchParams.get('level') || '';
-    const queryYear = searchParams.get('year') || '';
-
-    setGenderFilter(queryGender);
-    setSectionFilter(querySection);
-    setYearFilter(queryYear);
-
-    getStudentsFullResponse({
-      gender: queryGender,
-      level: querySection,
-      year: queryYear,
-      per_page: 100,
-    }, controller.signal)
+    getStudentsFullResponse(
+      { gender: genderFilter, level: sectionFilter, year: yearFilter, search: nameSearch, per_page: 100 },
+    )
       .then((res: StudentSearchResponse) => {
-        if (!controller.signal.aborted) {
-          setStudents(res.data);
-          setCounts({
-            total: res.total_count ?? res.data.length,
-            males: res.male_count ?? 0,
-            females: res.female_count ?? 0,
-            unknown: res.unknown_count ?? 0,
-          });
-        }
+        if (myId !== reqIdRef.current) return;   // stale — discard
+        setStudents(res.data);
+        setCounts({
+          total:   res.total_count ?? res.data.length,
+          males:   res.male_count  ?? 0,
+          females: res.female_count ?? 0,
+          unknown: res.unknown_count ?? 0,
+        });
       })
       .catch((err) => {
-        if (!controller.signal.aborted) console.error('Failed to load students:', err);
+        if (myId !== reqIdRef.current) return;
+        setLoadError(err instanceof Error ? err.message : 'تعذّر تحميل قائمة التلاميذ');
+        setStudents([]);
       })
       .finally(() => {
-        if (!controller.signal.aborted) setIsLoading(false);
+        if (myId !== reqIdRef.current) return;
+        setIsLoading(false);
       });
+  }, [genderFilter, sectionFilter, yearFilter, nameSearch]);
 
-    return () => controller.abort();
-  }, [searchParams]);
+  useEffect(() => {
+    loadStudents();
+  }, [loadStudents]);
 
+  // ─── filter helpers ───────────────────────────────────────────────────────
   function updateFilter(key: string, value: string) {
-    const nextParams = new URLSearchParams(searchParams);
-    if (value && value !== 'all') {
-      nextParams.set(key, value);
-    } else {
-      nextParams.delete(key);
-    }
-    setSearchParams(nextParams);
+    const next = new URLSearchParams(searchParams);
+    if (value && value !== 'all') next.set(key, value);
+    else next.delete(key);
+    setSearchParams(next);
   }
 
-  function handlePrint() {
-    window.print();
-  }
+  // ─── derived labels for print header ─────────────────────────────────────
+  const sectionLabel = options.levels.find((l) => String(l.id) === sectionFilter)?.label || 'جميع الأقسام';
+  const yearLabel    = options.years.find((y) => String(y.id) === yearFilter)?.name       || 'السنة الدراسية الحالية';
+  const genderLabel  = genderFilter === 'male' ? 'ذكور' : genderFilter === 'female' ? 'إناث' : genderFilter === 'unknown' ? 'غير محدد' : 'الكل';
 
   const actionCards = [
-    { title: 'ترسيم التلاميذ', icon: UserPlus, link: '/students/enroll', color: 'bg-blue-500' },
-    { title: 'بحث متقدم', icon: Search, link: '/students/search', color: 'bg-indigo-500' },
-    { title: 'نقل التلاميذ', icon: ArrowRightLeft, link: '/students/transfer', color: 'bg-orange-500' },
-    { title: 'قائمة التلاميذ حسب حالة السداد', icon: CreditCard, link: '/students/payment-status', color: 'bg-rose-500' },
+    { title: 'ترسيم التلاميذ',                   icon: UserPlus,      link: '/students/enroll',        color: 'bg-blue-500'   },
+    { title: 'بحث متقدم',                         icon: Search,        link: '/students/search',        color: 'bg-indigo-500' },
+    { title: 'نقل التلاميذ',                      icon: ArrowRightLeft, link: '/students/transfer',     color: 'bg-orange-500' },
+    { title: 'قائمة التلاميذ حسب حالة السداد',   icon: CreditCard,    link: '/students/payment-status', color: 'bg-rose-500'   },
   ];
-
-  const selectedSectionLabel = options.levels.find((l) => String(l.id) === String(sectionFilter))?.label || 'جميع الأقسام';
-  const selectedYearLabel = options.years.find((y) => String(y.id) === String(yearFilter))?.name || 'السنة الدراسية الحالية';
-  const genderLabel = genderFilter === 'male' ? 'ذكور' : genderFilter === 'female' ? 'إناث' : genderFilter === 'unknown' ? 'غير محدد' : 'الكل';
 
   return (
     <div className="p-6 md:p-8 max-w-7xl mx-auto" dir="rtl">
-      {/* Print Styles */}
+
+      {/* ── Print Styles ─────────────────────────────────────────── */}
       <style>{`
         @media print {
           @page { size: A4 portrait; margin: 12mm; }
           body { background: white !important; font-size: 11pt !important; color: black !important; }
-          .no-print, header, nav, sidebar, button, form, .no-print * { display: none !important; }
+          .no-print { display: none !important; }
           .print-only { display: block !important; }
-          .print-container { padding: 0 !important; margin: 0 !important; width: 100% !important; max-width: none !important; }
           table { width: 100% !important; border-collapse: collapse !important; margin-top: 15px !important; }
           th, td { border: 1px solid #CBD5E1 !important; padding: 6px 8px !important; font-size: 10pt !important; text-align: right !important; }
           th { background-color: #F8FAFC !important; font-weight: bold !important; }
@@ -154,20 +157,12 @@ export function StudentsDashboard() {
         .print-only { display: none; }
       `}</style>
 
-      {/* Printable Header */}
+      {/* ── Printable Header ──────────────────────────────────────── */}
       <div className="print-only mb-6 border-b border-slate-300 pb-4">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-xl font-bold text-slate-900">مدرسة العناية — قائمة التلاميذ الجملية</h1>
-            <p className="text-sm text-slate-600 mt-1">
-              القسم: <strong>{selectedSectionLabel}</strong> | السنة: <strong>{selectedYearLabel}</strong> | تصفية الجنس: <strong>{genderLabel}</strong>
-            </p>
-          </div>
-          <div className="text-left text-sm text-slate-500">
-            <p>التاريخ: {new Date().toLocaleDateString('ar-TN')}</p>
-          </div>
-        </div>
-
+        <h1 className="text-xl font-bold text-slate-900">مدرسة العناية — قائمة التلاميذ الجملية</h1>
+        <p className="text-sm text-slate-600 mt-1">
+          القسم: <strong>{sectionLabel}</strong> | السنة: <strong>{yearLabel}</strong> | تصفية الجنس: <strong>{genderLabel}</strong>
+        </p>
         <div className="mt-4 flex gap-6 text-sm bg-slate-50 p-3 rounded-lg border border-slate-200">
           <span>إجمالي التلاميذ: <strong>{counts.total}</strong></span>
           <span>الذكور: <strong>{counts.males}</strong></span>
@@ -176,16 +171,15 @@ export function StudentsDashboard() {
         </div>
       </div>
 
-      {/* Page Header */}
+      {/* ── Page Header ───────────────────────────────────────────── */}
       <div className="no-print mb-8 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-slate-800">التلاميذ</h1>
           <p className="text-slate-500 mt-1">إدارة شؤون التلاميذ والتسجيلات والتوزيع الحقيقي للجنس</p>
         </div>
-
         <button
           type="button"
-          onClick={handlePrint}
+          onClick={() => window.print()}
           className="inline-flex items-center justify-center gap-2 rounded-xl bg-white border border-slate-300 px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 hover:border-slate-400"
         >
           <Printer size={17} />
@@ -193,49 +187,37 @@ export function StudentsDashboard() {
         </button>
       </div>
 
-      {/* Summary KPI Cards */}
+      {/* ── KPI Cards ─────────────────────────────────────────────── */}
       <div className="no-print grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-        <StudentCountCard
-          label="إجمالي التلاميذ"
-          count={counts.total}
-          icon={GraduationCap}
-          tint={C.sage}
-          iconColor={C.forest}
-        />
-        <StudentCountCard
-          label="عدد الذكور"
-          count={counts.males}
-          total={counts.total}
-          icon={Users}
-          tint={C.beige}
-          iconColor="#8A7C57"
-        />
-        <StudentCountCard
-          label="عدد الإناث"
-          count={counts.females}
-          total={counts.total}
-          icon={UserRound}
-          tint={C.rose}
-          iconColor="#A46E67"
-        />
-        <StudentCountCard
-          label="غير محدد"
-          count={counts.unknown}
-          total={counts.total}
-          icon={HelpCircle}
-          tint={C.beige}
-          iconColor={C.muted}
-        />
+        <StudentCountCard label="إجمالي التلاميذ" count={counts.total}   icon={GraduationCap} tint={C.sage}  iconColor={C.forest}   />
+        <StudentCountCard label="عدد الذكور"       count={counts.males}   icon={Users}         tint={C.beige} iconColor="#8A7C57" total={counts.total} />
+        <StudentCountCard label="عدد الإناث"       count={counts.females} icon={UserRound}     tint={C.rose}  iconColor="#A46E67" total={counts.total} />
+        <StudentCountCard label="غير محدد"          count={counts.unknown} icon={HelpCircle}    tint={C.beige} iconColor={C.muted}  total={counts.total} />
       </div>
 
-      {/* Filter Bar */}
+      {/* ── Filter Bar ────────────────────────────────────────────── */}
       <div className="no-print bg-white p-5 rounded-2xl shadow-sm border border-slate-200 mb-8">
         <div className="flex items-center gap-2 font-bold text-slate-800 mb-4 text-sm">
           <Filter size={16} />
           <span>تصفية قوائم التلاميذ</span>
         </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          {/* Name search */}
+          <label className="space-y-1 text-xs font-semibold text-slate-700">
+            <span>بحث بالاسم</span>
+            <div className="relative">
+              <Search size={14} className="absolute top-1/2 right-3 -translate-y-1/2 text-slate-400 pointer-events-none" />
+              <input
+                type="text"
+                value={nameSearch}
+                placeholder="اسم أو رمز التلميذ…"
+                onChange={(e) => updateFilter('search', e.target.value)}
+                className="w-full rounded-xl border border-slate-200 bg-white pr-8 pl-3 py-2.5 text-sm outline-none transition focus:border-[#3B4A36] focus:ring-2 focus:ring-[#3B4A36]/10"
+              />
+            </div>
+          </label>
 
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          {/* Gender */}
           <label className="space-y-1 text-xs font-semibold text-slate-700">
             <span>تصفية حسب الجنس</span>
             <select
@@ -243,13 +225,14 @@ export function StudentsDashboard() {
               onChange={(e) => updateFilter('gender', e.target.value)}
               className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none transition focus:border-[#3B4A36] focus:ring-2 focus:ring-[#3B4A36]/10"
             >
-              <option value="all">الكل (جميع الجنسين)</option>
+              <option value="all">الكل</option>
               <option value="male">ذكور فقط</option>
               <option value="female">إناث فقط</option>
               <option value="unknown">غير محدد فقط</option>
             </select>
           </label>
 
+          {/* Section */}
           <label className="space-y-1 text-xs font-semibold text-slate-700">
             <span>تصفية حسب القسم</span>
             <select
@@ -264,6 +247,7 @@ export function StudentsDashboard() {
             </select>
           </label>
 
+          {/* Year */}
           <label className="space-y-1 text-xs font-semibold text-slate-700">
             <span>تصفية حسب السنة الدراسية</span>
             <select
@@ -280,13 +264,13 @@ export function StudentsDashboard() {
         </div>
       </div>
 
-      {/* Quick Action Cards */}
+      {/* ── Quick Action Cards ────────────────────────────────────── */}
       <div className="no-print grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-        {actionCards.map((card, index) => {
+        {actionCards.map((card) => {
           const Icon = card.icon;
           return (
-            <Link 
-              key={index} 
+            <Link
+              key={card.link}
               to={card.link}
               className="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 hover:border-[#3B4A36] hover:shadow-md transition-all flex flex-col items-center justify-center gap-2.5 text-center group"
             >
@@ -299,16 +283,37 @@ export function StudentsDashboard() {
         })}
       </div>
 
-      {/* Student Table */}
-      <div className="print-container bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+      {/* ── Error State ───────────────────────────────────────────── */}
+      {loadError && (
+        <div className="no-print mb-6 flex items-center gap-3 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+          <AlertCircle size={18} className="shrink-0" />
+          <span>{loadError}</span>
+          <button
+            type="button"
+            onClick={loadStudents}
+            className="mr-auto text-xs font-semibold underline"
+          >
+            إعادة المحاولة
+          </button>
+        </div>
+      )}
+
+      {/* ── Student Table ─────────────────────────────────────────── */}
+      <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
         <div className="no-print p-5 border-b border-slate-100 flex justify-between items-center">
-          <h2 className="text-base font-bold text-slate-800">قائمة التلاميذ ({students.length})</h2>
-          {!isLoading && (
-            <span className="text-xs font-medium text-slate-500">
-              المعروض: {students.length} من أصل {counts.total} تلميذ
-            </span>
+          <h2 className="text-base font-bold text-slate-800">
+            قائمة التلاميذ
+            {!isLoading && (
+              <span className="mr-2 text-sm font-normal text-slate-500">
+                ({students.length} معروض من أصل {counts.total} تلميذ)
+              </span>
+            )}
+          </h2>
+          {isLoading && (
+            <span className="text-xs text-slate-400 animate-pulse">جارٍ التحميل…</span>
           )}
         </div>
+
         <div className="overflow-x-auto">
           <table className="w-full text-right text-sm">
             <thead className="bg-slate-50 border-b border-slate-200 text-slate-600">
@@ -316,6 +321,7 @@ export function StudentsDashboard() {
                 <th className="px-5 py-3.5 font-semibold w-24">CNTE</th>
                 <th className="px-5 py-3.5 font-semibold">الاسم الكامل</th>
                 <th className="px-5 py-3.5 font-semibold">الجنس</th>
+                <th className="px-5 py-3.5 font-semibold">القسم</th>
                 <th className="px-5 py-3.5 font-semibold">تاريخ الميلاد</th>
                 <th className="px-5 py-3.5 font-semibold">الولي</th>
                 <th className="px-5 py-3.5 font-semibold">رقم الاتصال</th>
@@ -324,41 +330,69 @@ export function StudentsDashboard() {
             </thead>
             <tbody className="divide-y divide-slate-100">
               {isLoading ? (
-                <TableRowsSkeleton columns={7} />
+                <TableRowsSkeleton columns={8} rows={8} />
               ) : students.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="px-6 py-10 text-center text-slate-500">
-                    لا توجد بيانات مطابقة للتصفية المختارة.
+                  <td colSpan={8} className="px-6 py-12 text-center text-slate-500">
+                    <div className="flex flex-col items-center gap-2">
+                      <GraduationCap size={32} className="text-slate-300" />
+                      <span>لا توجد بيانات مطابقة للتصفية المختارة.</span>
+                      {(genderFilter !== 'all' || sectionFilter || yearFilter || nameSearch) && (
+                        <button
+                          type="button"
+                          onClick={() => setSearchParams(new URLSearchParams())}
+                          className="mt-2 text-xs font-semibold text-[#3B4A36] underline"
+                        >
+                          مسح التصفية وعرض الكل
+                        </button>
+                      )}
+                    </div>
                   </td>
                 </tr>
               ) : (
                 students.map((student) => {
-                  const genderDisplay = student.gender === 'female' || (student as any).gender === 'أنثى' ? 'أنثى' : (student.gender === 'male' || (student as any).gender === 'ذكر' ? 'ذكر' : 'غير محدد');
+                  const badge   = genderBadge(student.gender);
+                  const enrollment = student.enrollments?.[0];
+                  const sectionName = [
+                    enrollment?.level?.name,
+                    enrollment?.section?.name,
+                  ].filter(Boolean).join(' ') || '—';
+                  const guardianName = [
+                    student.guardians?.[0]?.first_name || student.guardian_first_name,
+                    student.guardians?.[0]?.last_name  || student.guardian_last_name,
+                  ].filter(Boolean).join(' ') || '—';
+                  const guardianPhone =
+                    student.guardians?.[0]?.phone || student.guardian_phone || student.mother_phone || '—';
 
                   return (
-                    <tr key={student.id} className="hover:bg-slate-50/70">
-                      <td className="px-5 py-3 font-medium text-slate-700" dir="ltr">{student.student_code || '—'}</td>
+                    <tr key={student.id} className="hover:bg-slate-50/70 transition-colors">
+                      <td className="px-5 py-3 font-medium text-slate-500 text-xs" dir="ltr">
+                        {student.student_code || '—'}
+                      </td>
                       <td className="px-5 py-3 font-semibold text-slate-800">
-                        <Link to={`/students/search/${student.id}`} className="hover:underline text-[#3B4A36]">
+                        <Link
+                          to={`/students/search/${student.id}`}
+                          className="hover:underline hover:text-[#3B4A36] transition-colors"
+                        >
                           {student.first_name} {student.last_name}
                         </Link>
                       </td>
-                      <td className="px-5 py-3 font-medium">
-                        <span className={`inline-flex rounded-md px-2 py-0.5 text-xs font-semibold ${
-                          genderDisplay === 'أنثى' ? 'bg-[#F1E4E2] text-[#A46E67]' : genderDisplay === 'ذكر' ? 'bg-[#EFEAE0] text-[#8A7C57]' : 'bg-slate-100 text-slate-600'
-                        }`}>
-                          {genderDisplay}
+                      <td className="px-5 py-3">
+                        <span className={`inline-flex rounded-md px-2 py-0.5 text-xs font-semibold ${badge.cls}`}>
+                          {badge.label}
                         </span>
                       </td>
-                      <td className="px-5 py-3 text-slate-600">{student.dob ? new Date(student.dob).toLocaleDateString('ar-TN') : '—'}</td>
+                      <td className="px-5 py-3 text-slate-600 text-xs">{sectionName}</td>
                       <td className="px-5 py-3 text-slate-600">
-                        {[student.guardians?.[0]?.first_name || student.guardian_first_name, student.guardians?.[0]?.last_name || student.guardian_last_name].filter(Boolean).join(' ') || '—'}
+                        {student.dob ? new Date(student.dob).toLocaleDateString('ar-TN') : '—'}
                       </td>
-                      <td className="px-5 py-3 text-slate-600" dir="ltr">
-                        {student.guardians?.[0]?.phone || student.guardian_phone || student.mother_phone || '—'}
-                      </td>
+                      <td className="px-5 py-3 text-slate-600">{guardianName}</td>
+                      <td className="px-5 py-3 text-slate-600" dir="ltr">{guardianPhone}</td>
                       <td className="no-print px-5 py-3">
-                        <Link to={`/students/search/${student.id}`} className="inline-flex rounded-lg bg-[#E3EBDB] px-3 py-1.5 text-xs font-semibold text-[#3B4A36] hover:bg-[#D5E1CC]">
+                        <Link
+                          to={`/students/search/${student.id}`}
+                          className="inline-flex rounded-lg bg-[#E3EBDB] px-3 py-1.5 text-xs font-semibold text-[#3B4A36] hover:bg-[#D5E1CC] transition-colors"
+                        >
                           عرض التفاصيل
                         </Link>
                       </td>
@@ -369,6 +403,13 @@ export function StudentsDashboard() {
             </tbody>
           </table>
         </div>
+
+        {/* Pagination info */}
+        {!isLoading && counts.total > 100 && (
+          <div className="no-print px-5 py-3 border-t border-slate-100 text-xs text-slate-500 text-center">
+            يُعرض أول 100 تلميذ. استخدم <Link to="/students/search" className="font-semibold text-[#3B4A36] underline">البحث المتقدم</Link> لتضييق النطاق.
+          </div>
+        )}
       </div>
     </div>
   );

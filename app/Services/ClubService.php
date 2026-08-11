@@ -375,9 +375,35 @@ class ClubService
 
         $amountDue = (float) $monthlyFee->amount_due;
 
+        // فحص التخفيضات الشهرية السارية على النادي
+        $sub = $monthlyFee->subscription;
+        if ($sub) {
+            $activeDiscount = \App\Models\ClubMonthlyDiscount::query()
+                ->where('club_subscription_id', $sub->id)
+                ->active()
+                ->where('start_month', '<=', $monthlyFee->month)
+                ->where('end_month', '>=', $monthlyFee->month)
+                ->first();
+
+
+
+            if ($activeDiscount) {
+                if ($activeDiscount->discount_type === \App\Models\ClubMonthlyDiscount::TYPE_FULL_WAIVER) {
+                    throw new InvalidArgumentException('معلوم النادي لهذا الشهر معفى كلياً ولا يوجد مبلغ مستحق.');
+                } elseif ($activeDiscount->discount_type === \App\Models\ClubMonthlyDiscount::TYPE_HUMANITARIAN_FIXED) {
+                    $netDue = max(0.0, round($amountDue - (float) $activeDiscount->monthly_amount, 2));
+                    if ($amountPaid > $netDue) {
+                        throw new InvalidArgumentException('المبلغ المدفوع (' . number_format($amountPaid, 2, '.', '') . ') يتجاوز الصافي المستحق بعد التخفيض الإنساني (' . number_format($netDue, 2, '.', '') . ')');
+                    }
+                    $amountDue = $netDue;
+                }
+            }
+        }
+
         if ($amountPaid > $amountDue) {
             throw new InvalidArgumentException('المبلغ المدفوع يتجاوز المطلوب (' . number_format($amountDue, 2, '.', '') . ')');
         }
+
 
         return DB::transaction(function () use ($monthlyFee, $amountPaid, $paidAt, $method, $reference, $notes, $userId, $amountDue) {
             $locked = ClubMonthlyFee::whereKey($monthlyFee->getKey())->lockForUpdate()->firstOrFail();
@@ -581,25 +607,57 @@ class ClubService
                 return false;
             }
             return true;
-        })->map(function ($row) use (&$enrolledCount, &$paidCount, &$pendingCount, &$totalDue, &$totalPaid, $academicYearId) {
+        })->map(function ($row) use (&$enrolledCount, &$paidCount, &$pendingCount, &$totalDue, &$totalPaid, $academicYearId, $month) {
             $due = (float) $row->amount_due;
             $paid = (float) $row->amount_paid;
-            $remaining = max(0, round($due - $paid, 2));
+
+            $sub = $row->subscription;
+            $activeDiscount = null;
+            if ($sub) {
+                $activeDiscount = \App\Models\ClubMonthlyDiscount::query()
+                    ->where('club_subscription_id', $sub->id)
+                    ->active()
+                    ->where('start_month', '<=', $month)
+                    ->where('end_month', '>=', $month)
+                    ->first();
+            }
+
+
+
+            $discountAmount = 0.0;
+            $isFullWaiver = false;
+
+            if ($activeDiscount) {
+                if ($activeDiscount->discount_type === \App\Models\ClubMonthlyDiscount::TYPE_FULL_WAIVER) {
+                    $discountAmount = $due;
+                    $isFullWaiver = true;
+                } elseif ($activeDiscount->discount_type === \App\Models\ClubMonthlyDiscount::TYPE_HUMANITARIAN_FIXED) {
+                    $discountAmount = (float) $activeDiscount->monthly_amount;
+                }
+
+            }
+
+            $netDue = max(0.0, round($due - $discountAmount, 2));
+            $remaining = max(0.0, round($netDue - $paid, 2));
 
             $enrolledCount++;
-            $totalDue += $due;
+            $totalDue += $netDue;
             $totalPaid += $paid;
 
-            if ($row->status === ClubMonthlyFee::STATUS_PAID) {
+            if ($isFullWaiver || $remaining <= 0) {
                 $paidCount++;
+                $statusKey = $isFullWaiver ? 'paid' : $row->status;
+                $statusLabel = $isFullWaiver ? 'تخفيض كلي' : (ClubMonthlyFee::STATUS_LABELS[$row->status] ?? $row->status);
+                $statusColor = $isFullWaiver ? 'green' : (ClubMonthlyFee::STATUS_COLORS[$row->status] ?? 'orange');
             } else {
                 $pendingCount++;
+                $statusKey = $row->status;
+                $statusLabel = ClubMonthlyFee::STATUS_LABELS[$row->status] ?? $row->status;
+                $statusColor = ClubMonthlyFee::STATUS_COLORS[$row->status] ?? 'orange';
             }
 
             $currentEnrollment = $row->student?->enrollments
                 ?->firstWhere('academic_year_id', $academicYearId);
-
-            $sub = $row->subscription;
 
             return [
                 'id' => $row->id,
@@ -612,19 +670,24 @@ class ClubService
                 'club_id' => $row->club_id,
                 'club_name' => $row->club?->name ?? '-',
                 'amount_due' => $due,
+                'discount_amount' => $discountAmount,
+                'net_due' => $netDue,
                 'amount_paid' => $paid,
                 'remaining' => $remaining,
-                'status' => $row->status,
-                'status_label' => ClubMonthlyFee::STATUS_LABELS[$row->status] ?? $row->status,
-                'status_color' => ClubMonthlyFee::STATUS_COLORS[$row->status] ?? 'orange',
+                'status' => $statusKey,
+                'status_label' => $statusLabel,
+                'status_color' => $statusColor,
                 'paid_at' => $row->paid_at?->toDateString(),
                 'method' => $row->method,
                 'notes' => $row->notes,
                 'subscription_id' => $sub?->id,
                 'is_excluded' => $sub?->excluded_at !== null,
                 'excluded_at' => $sub?->excluded_at?->toDateTimeString(),
+                'discount_type' => $activeDiscount?->discount_type,
+                'discount_reason' => $activeDiscount?->reason,
             ];
         })
+
             ->sortBy([
                 ['level_name', 'asc'],
                 ['section_name', 'asc'],
