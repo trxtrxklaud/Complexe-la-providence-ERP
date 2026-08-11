@@ -146,7 +146,7 @@ class SixthGradeFeeUpdateTest extends TestCase
             'payment_date'    => '2026-09-15',
             'method'          => 'cash',
             'months'          => ['2026-09'],
-            'created_by'      => 1,
+            'created_by'      => \App\Models\User::first()->id,
         ]);
 
         $feeType = \App\Models\FeeType::firstOrCreate(

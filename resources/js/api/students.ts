@@ -1,5 +1,5 @@
 import type { User } from '../types';
-import { apiFetch, API_BASE, getToken } from './http';
+import { apiFetch, API_BASE, getCsrfTokenFromCookie } from './http';
 
 export interface Guardian {
     first_name: string;
@@ -81,6 +81,7 @@ export type StudentSearchFilters = {
     cnte?: string;
     gender?: string;
     per_page?: number;
+    search?: string;
 };
 
 export type StudentSearchResponse = {
@@ -126,10 +127,11 @@ export type TransferStudentsPayload = {
 
 /** رؤوس بدون Content-Type: مطلوبة لطلبات FormData. */
 function authHeaders(): Record<string, string> {
-    const token = getToken();
+    const xsrfToken = getCsrfTokenFromCookie();
     return {
         'Accept': 'application/json',
-        ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+        'X-Requested-With': 'XMLHttpRequest',
+        ...(xsrfToken ? { 'X-XSRF-TOKEN': xsrfToken } : {}),
     };
 }
 
@@ -227,13 +229,13 @@ export const transferStudents = (payload: TransferStudentsPayload) =>
     });
 
 export async function getStudent(id: number): Promise<Student> {
-    const res = await fetch(`${API_BASE}/students/${id}`, { headers: authHeaders() });
+    const res = await fetch(`${API_BASE}/students/${id}`, { headers: authHeaders(), credentials: 'include' });
     if (!res.ok) throw new Error('حدث خطأ أثناء جلب بيانات التلميذ');
     return res.json();
 }
 
 export async function getStudentPaymentHistory(id: number): Promise<StudentPaymentHistoryEntry[]> {
-    const res = await fetch(`${API_BASE}/students/${id}/payments`, { headers: authHeaders() });
+    const res = await fetch(`${API_BASE}/students/${id}/payments`, { headers: authHeaders(), credentials: 'include' });
     if (!res.ok) throw new Error('تعذّر تحميل سجل دفعات التلميذ');
     return res.json();
 }
@@ -242,6 +244,7 @@ export async function enrollStudent(formData: FormData): Promise<EnrollmentRespo
     const res = await fetch(`${API_BASE}/students/enroll`, {
         method: 'POST',
         headers: authHeaders(), // بدون Content-Type — browser يضبطه تلقائياً مع FormData
+        credentials: 'include',
         body: formData,
     });
     if (!res.ok) {
@@ -275,6 +278,7 @@ export async function reenrollStudent(studentId: number, data: {
     const res = await fetch(`${API_BASE}/students/${studentId}/reenroll`, {
         method: 'POST',
         headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify(data),
     });
     if (!res.ok) {
@@ -300,6 +304,7 @@ export async function recordRegistrationPayment(
     const res = await fetch(`${API_BASE}/students/${studentId}/registration-payment`, {
         method: 'POST',
         headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify(data),
     });
     if (!res.ok) {
@@ -324,6 +329,7 @@ export async function updateStudentGender(
     const res = await fetch(`${API_BASE}/students/${studentId}`, {
         method: 'PATCH',
         headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify({ gender }),
     });
     if (!res.ok) {

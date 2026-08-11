@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { HeartHandshake, ShieldAlert, CheckCircle2, XCircle, AlertCircle, Info, Calendar, DollarSign } from 'lucide-react';
 import { apiFetch, ApiError } from '../../api/http';
