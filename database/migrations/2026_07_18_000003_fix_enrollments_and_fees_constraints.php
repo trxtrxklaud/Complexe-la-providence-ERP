@@ -8,7 +8,9 @@ return new class extends Migration {
     {
         // MySQL does not support partial indexes - uniqueness is enforced in StudentService
         Schema::table('enrollments', function (Blueprint $table) {
+            $table->dropForeign(['student_id']);
             $table->dropUnique(['student_id', 'academic_year_id']);
+            $table->foreign('student_id')->references('id')->on('students')->cascadeOnDelete();
         });
 
         // SQLite cannot ALTER foreign keys. We skip only the constraint tightening

@@ -27,7 +27,7 @@ return new class extends Migration
             $table->date('transaction_date');
             $table->string('direction', 3);
             $table->string('category', 40);
-            $table->decimal('amount', 12, 2);
+            $table->decimal('amount', 12, 3);
             $table->string('source_type', 120)->nullable();
             $table->unsignedBigInteger('source_id')->nullable();
             $table->foreignId('academic_year_id')->nullable()->constrained()->nullOnDelete();
