@@ -83,6 +83,57 @@ export function TreasuryHistoryPage() {
 
   return (
     <div className="px-6 pb-10 max-w-6xl mx-auto" dir="rtl">
+      {/* Print Styles */}
+      <style>{`
+        @media print {
+          @page { size: A4 landscape; margin: 10mm 8mm; }
+          body { background: white !important; font-size: 10pt !important; color: black !important; }
+          .no-print, header, nav, aside, sidebar, button, form, input, select { display: none !important; }
+          .print-only { display: block !important; }
+          .print-container { width: 100% !important; max-width: none !important; margin: 0 !important; padding: 0 !important; box-shadow: none !important; border: none !important; }
+          table { width: 100% !important; border-collapse: collapse !important; margin-top: 15px !important; direction: rtl !important; }
+          thead { display: table-header-group !important; }
+          tr, th, td { break-inside: avoid !important; page-break-inside: avoid !important; }
+          th, td { border: 1px solid #000000 !important; padding: 5px 6px !important; font-size: 9.5pt !important; text-align: right !important; color: black !important; }
+          th { background-color: #F2F2F2 !important; font-weight: bold !important; }
+          .treasury-print-summary {
+            display: block !important;
+            visibility: visible !important;
+            break-inside: avoid !important;
+            page-break-inside: avoid !important;
+            margin-top: 15px !important;
+            border: 1px solid #000000 !important;
+            padding: 10px 14px !important;
+            background: #ffffff !important;
+            color: #000000 !important;
+          }
+        }
+        .print-only { display: none; }
+      `}</style>
+
+      {/* Printable Official Header */}
+      <div className="print-only mb-4 p-4 border border-slate-900 rounded-xl bg-white text-slate-900">
+        <div className="flex items-center justify-between border-b border-slate-300 pb-3">
+          <div>
+            <h1 className="text-xl font-bold">مدرسة العناية — كشف حركات الخزينة الرسمية</h1>
+            <p className="text-xs text-slate-600 mt-1">
+              الفترة: من <strong>{dateFrom || 'بداية السجل'}</strong> إلى <strong>{dateTo || 'اليوم'}</strong>
+            </p>
+          </div>
+          <div className="text-left text-xs text-slate-500">
+            <p>تاريخ الطباعة: {new Date().toLocaleDateString('ar-TN')}</p>
+          </div>
+        </div>
+
+        <div className="mt-3 grid grid-cols-5 gap-2 text-xs font-semibold bg-slate-50 p-2.5 rounded-lg border border-slate-200 text-center">
+          <div>المداخيل: <span dir="ltr">{money(summary?.income ?? 0)}</span> د.ت</div>
+          <div>المصاريف: <span dir="ltr">{money(summary?.expenses ?? 0)}</span> د.ت</div>
+          <div>الصافي: <span dir="ltr">{money(summary?.net_income ?? 0)}</span> د.ت</div>
+          <div>السحوبات: <span dir="ltr">{money(summary?.withdrawals ?? 0)}</span> د.ت</div>
+          <div className="font-bold text-slate-900">الرصيد النهائي: <span dir="ltr">{money(summary?.balance ?? 0)}</span> د.ت</div>
+        </div>
+      </div>
+
       <PageShell
         title="سجل حركات الخزينة"
         subtitle="كل الحركات الداخلة والخارجة (مداخيل / مصاريف / سحوبات) من الدفتر المركزي"
@@ -94,7 +145,7 @@ export function TreasuryHistoryPage() {
           ) : null}
 
           {/* المرشّحات */}
-          <div className="bg-white rounded-2xl p-5 mb-6" style={{ border: '1px solid ' + C.line }}>
+          <div className="no-print bg-white rounded-2xl p-5 mb-6" style={{ border: '1px solid ' + C.line }}>
             <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
               <div>
                 <label className="block text-xs mb-1.5" style={{ color: C.muted }}>من تاريخ</label>
@@ -239,7 +290,7 @@ export function TreasuryHistoryPage() {
                 </div>
 
                 {lastPage > 1 ? (
-                  <div className="flex items-center justify-between px-5 py-3" style={{ borderTop: '1px solid ' + C.line }}>
+                  <div className="no-print flex items-center justify-between px-5 py-3" style={{ borderTop: '1px solid ' + C.line }}>
                     <button
                       type="button"
                       onClick={() => setPage((p) => Math.max(1, p - 1))}
@@ -261,6 +312,14 @@ export function TreasuryHistoryPage() {
                     </button>
                   </div>
                 ) : null}
+
+                {/* ملخص الرصيد التراكمي النهائي داخل نفس التقرير المطبوع */}
+                <div className="print-only treasury-print-summary rounded-xl p-4 mt-4 border border-slate-900 bg-white">
+                  <div className="flex items-center justify-between text-sm font-bold text-slate-900">
+                    <span>الرصيد التراكمي النهائي للخزينة (المداخيل − المصاريف − السحوبات):</span>
+                    <span dir="ltr" className="text-base">{money(summary?.balance ?? 0)} د.ت</span>
+                  </div>
+                </div>
               </>
             )}
           </div>

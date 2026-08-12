@@ -26,6 +26,8 @@ import {
 
 const UsersList = lazy(() => loadUsersList().then((module) => ({ default: module.UsersList })));
 const DiscountsPage = lazy(() => import('./pages/Discounts/DiscountsPage').then((module) => ({ default: module.DiscountsPage })));
+const MonthlyDiscountsPage = lazy(() => import('./pages/Discounts/MonthlyDiscountsPage').then((module) => ({ default: module.MonthlyDiscountsPage })));
+
 const ClubFeesReportPage = lazy(() => import('./pages/Reports/ClubFeesReportPage'));
 const ClubsPage = lazy(() => import('./pages/Clubs/ClubsPage'));
 const UserForm = lazy(() => import('./pages/Users/UserForm').then((module) => ({ default: module.UserForm })));
@@ -37,6 +39,8 @@ const StudentTransferPage = lazy(() => import('./pages/Students/StudentTransferP
 const FeeTypesPage = lazy(() => loadFeeTypesPage().then((module) => ({ default: module.FeeTypesPage })));
 const EmployeesPage = lazy(() => loadEmployeesPage().then((module) => ({ default: module.EmployeesPage })));
 const CollectionPage = lazy(() => loadCollectionPage().then((module) => ({ default: module.CollectionPage })));
+const FamiliesListPage = lazy(() => import('./pages/Families/FamiliesListPage').then((m) => ({ default: m.FamiliesListPage })));
+const FamilyDetailPage = lazy(() => import('./pages/Families/FamilyDetailPage').then((m) => ({ default: m.FamilyDetailPage })));
 const HistoriquePage = lazy(() => loadHistoriquePage().then((module) => ({ default: module.HistoriquePage })));
 const ClassroomsPage = lazy(() => loadClassroomsPage().then((module) => ({ default: module.ClassroomsPage })));
 const RosterPage = lazy(() => loadRosterPage().then((module) => ({ default: module.RosterPage })));
@@ -146,6 +150,18 @@ export default function App() {
                     <Route path="/students/transfer" element={
                         <ProtectedRoute permission="manage_students">
                             <Layout><StudentTransferPage /></Layout>
+                        </ProtectedRoute>
+                    } />
+
+                    {/* العائلات — التحصيل الجماعي */}
+                    <Route path="/families" element={
+                        <ProtectedRoute permission="manage_students">
+                            <Layout><FamiliesListPage /></Layout>
+                        </ProtectedRoute>
+                    } />
+                    <Route path="/families/:id" element={
+                        <ProtectedRoute permission="manage_students">
+                            <Layout><FamilyDetailPage /></Layout>
                         </ProtectedRoute>
                     } />
 
@@ -273,6 +289,12 @@ export default function App() {
 <Layout><DiscountsPage /></Layout>
 </ProtectedRoute>
 } />
+<Route path='/discounts/monthly' element={
+<ProtectedRoute permission='waive_fees'>
+<Layout><MonthlyDiscountsPage /></Layout>
+</ProtectedRoute>
+} />
+
 {/* Historique — سجل الوصولات الملغاة، يقرأ من /payments */}
                     <Route path="/historique" element={
                         <ProtectedRoute permission="manage_payments">

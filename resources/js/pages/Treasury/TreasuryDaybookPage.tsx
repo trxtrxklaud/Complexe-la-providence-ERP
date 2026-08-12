@@ -199,6 +199,14 @@ function DayCard({
           <TotalRow label="الرصيد التراكمي بعد السحب" value={day.cumulative.balance} strong danger />
         </div>
       )}
+
+      {/* الرصيد التراكمي المطبوع دائماً داخل التقرير */}
+      <div className="print-only treasury-print-summary px-4 py-2.5 text-sm font-bold border-t border-slate-900 bg-slate-50 text-slate-900">
+        <div className="flex items-center justify-between">
+          <span>الرصيد التراكمي النهائي حتى هذا اليوم:</span>
+          <span dir="ltr">{money(day.cumulative?.balance ?? 0)} د.ت</span>
+        </div>
+      </div>
     </div>
   );
 }
@@ -295,11 +303,53 @@ export function TreasuryDaybookPage() {
     >
       <style>{`
         @media print {
-          .no-print { display: none !important; }
-          body { background: #fff; }
-          .daybook-card { break-inside: avoid; page-break-inside: avoid; }
+          @page { size: A4 landscape; margin: 5mm 6mm; }
+          html, body {
+            background: #ffffff !important;
+            color: #000000 !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            width: 100% !important;
+            height: auto !important;
+            overflow: visible !important;
+          }
+          .no-print, header, nav, aside, sidebar, button, form, input, select, [role="button"] {
+            display: none !important;
+            visibility: hidden !important;
+          }
           .printing-single .daybook-card:not(.print-target) { display: none !important; }
           .printing-single .range-only { display: none !important; }
+
+          /* تمديد وضبط البطاقات لتقف عند حدود صفحة واحدة وتمنع انقسامها أو توليد صفحة بيضاء ثانية */
+          .daybook-card {
+            break-inside: avoid !important;
+            page-break-inside: avoid !important;
+            border: 1px solid #000000 !important;
+            margin-bottom: 8px !important;
+          }
+          .printing-single .daybook-card.print-target {
+            margin: 0 !important;
+            width: 100% !important;
+            max-width: 100% !important;
+            box-shadow: none !important;
+            break-after: avoid !important;
+            page-break-after: avoid !important;
+          }
+          .printing-single .daybook-card .p-4 {
+            padding: 8px 12px !important;
+          }
+          .printing-single .daybook-card .py-2 {
+            padding-top: 4px !important;
+            padding-bottom: 4px !important;
+          }
+          .printing-single .daybook-card .text-sm {
+            font-size: 8.5pt !important;
+          }
+          .printing-single .daybook-card .text-xs {
+            font-size: 7.5pt !important;
+          }
+          table { width: 100% !important; border-collapse: collapse !important; }
+          th, td { border: 1px solid #000000 !important; color: #000000 !important; padding: 4px 6px !important; font-size: 8.5pt !important; }
         }
       `}</style>
 

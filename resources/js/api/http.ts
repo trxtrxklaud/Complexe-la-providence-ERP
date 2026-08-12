@@ -133,3 +133,13 @@ export async function apiFetch<T>(path: string, options: RequestOptions = {}): P
 
   return payload as T;
 }
+
+export function getCsrfTokenFromCookie(): string | null {
+    if (typeof document === 'undefined') {
+        return null;
+    }
+
+    const match = document.cookie.match(/(?:^|;\s*)XSRF-TOKEN=([^;]*)/);
+
+    return match ? decodeURIComponent(match[1]) : null;
+}

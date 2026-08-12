@@ -4,7 +4,6 @@ import {
     ClipboardList, History, Wallet, Receipt, Landmark, TrendingUp, BadgePercent, Award,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
-import { setToken } from '../api/http';
 import {
     loadClassroomsPage,
     loadCollectionPage,
@@ -31,7 +30,6 @@ export function Sidebar() {
                 new Promise((resolve) => setTimeout(resolve, 1500)),
             ]);
         } finally {
-            setToken(null);
             navigate('/login');
         }
     };
@@ -56,8 +54,8 @@ export function Sidebar() {
     const showHr = canAny('manage_employees', 'manage_salaries');
 
     return (
-        <div
-            className="w-64 text-white flex flex-col min-h-screen shadow-xl"
+        <aside
+            className="no-print w-64 text-white flex flex-col min-h-screen shadow-xl"
             style={{ background: 'linear-gradient(178deg, #2E3B2A 0%, #26311F 100%)' }}
         >
             {/* Logo */}
@@ -87,13 +85,22 @@ export function Sidebar() {
                 </NavLink>
 
                 {hasPermission('manage_students') && (
-                    <NavLink
-                        to="/students"
-                        className={({ isActive }) => linkClass(isActive || startsWith('/students'))}
-                    >
-                        <GraduationCap size={20} />
-                        <span>التلاميذ</span>
-                    </NavLink>
+                    <>
+                        <NavLink
+                            to="/students"
+                            className={({ isActive }) => linkClass(isActive || startsWith('/students'))}
+                        >
+                            <GraduationCap size={20} />
+                            <span>التلاميذ</span>
+                        </NavLink>
+                        <NavLink
+                            to="/families"
+                            className={({ isActive }) => linkClass(isActive || startsWith('/families'))}
+                        >
+                            <Users size={20} />
+                            <span>العائلات</span>
+                        </NavLink>
+                    </>
                 )}
 
                 {/* ─── الإعداد ─── */}
@@ -285,6 +292,6 @@ className={({ isActive }) => linkClass(isActive || startsWith('/discounts'))}
                     <span className="font-medium">تسجيل الخروج</span>
                 </button>
             </div>
-        </div>
+        </aside>
     );
 }

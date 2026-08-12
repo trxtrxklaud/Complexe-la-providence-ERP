@@ -15,7 +15,7 @@ export interface SectionTab {
 export function SectionTabs({ tabs }: { tabs: SectionTab[] }) {
   return (
     <div
-      className="flex flex-wrap gap-1 mb-6 border-b"
+      className="no-print flex flex-wrap gap-1 mb-6 border-b"
       style={{ borderColor: '#EDF1E8' }}
     >
       {tabs.map((t) => {

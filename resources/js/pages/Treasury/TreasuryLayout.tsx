@@ -17,7 +17,7 @@ export function TreasuryLayout() {
   return (
     <div dir="rtl">
       <div className="px-6 pt-6 max-w-6xl mx-auto">
-        <div className="flex items-center gap-3 mb-5">
+        <div className="no-print flex items-center gap-3 mb-5">
           <div className="w-11 h-11 rounded-2xl flex items-center justify-center" style={{ backgroundColor: C.sage }}>
             <Landmark size={22} style={{ color: C.forest }} />
           </div>

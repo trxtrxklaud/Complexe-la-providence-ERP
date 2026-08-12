@@ -8,8 +8,11 @@ import {
   getCollectionYears,
   getSectionsByYear,
   getStudentsBySection,
+  getCollectionPreview,
+  type CollectionPreview,
   paymentsApi,
 } from '../../api/payments';
+
 import { ReceiptModal } from './ReceiptModal';
 
 const C = {
@@ -80,8 +83,35 @@ export function CollectionPage() {
   const [receipt, setReceipt] = useState<any>(null);
   const [ledgerRows, setLedgerRows] = useState<any[]>([]);
 
+  const [previewData, setPreviewData] = useState<CollectionPreview | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+
+
+  useEffect(() => {
+    if (!picked || selectedMonths.length === 0) {
+      setPreviewData(null);
+      return;
+    }
+    setPreviewLoading(true);
+    console.log('COLLECTION_DEBUG_SELECTED_MONTHS', selectedMonths);
+    getCollectionPreview(picked.enrollment_id, selectedMonths, tuitionFee?.id)
+      .then((res) => {
+        console.log('COLLECTION_DEBUG_PREVIEW_RESPONSE', res);
+        setPreviewData(res);
+        if (res.items && res.items.length > 0) {
+          console.log('COLLECTION_DEBUG_SET_MONTHLY_PRICE', res.remaining_amount);
+          setMonthlyPrice(String(res.remaining_amount));
+        }
+      })
+      .catch((e) => {
+        setError(e.message || 'فشل جلب المعاينة والتخفيض');
+      })
+      .finally(() => setPreviewLoading(false));
+  }, [picked, selectedMonths, tuitionFee]);
+
   useEffect(() => {
     Promise.all([getCollectionYears(), getFeeTypes()])
+
       .then(([y, f]) => {
         setYears(Array.isArray(y) ? y : []);
         const fees = Array.isArray(f) ? f : [];
@@ -210,8 +240,15 @@ export function CollectionPage() {
     }, 0);
   }, [selectedFees, feeAmounts]);
 
-  const monthsTotal = selectedMonths.length * (parseFloat(monthlyPrice || '0') || 0);
+  const monthsTotal = parseFloat(monthlyPrice || '0') || 0;
   const itemsTotal = productsTotal + monthsTotal;
+  console.log('COLLECTION_DEBUG_MONTHS_TOTAL', {
+    selectedMonthsLength: selectedMonths.length,
+    monthlyPriceInput: monthlyPrice,
+    monthsTotal: monthsTotal,
+    productsTotal: productsTotal,
+    itemsTotal: itemsTotal
+  });
   // التخفيض لم يعد يُطبَّق عند القبض: صار سعراً سنوياً ثابتاً في enrollment_discounts.
   // هنا يُدفع السعر الكامل، والتخفيض السنوي يُدار من صفحة التلميذ.
   const total = itemsTotal;
@@ -226,7 +263,7 @@ export function CollectionPage() {
     const mp = parseFloat(monthlyPrice || '0') || 0;
     if (mp > 0) {
       if (!tuitionFee) { setError('لا يوجد نوع معلوم باسم «القسط الشهري». شغّل بذرة المعاليم أو أضفه من صفحة أنواع المعاليم.'); return; }
-      items.unshift({ fee_type_id: Number(tuitionFee.id), amount: mp * selectedMonths.length });
+      items.unshift({ fee_type_id: Number(tuitionFee.id), amount: mp });
     }
     const mergedItems = Object.values(
       items.reduce((acc: Record<number, { fee_type_id: number; amount: number }>, it) => {
@@ -239,19 +276,22 @@ export function CollectionPage() {
     );
     if (!mergedItems.length) { setError('أدخل معلوم الشهر أو اختر معلوماً'); return; }
 
+    const payload = {
+      student_id: picked.student.id,
+      enrollment_id: picked.enrollment_id,
+      months: selectedMonths,
+      payment_date: paymentDate,
+      method,
+      reference: reference || null,
+      notes: notes || null,
+      items: mergedItems,
+    };
+    console.log('COLLECTION_DEBUG_PAYLOAD', payload);
+
     setSaving(true);
     setError('');
     try {
-      const res: any = await collectPayment({
-        student_id: picked.student.id,
-        enrollment_id: picked.enrollment_id,
-        months: selectedMonths,
-        payment_date: paymentDate,
-        method,
-        reference: reference || null,
-        notes: notes || null,
-        items: mergedItems,
-      } as any);
+      const res: any = await collectPayment(payload as any);
       const raw = res.receipt || res;
       const student = raw.student || {};
       const guardian = raw.guardian || raw.primary_guardian || {};
@@ -417,22 +457,49 @@ export function CollectionPage() {
 
         {picked && (
           <>
+            {previewData && (
+              <div className={`p-4 rounded-2xl border ${
+                previewData.is_fully_waived
+                  ? 'bg-emerald-50 border-emerald-300 text-emerald-900'
+                  : previewData.discount_type === 'humanitarian_fixed'
+                  ? 'bg-amber-50 border-amber-300 text-amber-900'
+                  : 'bg-blue-50 border-blue-300 text-blue-900'
+              }`}>
+                <div className="font-bold text-sm mb-1">
+                  {previewData.is_fully_waived
+                    ? 'تخفيض كلي — هذا المعلوم معفى كلياً (0 د.ت) ولا يوجد مبلغ مستحق للقبض'
+                    : previewData.discount_type === 'humanitarian_fixed'
+                    ? 'تخفيض حالة إنسانية سارٍ'
+                    : previewData.discount_type === 'normal_monthly' || previewData.discount_type === 'normal'
+                    ? 'تخفيض عادي سارٍ'
+
+                    : 'لا يوجد تخفيض على الأشهر المختارة'}
+                </div>
+                <div className="text-xs space-y-0.5">
+                  <div>المعلوم الأصلي: {previewData.gross_amount} د | التخفيض: {previewData.discount_amount} د | الصافي المستحق: {previewData.remaining_amount} د</div>
+                  {previewData.discount_reason && <div>السبب: {previewData.discount_reason}</div>}
+                </div>
+              </div>
+            )}
+
             <div className="bg-white rounded-2xl border p-4" style={{ borderColor: C.line }}>
-              <label className="text-sm font-semibold" style={{ color: C.ink }}>معلوم الشهر (د.ت)</label>
+              <label className="text-sm font-semibold" style={{ color: C.ink }}>مجموع معاليم الأشهر المختارة (د.ت)</label>
               <input
                 type="number"
                 min="0"
                 step="0.01"
+                disabled={Boolean(previewData?.is_fully_waived)}
                 value={monthlyPrice}
                 onChange={(e) => setMonthlyPrice(e.target.value)}
-                className="w-full mt-1 border rounded-xl px-3 py-2 text-sm"
+                className="w-full mt-1 border rounded-xl px-3 py-2 text-sm disabled:bg-slate-100 disabled:text-slate-400"
                 style={{ borderColor: C.line, direction: 'ltr' }}
                 placeholder="مثال: 150"
               />
               <p className="text-xs mt-1" style={{ color: C.muted }}>
-                المجموع الشهري = عدد الأشهر × معلوم الشهر
+                {previewData?.is_fully_waived ? 'المعلوم معفى كلياً ولا يمكن تغيير المبلغ' : 'المجموع الشهري يحسب آلياً بناء على التخفيضات والصافي'}
               </p>
             </div>
+
 
             <div className="bg-white rounded-2xl border p-4" style={{ borderColor: C.line }}>
               <div className="font-semibold mb-2" style={{ color: C.ink }}>الأشهر</div>
@@ -540,11 +607,12 @@ export function CollectionPage() {
                 <div className="text-xs" style={{ color: C.muted }}>المجموع</div>
                 <div className="text-2xl font-extrabold" style={{ color: C.forest }}>{total.toFixed(2)} د.ت</div>
               </div>
-              <button type="button" onClick={handleSave} disabled={saving || total <= 0}
-                className="px-6 py-3 rounded-2xl text-white font-bold"
-                style={{ background: saving || total <= 0 ? C.muted : C.forest }}>
-                {saving ? 'جاري الحفظ...' : 'حفظ'}
+              <button type="button" onClick={handleSave} disabled={saving || total <= 0 || Boolean(previewData?.is_fully_waived)}
+                className="px-6 py-3 rounded-2xl text-white font-bold transition disabled:opacity-50"
+                style={{ background: saving || total <= 0 || Boolean(previewData?.is_fully_waived) ? C.muted : C.forest }}>
+                {saving ? 'جاري الحفظ...' : previewData?.is_fully_waived ? 'معفى كلياً — لا يمكن القبض' : 'حفظ'}
               </button>
+
             </div>
           </>
         )}

@@ -49,6 +49,11 @@ class Enrollment extends Model
     {
         return $this->hasMany(EnrollmentDiscount::class);
     }
+    public function monthlyDiscounts(): HasMany
+    {
+        return $this->hasMany(MonthlyDiscount::class);
+    }
+
 
     /**
      * التخفيض السنوي السارِي لهذا التسجيل — واحد على الأكثر لكل سنة دراسية.
