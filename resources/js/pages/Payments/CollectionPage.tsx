@@ -93,13 +93,10 @@ export function CollectionPage() {
       return;
     }
     setPreviewLoading(true);
-    console.log('COLLECTION_DEBUG_SELECTED_MONTHS', selectedMonths);
     getCollectionPreview(picked.enrollment_id, selectedMonths, tuitionFee?.id)
       .then((res) => {
-        console.log('COLLECTION_DEBUG_PREVIEW_RESPONSE', res);
         setPreviewData(res);
         if (res.items && res.items.length > 0) {
-          console.log('COLLECTION_DEBUG_SET_MONTHLY_PRICE', res.remaining_amount);
           setMonthlyPrice(String(res.remaining_amount));
         }
       })
@@ -242,13 +239,6 @@ export function CollectionPage() {
 
   const monthsTotal = parseFloat(monthlyPrice || '0') || 0;
   const itemsTotal = productsTotal + monthsTotal;
-  console.log('COLLECTION_DEBUG_MONTHS_TOTAL', {
-    selectedMonthsLength: selectedMonths.length,
-    monthlyPriceInput: monthlyPrice,
-    monthsTotal: monthsTotal,
-    productsTotal: productsTotal,
-    itemsTotal: itemsTotal
-  });
   // التخفيض لم يعد يُطبَّق عند القبض: صار سعراً سنوياً ثابتاً في enrollment_discounts.
   // هنا يُدفع السعر الكامل، والتخفيض السنوي يُدار من صفحة التلميذ.
   const total = itemsTotal;
@@ -286,7 +276,6 @@ export function CollectionPage() {
       notes: notes || null,
       items: mergedItems,
     };
-    console.log('COLLECTION_DEBUG_PAYLOAD', payload);
 
     setSaving(true);
     setError('');

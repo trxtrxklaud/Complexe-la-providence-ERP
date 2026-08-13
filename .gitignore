@@ -62,3 +62,5 @@ Homestead.json
 Homestead.yaml
 Alarms/
 .phpunit.cache
+
+.env.testing

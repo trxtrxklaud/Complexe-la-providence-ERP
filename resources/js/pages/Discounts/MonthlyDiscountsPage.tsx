@@ -67,86 +67,107 @@ export function MonthlyDiscountsPage() {
 
   // Load active academic years on mount
   useEffect(() => {
+    const ctrl = new AbortController();
     (async () => {
       try {
-        const ys = await apiFetch<YearOption[]>('/collection/years');
+        const ys = await apiFetch<YearOption[]>('/collection/years', { signal: ctrl.signal });
+        if (ctrl.signal.aborted) return;
         setYears(ys);
         const active = ys.find((y) => Boolean(y.is_active)) ?? ys[0] ?? null;
         if (active) setYearId(active.id);
       } catch (e) {
+        if (ctrl.signal.aborted) return;
         setError(errorText(e, 'تعذّر تحميل السنوات الدراسية'));
       }
     })();
+    return () => ctrl.abort();
   }, []);
 
   // Load sections when year changes
   useEffect(() => {
     if (yearId === null) return;
+    const ctrl = new AbortController();
     (async () => {
       try {
-        const secs = await apiFetch<SectionOption[]>(`/collection/years/${yearId}/sections`);
+        const secs = await apiFetch<SectionOption[]>(`/collection/years/${yearId}/sections`, { signal: ctrl.signal });
+        if (ctrl.signal.aborted) return;
         setSections(secs);
         if (secs.length > 0) setSectionId(secs[0].id);
       } catch (e) {
+        if (ctrl.signal.aborted) return;
         setError(errorText(e, 'تعذّر تحميل الأقسام'));
       }
     })();
+    return () => ctrl.abort();
   }, [yearId]);
 
   // Load students for section
   useEffect(() => {
     if (sectionId === null) return;
+    const ctrl = new AbortController();
     (async () => {
       try {
-        const stus = await apiFetch<StudentRow[]>(`/collection/sections/${sectionId}/students`);
+        const stus = await apiFetch<StudentRow[]>(`/collection/sections/${sectionId}/students`, { signal: ctrl.signal });
+        if (ctrl.signal.aborted) return;
         setStudents(stus);
         if (stus.length > 0) setEnrollmentId(stus[0].enrollment_id);
         else setEnrollmentId(null);
       } catch (e) {
+        if (ctrl.signal.aborted) return;
         setError(errorText(e, 'تعذّر تحميل قائمة التلاميذ'));
       }
     })();
+    return () => ctrl.abort();
   }, [sectionId]);
 
   // Load club subscriptions when year changes
   useEffect(() => {
     if (yearId === null || category !== 'club') return;
+    const ctrl = new AbortController();
     (async () => {
       try {
-        const res = await apiFetch<{ data: ClubSubscriptionRow[] }>(`/club-subscriptions?academic_year_id=${yearId}&per_page=100`);
+        const res = await apiFetch<{ data: ClubSubscriptionRow[] }>(`/club-subscriptions?academic_year_id=${yearId}&per_page=100`, { signal: ctrl.signal });
+        if (ctrl.signal.aborted) return;
         const subs = res.data ?? [];
         setSubscriptions(subs);
         if (subs.length > 0) setSubscriptionId(subs[0].id);
         else setSubscriptionId(null);
       } catch (e) {
+        if (ctrl.signal.aborted) return;
         setError(errorText(e, 'تعذّر تحميل اشتراكات النوادي'));
       }
     })();
+    return () => ctrl.abort();
   }, [yearId, category]);
 
   // Load existing discounts when enrollment or subscription changes
-  const loadDiscounts = async () => {
+  const loadDiscounts = async (signal?: AbortSignal) => {
     setError('');
     setLoading(true);
     try {
       if (category === 'tuition' && enrollmentId) {
-        const res = await fetchTuitionMonthlyDiscounts(enrollmentId);
+        const res = await fetchTuitionMonthlyDiscounts(enrollmentId, signal);
+        if (signal?.aborted) return;
         setDiscountsList(res.discounts);
       } else if (category === 'club' && subscriptionId) {
-        const res = await fetchClubMonthlyDiscounts(subscriptionId);
+        const res = await fetchClubMonthlyDiscounts(subscriptionId, signal);
+        if (signal?.aborted) return;
         setDiscountsList(res.discounts);
       } else {
         setDiscountsList([]);
       }
     } catch (e) {
+      if (signal?.aborted) return;
       setError(errorText(e, 'تعذّر تحميل قائمة التخفيضات'));
     } finally {
-      setLoading(false);
+      if (!signal?.aborted) setLoading(false);
     }
   };
 
   useEffect(() => {
-    loadDiscounts();
+    const ctrl = new AbortController();
+    loadDiscounts(ctrl.signal);
+    return () => ctrl.abort();
   }, [category, enrollmentId, subscriptionId]);
 
   const handleCreate = async (e: React.FormEvent) => {

@@ -35,8 +35,9 @@ export type FetchClubDiscountsResponse = {
   discounts: MonthlyDiscountItem[];
 };
 
-export function fetchTuitionMonthlyDiscounts(enrollmentId: number): Promise<FetchTuitionDiscountsResponse> {
+export function fetchTuitionMonthlyDiscounts(enrollmentId: number, signal?: AbortSignal): Promise<FetchTuitionDiscountsResponse> {
   return apiFetch<FetchTuitionDiscountsResponse>(`/enrollments/${enrollmentId}/monthly-discounts`, {
+    signal,
     fallbackMessage: 'تعذّر تحميل التخفيضات الشهرية',
   });
 }
@@ -69,8 +70,9 @@ export function cancelTuitionMonthlyDiscount(
   });
 }
 
-export function fetchClubMonthlyDiscounts(subscriptionId: number): Promise<FetchClubDiscountsResponse> {
+export function fetchClubMonthlyDiscounts(subscriptionId: number, signal?: AbortSignal): Promise<FetchClubDiscountsResponse> {
   return apiFetch<FetchClubDiscountsResponse>(`/club-subscriptions/${subscriptionId}/monthly-discounts`, {
+    signal,
     fallbackMessage: 'تعذّر تحميل تخفيضات النادي',
   });
 }

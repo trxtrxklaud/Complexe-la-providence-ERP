@@ -21,10 +21,10 @@ services:
     container_name: providence-db
     restart: unless-stopped
     environment:
-      MYSQL_DATABASE: providence
-      MYSQL_ROOT_PASSWORD: secret
-      MYSQL_PASSWORD: secret
-      MYSQL_USER: providence
+      MYSQL_DATABASE: ${DB_DATABASE:?DB_DATABASE is required}
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:?DB_ROOT_PASSWORD is required}
+      MYSQL_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is required}
+      MYSQL_USER: ${DB_USERNAME:?DB_USERNAME is required}
     volumes:
       - dbdata:/var/lib/mysql
     networks:

@@ -87,16 +87,17 @@ export function StudentsDashboard() {
   // Use a ref-based "latest request ID" to prevent stale-response overwriting
   const reqIdRef = useRef(0);
 
-  const loadStudents = useCallback(() => {
+  const loadStudents = useCallback((signal?: AbortSignal) => {
     const myId = ++reqIdRef.current;
     setIsLoading(true);
     setLoadError('');
 
     getStudentsFullResponse(
       { gender: genderFilter, level: sectionFilter, year: yearFilter, search: nameSearch, per_page: 100 },
+      signal,
     )
       .then((res: StudentSearchResponse) => {
-        if (myId !== reqIdRef.current) return;   // stale — discard
+        if (signal?.aborted || myId !== reqIdRef.current) return;   // stale — discard
         setStudents(res.data);
         setCounts({
           total:   res.total_count ?? res.data.length,
@@ -106,18 +107,20 @@ export function StudentsDashboard() {
         });
       })
       .catch((err) => {
-        if (myId !== reqIdRef.current) return;
+        if (signal?.aborted || myId !== reqIdRef.current) return;
         setLoadError(err instanceof Error ? err.message : 'تعذّر تحميل قائمة التلاميذ');
         setStudents([]);
       })
       .finally(() => {
-        if (myId !== reqIdRef.current) return;
+        if (signal?.aborted || myId !== reqIdRef.current) return;
         setIsLoading(false);
       });
   }, [genderFilter, sectionFilter, yearFilter, nameSearch]);
 
   useEffect(() => {
-    loadStudents();
+    const controller = new AbortController();
+    loadStudents(controller.signal);
+    return () => controller.abort();
   }, [loadStudents]);
 
   // ─── filter helpers ───────────────────────────────────────────────────────
@@ -292,7 +295,7 @@ export function StudentsDashboard() {
           <span>{loadError}</span>
           <button
             type="button"
-            onClick={loadStudents}
+            onClick={() => loadStudents()}
             className="mr-auto text-xs font-semibold underline"
           >
             إعادة المحاولة
