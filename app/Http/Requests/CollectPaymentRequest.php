@@ -16,18 +16,23 @@ class CollectPaymentRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'student_id'           => ['required', 'integer', 'exists:students,id'],
-            'enrollment_id'        => ['required', 'integer', 'exists:enrollments,id'],
-            'months'               => ['required', 'array', 'min:1', 'max:12'],
-            'months.*'             => ['required', 'string', 'distinct', 'regex:/^\d{4}-(0[1-9]|1[0-2])$/'],
-            'payment_date'         => ['required', 'date', 'before_or_equal:today'],
-            'method'               => ['required', 'in:cash,bank_transfer,check,card'],
-            'reference'            => ['nullable', 'string', 'max:100'],
-            'notes'                => ['nullable', 'string', 'max:500'],
-            'idempotency_key'      => ['nullable', 'string', 'max:64'],
-            'items'                => ['required', 'array', 'min:1', 'max:20'],
-            'items.*.fee_type_id'  => ['required', 'integer', 'distinct', 'exists:fee_types,id'],
-            'items.*.amount'       => ['required', 'numeric', 'min:0.01', 'max:1000000'],
+            'student_id' => ['required', 'integer', 'exists:students,id'],
+            'enrollment_id' => ['required', 'integer', 'exists:enrollments,id'],
+            'months' => ['required', 'array', 'min:1', 'max:12'],
+            'months.*' => ['required', 'string', 'distinct', 'regex:/^\d{4}-(0[1-9]|1[0-2])$/'],
+            'payment_date' => ['required', 'date', 'before_or_equal:today'],
+            'method' => ['required', 'in:cash,bank_transfer,check,card'],
+            'reference' => ['nullable', 'string', 'max:100'],
+            'notes' => ['nullable', 'string', 'max:500'],
+            'idempotency_key' => ['nullable', 'string', 'max:64'],
+            'items' => ['required', 'array', 'min:1', 'max:20'],
+            'items.*.fee_type_id' => ['required', 'integer', 'distinct', 'exists:fee_types,id'],
+            'items.*.amount' => ['required', 'numeric', 'min:0.01', 'max:1000000'],
+
+            // توزيع صريح على متخلّدات السنوات السابقة (اختياري).
+            'prior_allocations' => ['nullable', 'array', 'max:50'],
+            'prior_allocations.*.student_fee_id' => ['required', 'integer', 'distinct', 'exists:student_fees,id'],
+            'prior_allocations.*.amount' => ['required', 'numeric', 'min:0.01', 'max:1000000'],
         ];
     }
 
@@ -65,20 +70,20 @@ class CollectPaymentRequest extends FormRequest
     public function messages(): array
     {
         return [
-            'student_id.required'        => 'يجب تحديد التلميذ',
-            'enrollment_id.required'     => 'يجب تحديد التسجيل',
-            'months.required'            => 'يجب تحديد الشهر المدفوع',
-            'months.min'                 => 'يجب اختيار شهر واحد على الأقل',
-            'months.*.regex'             => 'صيغة الشهر يجب أن تكون YYYY-MM',
-            'months.*.distinct'          => 'لا يمكن تكرار نفس الشهر',
-            'payment_date.required'      => 'تاريخ الدفع مطلوب',
+            'student_id.required' => 'يجب تحديد التلميذ',
+            'enrollment_id.required' => 'يجب تحديد التسجيل',
+            'months.required' => 'يجب تحديد الشهر المدفوع',
+            'months.min' => 'يجب اختيار شهر واحد على الأقل',
+            'months.*.regex' => 'صيغة الشهر يجب أن تكون YYYY-MM',
+            'months.*.distinct' => 'لا يمكن تكرار نفس الشهر',
+            'payment_date.required' => 'تاريخ الدفع مطلوب',
             'payment_date.before_or_equal' => 'لا يمكن تسجيل دفعة بتاريخ مستقبلي',
-            'method.required'            => 'طريقة الدفع مطلوبة',
-            'method.in'                  => 'طريقة الدفع غير صحيحة',
-            'items.required'             => 'يجب اختيار رسم واحد على الأقل',
+            'method.required' => 'طريقة الدفع مطلوبة',
+            'method.in' => 'طريقة الدفع غير صحيحة',
+            'items.required' => 'يجب اختيار رسم واحد على الأقل',
             'items.*.fee_type_id.exists' => 'نوع الرسم غير موجود',
             'items.*.fee_type_id.distinct' => 'لا يمكن تكرار نفس نوع الرسم مرتين',
-            'items.*.amount.min'         => 'يجب أن يكون المبلغ أكبر من صفر',
+            'items.*.amount.min' => 'يجب أن يكون المبلغ أكبر من صفر',
         ];
     }
 }

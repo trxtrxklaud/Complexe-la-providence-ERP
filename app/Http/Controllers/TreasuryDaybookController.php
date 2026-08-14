@@ -42,14 +42,14 @@ class TreasuryDaybookController extends Controller
     public function index(Request $request): JsonResponse
     {
         $data = $request->validate([
-            'date'             => ['required', 'date'],
-            'date_to'          => ['nullable', 'date', 'after_or_equal:date'],
-            'details'          => ['nullable', 'boolean'],
+            'date' => ['required', 'date'],
+            'date_to' => ['nullable', 'date', 'after_or_equal:date'],
+            'details' => ['nullable', 'boolean'],
             'academic_year_id' => ['nullable', 'integer', 'exists:academic_years,id'],
         ]);
 
-        $from   = Carbon::parse($data['date'])->startOfDay();
-        $to     = Carbon::parse($data['date_to'] ?? now()->toDateString())->startOfDay();
+        $from = Carbon::parse($data['date'])->startOfDay();
+        $to = Carbon::parse($data['date_to'] ?? now()->toDateString())->startOfDay();
         $yearId = $data['academic_year_id'] ?? null;
 
         if ($from->gt($to)) {
@@ -62,12 +62,12 @@ class TreasuryDaybookController extends Controller
 
         if ($dayCount > self::MAX_DAYS) {
             throw ValidationException::withMessages([
-                'date' => 'المدى المطلوب ' . $dayCount . ' يوماً، والحدّ الأقصى ' . self::MAX_DAYS . ' يوماً. اختر تاريخ بداية أقرب.',
+                'date' => 'المدى المطلوب '.$dayCount.' يوماً، والحدّ الأقصى '.self::MAX_DAYS.' يوماً. اختر تاريخ بداية أقرب.',
             ]);
         }
 
         $fromDate = $from->toDateString();
-        $toDate   = $to->toDateString();
+        $toDate = $to->toDateString();
 
         $withDetails = $request->boolean('details');
 
@@ -75,15 +75,16 @@ class TreasuryDaybookController extends Controller
         $details = $withDetails ? $this->detailsByDay($fromDate, $toDate, $yearId) : [];
         $opening = $this->openingFigures($fromDate, $yearId);
 
-        $runningNet         = $opening['net_income'];
+        $runningNet = $opening['net_income'];
+        $runningPrior = $opening['prior_year_debt'];
         $runningWithdrawals = $opening['withdrawals'];
 
-        $days   = [];
+        $days = [];
         $totals = [];
         $cursor = $from->copy();
 
         while ($cursor->lte($to)) {
-            $key       = $cursor->toDateString();
+            $key = $cursor->toDateString();
             $dayTotals = $grouped[$key] ?? [];
 
             foreach ($dayTotals as $category => $amount) {
@@ -92,24 +93,27 @@ class TreasuryDaybookController extends Controller
 
             $figures = $this->figures($dayTotals);
 
-            $runningNet         = round($runningNet + $figures['net_income'], 2);
+            $runningNet = round($runningNet + $figures['net_income'], 2);
+            $runningPrior = round($runningPrior + $figures['prior_year_debt'], 2);
             $runningWithdrawals = round($runningWithdrawals + $figures['withdrawals'], 2);
 
             $days[] = [
-                'date'        => $key,
-                'income'      => $figures['income'],
-                'expenses'    => $figures['expenses'],
-                'net_income'  => $figures['net_income'],
+                'date' => $key,
+                'income' => $figures['income'],
+                'prior_year_debt' => $figures['prior_year_debt'],
+                'expenses' => $figures['expenses'],
+                'net_income' => $figures['net_income'],
                 'withdrawals' => $figures['withdrawals'],
-                'balance'     => $figures['balance'],
+                'balance' => $figures['balance'],
                 'has_activity' => $dayTotals !== [],
-                'details'     => $withDetails
-                    ? ($details[$key] ?? ['income' => [], 'expenses' => [], 'withdrawals' => []])
+                'details' => $withDetails
+                    ? ($details[$key] ?? ['income' => [], 'expenses' => [], 'prior_debt' => [], 'withdrawals' => []])
                     : null,
-                'cumulative'  => [
-                    'net_income'  => $runningNet,
+                'cumulative' => [
+                    'net_income' => $runningNet,
+                    'prior_year_debt' => $runningPrior,
                     'withdrawals' => $runningWithdrawals,
-                    'balance'     => round($runningNet - $runningWithdrawals, 2),
+                    'balance' => round($runningNet + $runningPrior - $runningWithdrawals, 2),
                 ],
             ];
 
@@ -119,27 +123,29 @@ class TreasuryDaybookController extends Controller
         $range = $this->figures($totals);
 
         return response()->json([
-            'date_from'   => $fromDate,
-            'date_to'     => $toDate,
-            'days_count'  => count($days),
+            'date_from' => $fromDate,
+            'date_to' => $toDate,
+            'days_count' => count($days),
             'with_details' => $withDetails,
             // المجاميع صحيحة دائماً؛ هذا العلم يخصّ أسطر التفصيل وحدها.
             'details_truncated' => $this->detailsTruncated,
-            'details_limit'     => self::MAX_DETAIL_LINES,
+            'details_limit' => self::MAX_DETAIL_LINES,
             // رصيد ما قبل الفترة: هو ما يجعل التراكمي صادقاً مهما كان تاريخ البداية.
-            'opening'     => $opening,
-            'days'        => $days,
-            'summary'     => [
-                'income'      => $range['income'],
-                'expenses'    => $range['expenses'],
-                'net_income'  => $range['net_income'],
+            'opening' => $opening,
+            'days' => $days,
+            'summary' => [
+                'income' => $range['income'],
+                'prior_year_debt' => $range['prior_year_debt'],
+                'expenses' => $range['expenses'],
+                'net_income' => $range['net_income'],
                 'withdrawals' => $range['withdrawals'],
-                'balance'     => $range['balance'],
+                'balance' => $range['balance'],
             ],
-            'closing'     => [
-                'net_income'  => $runningNet,
+            'closing' => [
+                'net_income' => $runningNet,
+                'prior_year_debt' => $runningPrior,
                 'withdrawals' => $runningWithdrawals,
-                'balance'     => round($runningNet - $runningWithdrawals, 2),
+                'balance' => round($runningNet + $runningPrior - $runningWithdrawals, 2),
             ],
         ]);
     }
@@ -159,7 +165,7 @@ class TreasuryDaybookController extends Controller
         $expression = $this->dayExpression();
 
         $rows = $this->base($from, $to, $yearId)
-            ->selectRaw($expression . ' as day')
+            ->selectRaw($expression.' as day')
             ->selectRaw('category, SUM(amount) as total')
             ->groupBy(DB::raw($expression), 'category')
             ->get();
@@ -202,21 +208,22 @@ class TreasuryDaybookController extends Controller
             $day = substr((string) $row->transaction_date, 0, 10);
 
             if (! isset($out[$day])) {
-                $out[$day] = ['income' => [], 'expenses' => [], 'withdrawals' => []];
+                $out[$day] = ['income' => [], 'prior_debt' => [], 'expenses' => [], 'withdrawals' => []];
             }
 
             $bucket = match (true) {
                 $row->category === CashTransaction::CATEGORY_WITHDRAWAL => 'withdrawals',
+                in_array($row->category, CashTransaction::PRIOR_YEAR_DEBT_CATEGORIES, true) => 'prior_debt',
                 in_array($row->category, CashTransaction::INCOME_CATEGORIES, true) => 'income',
                 default => 'expenses',
             };
 
             $out[$day][$bucket][] = [
-                'id'          => (int) $row->id,
-                'category'    => $row->category,
-                'label'       => CashTransaction::CATEGORY_LABELS[$row->category] ?? $row->category,
+                'id' => (int) $row->id,
+                'category' => $row->category,
+                'label' => CashTransaction::CATEGORY_LABELS[$row->category] ?? $row->category,
                 'description' => $row->description,
-                'amount'      => round((float) $row->amount, 2),
+                'amount' => round((float) $row->amount, 2),
             ];
         }
 
@@ -250,9 +257,10 @@ class TreasuryDaybookController extends Controller
         $figures = $this->figures($totals);
 
         return [
-            'net_income'  => $figures['net_income'],
+            'net_income' => $figures['net_income'],
+            'prior_year_debt' => $figures['prior_year_debt'],
             'withdrawals' => $figures['withdrawals'],
-            'balance'     => $figures['balance'],
+            'balance' => $figures['balance'],
         ];
     }
 
@@ -264,20 +272,23 @@ class TreasuryDaybookController extends Controller
      */
     private function figures(array $totals): array
     {
-        $income   = $this->linesFor(CashTransaction::INCOME_CATEGORIES, $totals);
+        $income = $this->linesFor(CashTransaction::INCOME_CATEGORIES, $totals);
         $expenses = $this->linesFor(CashTransaction::EXPENSE_CATEGORIES, $totals);
 
-        $incomeTotal  = round(array_sum(array_column($income, 'total')), 2);
+        $incomeTotal = round(array_sum(array_column($income, 'total')), 2);
         $expenseTotal = round(array_sum(array_column($expenses, 'total')), 2);
-        $withdrawals  = round($totals[CashTransaction::CATEGORY_WITHDRAWAL] ?? 0.0, 2);
-        $net          = round($incomeTotal - $expenseTotal, 2);
+        $withdrawals = round($totals[CashTransaction::CATEGORY_WITHDRAWAL] ?? 0.0, 2);
+        $priorYearDebt = round($totals[CashTransaction::CATEGORY_PRIOR_YEAR_DEBT] ?? 0.0, 2);
+        $net = round($incomeTotal - $expenseTotal, 2);
 
         return [
-            'income'      => ['lines' => $income, 'total' => $incomeTotal],
-            'expenses'    => ['lines' => $expenses, 'total' => $expenseTotal],
-            'net_income'  => $net,
+            'income' => ['lines' => $income, 'total' => $incomeTotal],
+            'expenses' => ['lines' => $expenses, 'total' => $expenseTotal],
+            'net_income' => $net,
+            // قبض ديون سابقة يزيد الرصيد ولا يمسّ الدخل الصافي.
+            'prior_year_debt' => $priorYearDebt,
             'withdrawals' => $withdrawals,
-            'balance'     => round($net - $withdrawals, 2),
+            'balance' => round($net + $priorYearDebt - $withdrawals, 2),
         ];
     }
 
@@ -293,8 +304,8 @@ class TreasuryDaybookController extends Controller
         foreach ($categories as $category) {
             $lines[] = [
                 'category' => $category,
-                'label'    => CashTransaction::CATEGORY_LABELS[$category] ?? $category,
-                'total'    => round($totals[$category] ?? 0.0, 2),
+                'label' => CashTransaction::CATEGORY_LABELS[$category] ?? $category,
+                'total' => round($totals[$category] ?? 0.0, 2),
             ];
         }
 
@@ -323,8 +334,8 @@ class TreasuryDaybookController extends Controller
     {
         return match (DB::connection()->getDriverName()) {
             'sqlite' => "strftime('%Y-%m-%d', transaction_date)",
-            'pgsql'  => "to_char(transaction_date, 'YYYY-MM-DD')",
-            default  => "DATE_FORMAT(transaction_date, '%Y-%m-%d')",
+            'pgsql' => "to_char(transaction_date, 'YYYY-MM-DD')",
+            default => "DATE_FORMAT(transaction_date, '%Y-%m-%d')",
         };
     }
 }

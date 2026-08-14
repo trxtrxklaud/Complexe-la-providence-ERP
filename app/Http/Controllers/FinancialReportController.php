@@ -30,17 +30,17 @@ class FinancialReportController extends Controller
     public function netIncome(Request $request): JsonResponse
     {
         $data = $request->validate([
-            'date'             => ['nullable', 'date'],
-            'details'          => ['nullable', 'boolean'],
+            'date' => ['nullable', 'date'],
+            'details' => ['nullable', 'boolean'],
             'academic_year_id' => ['nullable', 'integer', 'exists:academic_years,id'],
         ]);
 
-        $date   = $data['date'] ?? now()->toDateString();
+        $date = $data['date'] ?? now()->toDateString();
         $yearId = $data['academic_year_id'] ?? null;
 
         $response = [
-            'date'       => $date,
-            'day'        => $this->summarize($date, $date, $yearId),
+            'date' => $date,
+            'day' => $this->summarize($date, $date, $yearId),
             'cumulative' => $this->summarize(null, $date, $yearId),
         ];
 
@@ -61,28 +61,28 @@ class FinancialReportController extends Controller
     public function netIncomePeriods(Request $request): JsonResponse
     {
         $data = $request->validate([
-            'granularity'      => ['nullable', 'string', 'in:month,year'],
-            'date_from'        => ['nullable', 'date'],
-            'date_to'          => ['nullable', 'date', 'after_or_equal:date_from'],
+            'granularity' => ['nullable', 'string', 'in:month,year'],
+            'date_from' => ['nullable', 'date'],
+            'date_to' => ['nullable', 'date', 'after_or_equal:date_from'],
             'academic_year_id' => ['nullable', 'integer', 'exists:academic_years,id'],
         ]);
 
         $granularity = $data['granularity'] ?? 'month';
-        $from        = $data['date_from'] ?? null;
-        $to          = $data['date_to'] ?? null;
-        $yearId      = $data['academic_year_id'] ?? null;
+        $from = $data['date_from'] ?? null;
+        $to = $data['date_to'] ?? null;
+        $yearId = $data['academic_year_id'] ?? null;
 
         $expression = $this->periodExpression($granularity);
 
         $rows = $this->base($from, $to, $yearId)
-            ->selectRaw($expression . ' as period')
+            ->selectRaw($expression.' as period')
             ->selectRaw('category, SUM(amount) as total')
             ->groupBy(DB::raw($expression), 'category')
             ->orderBy('period')
             ->get();
 
         $periods = [];
-        $grand   = [];
+        $grand = [];
 
         foreach ($rows as $row) {
             $total = round((float) $row->total, 2);
@@ -98,10 +98,10 @@ class FinancialReportController extends Controller
 
         return response()->json([
             'granularity' => $granularity,
-            'date_from'   => $from,
-            'date_to'     => $to,
-            'rows'        => $result,
-            'summary'     => $this->netFigures('المجموع', $grand),
+            'date_from' => $from,
+            'date_to' => $to,
+            'rows' => $result,
+            'summary' => $this->netFigures('المجموع', $grand),
         ]);
     }
 
@@ -144,11 +144,11 @@ class FinancialReportController extends Controller
     public function revenueByStudent(Request $request): JsonResponse
     {
         $data = $request->validate([
-            'date_from'        => ['nullable', 'date'],
-            'date_to'          => ['nullable', 'date'],
+            'date_from' => ['nullable', 'date'],
+            'date_to' => ['nullable', 'date'],
             'academic_year_id' => ['nullable', 'integer', 'exists:academic_years,id'],
-            'section_id'       => ['nullable', 'integer', 'exists:sections,id'],
-            'search'           => ['nullable', 'string', 'max:100'],
+            'section_id' => ['nullable', 'integer', 'exists:sections,id'],
+            'search' => ['nullable', 'string', 'max:100'],
         ]);
 
         $query = $this->paymentDimensionQuery($data)
@@ -170,7 +170,7 @@ class FinancialReportController extends Controller
         }
 
         if (! empty($data['search'])) {
-            $term = '%' . $data['search'] . '%';
+            $term = '%'.$data['search'].'%';
             $query->where(function ($q) use ($term) {
                 $q->where('s.first_name', 'like', $term)
                     ->orWhere('s.last_name', 'like', $term)
@@ -179,21 +179,21 @@ class FinancialReportController extends Controller
         }
 
         $rows = $query->get()->map(fn ($row) => [
-            'student_id'     => (int) $row->student_id,
-            'student_code'   => $row->student_code,
-            'name'           => trim($row->first_name . ' ' . $row->last_name),
-            'level'          => $row->level,
-            'section'        => $row->section,
+            'student_id' => (int) $row->student_id,
+            'student_code' => $row->student_code,
+            'name' => trim($row->first_name.' '.$row->last_name),
+            'level' => $row->level,
+            'section' => $row->section,
             'payments_count' => (int) $row->payments_count,
-            'total'          => round((float) $row->total, 2),
+            'total' => round((float) $row->total, 2),
         ])->values();
 
         return response()->json([
             'filters' => $data,
-            'rows'    => $rows,
+            'rows' => $rows,
             'summary' => [
                 'students_count' => $rows->count(),
-                'total'          => round($rows->sum('total'), 2),
+                'total' => round($rows->sum('total'), 2),
             ],
         ]);
     }
@@ -205,8 +205,8 @@ class FinancialReportController extends Controller
     public function revenueByClassroom(Request $request): JsonResponse
     {
         $data = $request->validate([
-            'date_from'        => ['nullable', 'date'],
-            'date_to'          => ['nullable', 'date'],
+            'date_from' => ['nullable', 'date'],
+            'date_to' => ['nullable', 'date'],
             'academic_year_id' => ['nullable', 'integer', 'exists:academic_years,id'],
         ]);
 
@@ -225,22 +225,22 @@ class FinancialReportController extends Controller
             ->orderBy('sec.name')
             ->get()
             ->map(fn ($row) => [
-                'section_id'     => $row->section_id !== null ? (int) $row->section_id : null,
-                'section'        => $row->section,
-                'level_id'       => $row->level_id !== null ? (int) $row->level_id : null,
-                'level'          => $row->level,
+                'section_id' => $row->section_id !== null ? (int) $row->section_id : null,
+                'section' => $row->section,
+                'level_id' => $row->level_id !== null ? (int) $row->level_id : null,
+                'level' => $row->level,
                 'students_count' => (int) $row->students_count,
                 'payments_count' => (int) $row->payments_count,
-                'total'          => round((float) $row->total, 2),
+                'total' => round((float) $row->total, 2),
             ])
             ->values();
 
         return response()->json([
             'filters' => $data,
-            'rows'    => $rows,
+            'rows' => $rows,
             'summary' => [
                 'sections_count' => $rows->count(),
-                'total'          => round($rows->sum('total'), 2),
+                'total' => round($rows->sum('total'), 2),
             ],
         ]);
     }
@@ -254,36 +254,41 @@ class FinancialReportController extends Controller
             ->leftJoin('academic_years as ay', 'ay.id', '=', 'ct.academic_year_id')
             ->whereNull('ct.cancelled_at')
             ->select(['ct.academic_year_id', 'ay.name as academic_year'])
-            ->selectRaw($this->sumIf(CashTransaction::INCOME_CATEGORIES) . ' as income')
-            ->selectRaw($this->sumIf(CashTransaction::EXPENSE_CATEGORIES) . ' as expenses')
-            ->selectRaw($this->sumIf([CashTransaction::CATEGORY_WITHDRAWAL]) . ' as withdrawals')
+            ->selectRaw($this->sumIf(CashTransaction::INCOME_CATEGORIES).' as income')
+            ->selectRaw($this->sumIf(CashTransaction::EXPENSE_CATEGORIES).' as expenses')
+            ->selectRaw($this->sumIf(CashTransaction::PRIOR_YEAR_DEBT_CATEGORIES).' as prior_year_debt')
+            ->selectRaw($this->sumIf([CashTransaction::CATEGORY_WITHDRAWAL]).' as withdrawals')
             ->groupBy('ct.academic_year_id', 'ay.name')
             ->orderByRaw('ay.name is null, ay.name desc')
             ->get()
             ->map(function ($row) {
-                $income   = round((float) $row->income, 2);
+                $income = round((float) $row->income, 2);
                 $expenses = round((float) $row->expenses, 2);
-                $net      = round($income - $expenses, 2);
+                $prior = round((float) $row->prior_year_debt, 2);
+                $net = round($income - $expenses, 2);
 
                 return [
                     'academic_year_id' => $row->academic_year_id !== null ? (int) $row->academic_year_id : null,
-                    'academic_year'    => $row->academic_year ?? 'دون سنة محدّدة',
-                    'income'           => $income,
-                    'expenses'         => $expenses,
-                    'net_income'       => $net,
-                    'withdrawals'      => round((float) $row->withdrawals, 2),
-                    'balance'          => round($net - (float) $row->withdrawals, 2),
+                    'academic_year' => $row->academic_year ?? 'دون سنة محدّدة',
+                    'income' => $income,
+                    'expenses' => $expenses,
+                    'net_income' => $net,
+                    // قبض متخلّدات سنوات سابقة يظهر مستقلاً: نقد لا مدخول.
+                    'prior_year_debt' => $prior,
+                    'withdrawals' => round((float) $row->withdrawals, 2),
+                    'balance' => round($net + $prior - (float) $row->withdrawals, 2),
                 ];
             })
             ->values();
 
         return response()->json([
-            'rows'    => $rows,
+            'rows' => $rows,
             'summary' => [
-                'income'     => round($rows->sum('income'), 2),
-                'expenses'   => round($rows->sum('expenses'), 2),
+                'income' => round($rows->sum('income'), 2),
+                'expenses' => round($rows->sum('expenses'), 2),
                 'net_income' => round($rows->sum('net_income'), 2),
-                'balance'    => round($rows->sum('balance'), 2),
+                'prior_year_debt' => round($rows->sum('prior_year_debt'), 2),
+                'balance' => round($rows->sum('balance'), 2),
             ],
         ]);
     }
@@ -298,8 +303,8 @@ class FinancialReportController extends Controller
     public function classroomDetail(Request $request, Section $section): JsonResponse
     {
         $data = $request->validate([
-            'date_from'        => ['nullable', 'date'],
-            'date_to'          => ['nullable', 'date', 'after_or_equal:date_from'],
+            'date_from' => ['nullable', 'date'],
+            'date_to' => ['nullable', 'date', 'after_or_equal:date_from'],
             'academic_year_id' => ['nullable', 'integer', 'exists:academic_years,id'],
         ]);
 
@@ -317,11 +322,11 @@ class FinancialReportController extends Controller
             ->orderByDesc('total')
             ->get()
             ->map(fn ($row) => [
-                'student_id'     => (int) $row->student_id,
-                'student_code'   => $row->student_code,
-                'name'           => trim($row->first_name . ' ' . $row->last_name),
+                'student_id' => (int) $row->student_id,
+                'student_code' => $row->student_code,
+                'name' => trim($row->first_name.' '.$row->last_name),
                 'payments_count' => (int) $row->payments_count,
-                'total'          => round((float) $row->total, 2),
+                'total' => round((float) $row->total, 2),
             ])
             ->values();
 
@@ -342,18 +347,18 @@ class FinancialReportController extends Controller
         return response()->json([
             'filters' => $data,
             'section' => [
-                'id'    => $section->id,
-                'name'  => $section->name,
+                'id' => $section->id,
+                'name' => $section->name,
                 'level' => $this->levelNameForSection($section->id),
             ],
             'by_category' => $this->linesFor(CashTransaction::INCOME_CATEGORIES, $totals),
-            'students'    => $students,
-            'summary'     => [
+            'students' => $students,
+            'summary' => [
                 'enrolled_count' => $enrolled,
-                'payers_count'   => $students->count(),
-                'unpaid_count'   => max($enrolled - $students->count(), 0),
+                'payers_count' => $students->count(),
+                'unpaid_count' => max($enrolled - $students->count(), 0),
                 'payments_count' => (int) $students->sum('payments_count'),
-                'total'          => $total,
+                'total' => $total,
             ],
         ]);
     }
@@ -367,8 +372,8 @@ class FinancialReportController extends Controller
     public function studentDetail(Request $request, Student $student): JsonResponse
     {
         $data = $request->validate([
-            'date_from'        => ['nullable', 'date'],
-            'date_to'          => ['nullable', 'date', 'after_or_equal:date_from'],
+            'date_from' => ['nullable', 'date'],
+            'date_to' => ['nullable', 'date', 'after_or_equal:date_from'],
             'academic_year_id' => ['nullable', 'integer', 'exists:academic_years,id'],
         ]);
 
@@ -376,7 +381,8 @@ class FinancialReportController extends Controller
             ->join('payments as p', 'p.id', '=', 'ct.source_id')
             ->where('ct.source_type', (new Payment)->getMorphClass())
             ->where('p.student_id', $student->id)
-            ->whereIn('ct.category', CashTransaction::INCOME_CATEGORIES)
+            // قبض التلميذ كله: مداخيل السنة الحالية + قبض ديون السنوات السابقة.
+            ->whereIn('ct.category', CashTransaction::CASH_INFLOW_CATEGORIES)
             ->when(
                 ! empty($data['date_from']),
                 fn ($q) => $q->whereDate('ct.transaction_date', '>=', $data['date_from'])
@@ -405,37 +411,37 @@ class FinancialReportController extends Controller
             ->get();
 
         $payments = [];
-        $totals   = [];
-        $total    = 0.0;
+        $totals = [];
+        $total = 0.0;
 
         foreach ($rows as $row) {
-            $amount    = round((float) $row->amount, 2);
+            $amount = round((float) $row->amount, 2);
             $cancelled = $row->cancelled_at !== null;
-            $key       = (int) $row->payment_id;
+            $key = (int) $row->payment_id;
 
             if (! isset($payments[$key])) {
                 $payments[$key] = [
-                    'payment_id'          => $key,
-                    'transaction_date'    => $row->transaction_date,
-                    'method'              => $row->method,
-                    'reference'           => $row->reference,
-                    'cancelled'           => $cancelled,
+                    'payment_id' => $key,
+                    'transaction_date' => $row->transaction_date,
+                    'method' => $row->method,
+                    'reference' => $row->reference,
+                    'cancelled' => $cancelled,
                     'cancellation_reason' => $row->cancellation_reason,
-                    'lines'               => [],
-                    'total'               => 0.0,
+                    'lines' => [],
+                    'total' => 0.0,
                 ];
             }
 
             $payments[$key]['lines'][] = [
                 'category' => $row->category,
-                'label'    => CashTransaction::CATEGORY_LABELS[$row->category] ?? $row->category,
-                'amount'   => $amount,
+                'label' => CashTransaction::CATEGORY_LABELS[$row->category] ?? $row->category,
+                'amount' => $amount,
             ];
             $payments[$key]['total'] = round($payments[$key]['total'] + $amount, 2);
 
             if (! $cancelled) {
                 $totals[$row->category] = round(($totals[$row->category] ?? 0.0) + $amount, 2);
-                $total                  = round($total + $amount, 2);
+                $total = round($total + $amount, 2);
             }
         }
 
@@ -454,20 +460,20 @@ class FinancialReportController extends Controller
         return response()->json([
             'filters' => $data,
             'student' => [
-                'id'             => $student->id,
-                'student_code'   => $student->student_code,
-                'name'           => trim($student->first_name . ' ' . $student->last_name),
-                'level'          => $enrollment->level ?? null,
-                'section'        => $enrollment->section ?? null,
-                'academic_year'  => $enrollment->academic_year ?? null,
+                'id' => $student->id,
+                'student_code' => $student->student_code,
+                'name' => trim($student->first_name.' '.$student->last_name),
+                'level' => $enrollment->level ?? null,
+                'section' => $enrollment->section ?? null,
+                'academic_year' => $enrollment->academic_year ?? null,
                 'guardian_phone' => $student->guardian_phone,
             ],
             'by_category' => $this->linesFor(CashTransaction::INCOME_CATEGORIES, $totals),
-            'payments'    => $payments,
-            'summary'     => [
-                'payments_count'  => count(array_filter($payments, fn ($p) => ! $p['cancelled'])),
+            'payments' => $payments,
+            'summary' => [
+                'payments_count' => count(array_filter($payments, fn ($p) => ! $p['cancelled'])),
                 'cancelled_count' => count(array_filter($payments, fn ($p) => $p['cancelled'])),
-                'total'           => $total,
+                'total' => $total,
             ],
         ]);
     }
@@ -477,9 +483,9 @@ class FinancialReportController extends Controller
     private function validatePeriod(Request $request): array
     {
         return $request->validate([
-            'granularity'      => ['nullable', 'string', 'in:day,month,year'],
-            'date_from'        => ['nullable', 'date'],
-            'date_to'          => ['nullable', 'date', 'after_or_equal:date_from'],
+            'granularity' => ['nullable', 'string', 'in:day,month,year'],
+            'date_from' => ['nullable', 'date'],
+            'date_to' => ['nullable', 'date', 'after_or_equal:date_from'],
             'academic_year_id' => ['nullable', 'integer', 'exists:academic_years,id'],
         ]);
     }
@@ -494,21 +500,24 @@ class FinancialReportController extends Controller
      */
     private function netFigures(string $period, array $totals): array
     {
-        $income      = $this->linesFor(CashTransaction::INCOME_CATEGORIES, $totals);
-        $expenses    = $this->linesFor(CashTransaction::EXPENSE_CATEGORIES, $totals);
+        $income = $this->linesFor(CashTransaction::INCOME_CATEGORIES, $totals);
+        $expenses = $this->linesFor(CashTransaction::EXPENSE_CATEGORIES, $totals);
         $withdrawals = round($totals[CashTransaction::CATEGORY_WITHDRAWAL] ?? 0.0, 2);
+        // تحصيل ديون السنوات السابقة: نقد في الصندوق لا مدخول للفترة.
+        $priorYearDebt = round($totals[CashTransaction::CATEGORY_PRIOR_YEAR_DEBT] ?? 0.0, 2);
 
-        $incomeTotal  = round(array_sum(array_column($income, 'total')), 2);
+        $incomeTotal = round(array_sum(array_column($income, 'total')), 2);
         $expenseTotal = round(array_sum(array_column($expenses, 'total')), 2);
-        $net          = round($incomeTotal - $expenseTotal, 2);
+        $net = round($incomeTotal - $expenseTotal, 2);
 
         return [
-            'period'      => $period,
-            'income'      => ['lines' => $income, 'total' => $incomeTotal],
-            'expenses'    => ['lines' => $expenses, 'total' => $expenseTotal],
-            'net_income'  => $net,
+            'period' => $period,
+            'income' => ['lines' => $income, 'total' => $incomeTotal],
+            'expenses' => ['lines' => $expenses, 'total' => $expenseTotal],
+            'net_income' => $net,
+            'prior_year_debt' => $priorYearDebt,
             'withdrawals' => $withdrawals,
-            'balance'     => round($net - $withdrawals, 2),
+            'balance' => round($net + $priorYearDebt - $withdrawals, 2),
         ];
     }
 
@@ -584,13 +593,14 @@ class FinancialReportController extends Controller
         $figures = $this->netFigures((string) ($to ?? ''), $totals);
 
         return [
-            'date_from'   => $from,
-            'date_to'     => $to,
-            'income'      => $figures['income'],
-            'expenses'    => $figures['expenses'],
-            'net_income'  => $figures['net_income'],
+            'date_from' => $from,
+            'date_to' => $to,
+            'income' => $figures['income'],
+            'expenses' => $figures['expenses'],
+            'net_income' => $figures['net_income'],
+            'prior_year_debt' => $figures['prior_year_debt'],
             'withdrawals' => $figures['withdrawals'],
-            'balance'     => $figures['balance'],
+            'balance' => $figures['balance'],
         ];
     }
 
@@ -609,8 +619,8 @@ class FinancialReportController extends Controller
         foreach ($categories as $category) {
             $lines[] = [
                 'category' => $category,
-                'label'    => CashTransaction::CATEGORY_LABELS[$category] ?? $category,
-                'total'    => $totals[$category] ?? 0.0,
+                'label' => CashTransaction::CATEGORY_LABELS[$category] ?? $category,
+                'total' => $totals[$category] ?? 0.0,
             ];
         }
 
@@ -628,13 +638,13 @@ class FinancialReportController extends Controller
             ->orderBy('id')
             ->get()
             ->map(fn ($row) => [
-                'id'               => (int) $row->id,
+                'id' => (int) $row->id,
                 'transaction_date' => $row->transaction_date,
-                'direction'        => $row->direction,
-                'category'         => $row->category,
-                'label'            => CashTransaction::CATEGORY_LABELS[$row->category] ?? $row->category,
-                'amount'           => round((float) $row->amount, 2),
-                'description'      => $row->description,
+                'direction' => $row->direction,
+                'category' => $row->category,
+                'label' => CashTransaction::CATEGORY_LABELS[$row->category] ?? $row->category,
+                'amount' => round((float) $row->amount, 2),
+                'description' => $row->description,
             ])
             ->all();
     }
@@ -655,7 +665,7 @@ class FinancialReportController extends Controller
 
         $rows = $this->base($from, $to, $yearId)
             ->whereIn('category', $categories)
-            ->selectRaw($expression . ' as period')
+            ->selectRaw($expression.' as period')
             ->selectRaw('category, SUM(amount) as total')
             ->groupBy(DB::raw($expression), 'category')
             ->orderBy('period')
@@ -678,21 +688,21 @@ class FinancialReportController extends Controller
         $result = [];
         foreach ($periods as $period => $totals) {
             $result[] = [
-                'period'       => (string) $period,
-                'by_category'  => $this->linesFor($categories, $totals),
-                'total'        => round(array_sum($totals), 2),
+                'period' => (string) $period,
+                'by_category' => $this->linesFor($categories, $totals),
+                'total' => round(array_sum($totals), 2),
             ];
         }
 
         return [
             'granularity' => $granularity,
-            'date_from'   => $from,
-            'date_to'     => $to,
-            'rows'        => $result,
-            'summary'     => [
+            'date_from' => $from,
+            'date_to' => $to,
+            'rows' => $result,
+            'summary' => [
                 'periods_count' => count($result),
-                'by_category'   => $this->linesFor($categories, $byCategory),
-                'total'         => round(array_sum($byCategory), 2),
+                'by_category' => $this->linesFor($categories, $byCategory),
+                'total' => round(array_sum($byCategory), 2),
             ],
         ];
     }
@@ -739,17 +749,17 @@ class FinancialReportController extends Controller
         $driver = DB::connection()->getDriverName();
 
         $formats = [
-            'day'   => ['sqlite' => '%Y-%m-%d', 'mysql' => '%Y-%m-%d', 'pgsql' => 'YYYY-MM-DD'],
+            'day' => ['sqlite' => '%Y-%m-%d', 'mysql' => '%Y-%m-%d', 'pgsql' => 'YYYY-MM-DD'],
             'month' => ['sqlite' => '%Y-%m',    'mysql' => '%Y-%m',    'pgsql' => 'YYYY-MM'],
-            'year'  => ['sqlite' => '%Y',       'mysql' => '%Y',       'pgsql' => 'YYYY'],
+            'year' => ['sqlite' => '%Y',       'mysql' => '%Y',       'pgsql' => 'YYYY'],
         ];
 
         $granularity = array_key_exists($granularity, $formats) ? $granularity : 'day';
 
         return match ($driver) {
-            'sqlite' => "strftime('" . $formats[$granularity]['sqlite'] . "', transaction_date)",
-            'pgsql'  => "to_char(transaction_date, '" . $formats[$granularity]['pgsql'] . "')",
-            default  => "DATE_FORMAT(transaction_date, '" . $formats[$granularity]['mysql'] . "')",
+            'sqlite' => "strftime('".$formats[$granularity]['sqlite']."', transaction_date)",
+            'pgsql' => "to_char(transaction_date, '".$formats[$granularity]['pgsql']."')",
+            default => "DATE_FORMAT(transaction_date, '".$formats[$granularity]['mysql']."')",
         };
     }
 
@@ -761,8 +771,8 @@ class FinancialReportController extends Controller
      */
     private function sumIf(array $categories): string
     {
-        $list = implode(', ', array_map(fn ($c) => "'" . $c . "'", $categories));
+        $list = implode(', ', array_map(fn ($c) => "'".$c."'", $categories));
 
-        return 'COALESCE(SUM(CASE WHEN ct.category IN (' . $list . ') THEN ct.amount ELSE 0 END), 0)';
+        return 'COALESCE(SUM(CASE WHEN ct.category IN ('.$list.') THEN ct.amount ELSE 0 END), 0)';
     }
 }

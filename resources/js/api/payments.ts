@@ -97,6 +97,8 @@ export async function collectPayment(data: {
   reference?: string | null;
   notes?: string | null;
   items: { fee_type_id: number; amount: number }[];
+  // توزيع صريح على متخلّدات السنوات السابقة (اختياري).
+  prior_allocations?: { student_fee_id: number; amount: number }[];
 }) {
   const res = await fetch(API_BASE + '/payments/collect', {
     method: 'POST',
@@ -185,4 +187,43 @@ export async function getCollectionPreview(enrollmentId: number, months: string[
   }
   return res.json();
 
+}
+
+/**
+ * الرصيد الافتتاحي: متخلّدات السنوات السابقة المنقولة للسنة النشطة.
+ */
+export interface OpeningBalanceItem {
+  opening_balance_id: number;
+  student_fee_id: number;
+  source_year_id: number | null;
+  description: string;
+  amount: number;
+  paid: number;
+  outstanding: number;
+}
+
+export async function getStudentOpeningBalances(studentId: number, academicYearId?: number) {
+  const q = academicYearId ? '?academic_year_id=' + academicYearId : '';
+  const res = await fetch(API_BASE + '/collection/students/' + studentId + '/opening-balances' + q, {
+    headers: getHeaders(),
+  });
+  if (!res.ok) throw new Error('فشل جلب متخلّدات السنوات السابقة');
+  return res.json() as Promise<{
+    student_id: number;
+    academic_year_id: number | null;
+    summary: { count: number; total: number; outstanding: number; paid: number };
+    items: OpeningBalanceItem[];
+  }>;
+}
+
+/**
+ * معاينة توزيع الدفعة وفق الترتيب الافتراضي (الأقدم أولاً) — يراها المحاسب
+ * قبل التثبيت ويعدّلها يدوياً عبر prior_allocations في شاشة الاستخلاص.
+ */
+export async function getAllocationPreview(studentId: number, amount: number) {
+  const res = await fetch(API_BASE + '/collection/students/' + studentId + '/allocation-preview?amount=' + amount, {
+    headers: getHeaders(),
+  });
+  if (!res.ok) throw new Error('فشل معاينة توزيع الدفعة');
+  return res.json();
 }

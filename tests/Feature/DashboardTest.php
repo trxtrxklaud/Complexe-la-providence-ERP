@@ -2,8 +2,16 @@
 
 namespace Tests\Feature;
 
+use App\Models\AcademicYear;
+use App\Models\Enrollment;
+use App\Models\Level;
 use App\Models\Permission;
+use App\Models\Section;
+use App\Models\Student;
+use App\Models\StudentFee;
 use App\Models\User;
+use App\Services\OpeningBalanceService;
+use App\Services\PaymentService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Laravel\Sanctum\Sanctum;
 use Tests\TestCase;
@@ -164,6 +172,135 @@ class DashboardTest extends TestCase
             $data['total_active_students'],
             $data['male_students_count'] + $data['female_students_count'] + $data['unknown_gender_count']
         );
+    }
+
+    /** التوزيعات المنتمية لدفعات ملغاة لا تُخصم من متخلّد السنة الحالية. */
+    public function test_dashboard_current_year_outstanding_excludes_cancelled_payment_allocations(): void
+    {
+        // admin دور خارق يتجاوز فحص الصلاحيات (تسجيل واستقبال وإلغاء ولوحة مالية).
+        $user = $this->makeUserWithPermissions('admin', []);
+        Sanctum::actingAs($user);
+
+        $year = $this->makeAcademicYear();
+        $enrollment = $this->makeEnrollment($year);
+
+        $fee = StudentFee::create([
+            'enrollment_id' => $enrollment->id,
+            'fee_plan_id'   => null,
+            'description'   => 'قسط شهري',
+            'amount_due'    => 300,
+            'due_date'      => '2025-09-05',
+            'status'        => 'pending',
+        ]);
+
+        // قبل السداد: كل المتخلَّد (300) على العام.
+        $this->assertEquals(300, $this->dashboardPendingAmount());
+
+        // سداد جزئي 200 → يتبقّى 100.
+        $payment = app(PaymentService::class)->recordPayment([
+            'student_id'    => $enrollment->student_id,
+            'enrollment_id' => $enrollment->id,
+            'amount'        => 200,
+            'payment_date'  => '2025-09-10',
+            'method'        => 'cash',
+            'allocations'   => [['student_fee_id' => $fee->id, 'amount' => 200]],
+        ], $user->id);
+
+        $this->assertEquals(100, $this->dashboardPendingAmount());
+
+        // إلغاء الدفعة: توزيعاتها لا تُحتسب في المتبقّي → يعود المتخلَّد 300.
+        $this->postJson("/api/payments/{$payment->id}/cancel", ['reason' => 'تدقيق داخلي'])
+            ->assertOk();
+
+        $this->assertEquals(300, $this->dashboardPendingAmount());
+    }
+
+    /** التوزيعات المنتمية لدفعات ملغاة لا تُخصم من متخلّد السنوات السابقة. */
+    public function test_dashboard_prior_year_outstanding_excludes_cancelled_allocations(): void
+    {
+        $user = $this->makeUserWithPermissions('admin', []);
+        Sanctum::actingAs($user);
+
+        $old = AcademicYear::create([
+            'name'       => '2025-2026',
+            'start_date' => '2025-09-01',
+            'end_date'   => '2026-06-30',
+            'is_active'  => false,
+        ]);
+
+        $new = AcademicYear::create([
+            'name'       => '2026-2027',
+            'start_date' => '2026-09-01',
+            'end_date'   => '2027-06-30',
+            'is_active'  => true,
+        ]);
+
+        $level = Level::firstOrCreate(
+            ['id' => 90001],
+            ['name' => 'السنة الثانية', 'code' => 'L90001', 'order' => 2]
+        );
+        $section = Section::firstOrCreate(
+            ['id' => 90001],
+            ['level_id' => $level->id, 'name' => 'ب', 'code' => 'S90001']
+        );
+
+        $student = Student::create([
+            'student_code' => 'ST-PRIOR-YEAR',
+            'first_name'   => 'ليلى',
+            'last_name'    => 'بن عامر',
+            'gender'       => 'female',
+            'status'       => 'active',
+        ]);
+
+        $oldEnrollment = Enrollment::create([
+            'student_id'       => $student->id,
+            'academic_year_id' => $old->id,
+            'level_id'         => $level->id,
+            'section_id'       => $section->id,
+            'enrollment_date'  => '2025-09-01',
+            'status'           => 'active',
+        ]);
+
+        $oldFee = StudentFee::create([
+            'enrollment_id' => $oldEnrollment->id,
+            'fee_plan_id'   => null,
+            'description'   => 'القسط الشهري — سبتمبر 2025',
+            'amount_due'    => 200,
+            'due_date'      => '2025-09-05',
+            'status'        => 'pending',
+        ]);
+
+        // إقفال السنة القديمة يرفع الرصيد الافتتاحي 200 إلى السنة النشطة.
+        app(OpeningBalanceService::class)->closeYear($old, $new, $user->id);
+        $this->assertEquals(200, $this->dashboardPriorYearOutstanding());
+
+        // قبض الدَّين القديم بالكامل → متخلَّد السنوات السابقة = 0.
+        $payment = app(PaymentService::class)->recordPayment([
+            'student_id'    => $student->id,
+            'enrollment_id' => $oldEnrollment->id,
+            'amount'        => 200,
+            'payment_date'  => '2026-09-15',
+            'method'        => 'cash',
+            'allocations'   => [['student_fee_id' => $oldFee->id, 'amount' => 200]],
+        ], $user->id);
+
+        $this->assertEquals(0, $this->dashboardPriorYearOutstanding());
+
+        // إلغاء الدفعة يعيد المتخلَّد القديم 200.
+        $this->postJson("/api/payments/{$payment->id}/cancel", ['reason' => 'تدقيق داخلي'])
+            ->assertOk();
+
+        $this->assertEquals(200, $this->dashboardPriorYearOutstanding());
+    }
+
+    private function dashboardPendingAmount(): int
+    {
+        return (int) $this->getJson('/api/dashboard')->assertOk()->json('data.financial_summary.pending_amount');
+    }
+
+    private function dashboardPriorYearOutstanding(): int
+    {
+        return (int) $this->getJson('/api/dashboard')->assertOk()->json('data.financial_summary.prior_year_outstanding');
     }
 
     /**

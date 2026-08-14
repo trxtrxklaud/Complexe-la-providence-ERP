@@ -14,6 +14,7 @@ export interface ReceiptItem {
   name_ar?: string;
   name?: string;
   amount: number | string;
+  is_prior_year?: boolean;
 }
 
 export interface ReceiptData {
@@ -30,6 +31,7 @@ export interface ReceiptData {
   discount?: number | string;
   total?: number | string;
   amount?: number | string;
+  prior_total?: number | string;
   student_name?: string;
   student_code?: string;
   section_name?: string;
@@ -56,6 +58,15 @@ function monthsText(receipt: ReceiptData): string {
 
 function itemLabel(item: ReceiptItem): string {
   return item.description || item.fee_type_name || item.name_ar || item.name || 'بند';
+}
+
+function PriorTag({ item }: { item: ReceiptItem }) {
+  if (!item.is_prior_year) return null;
+  return (
+    <span style={{ fontSize: 10, color: '#92400E', background: '#FEF3C7', padding: '1px 5px', borderRadius: 3, marginRight: 5, fontWeight: 700 }}>
+      متخلد سابق
+    </span>
+  );
 }
 
 function money(value: number | string | undefined): string {

@@ -14,25 +14,38 @@ use Illuminate\Database\Eloquent\Relations\MorphTo;
  */
 class CashTransaction extends Model
 {
-    public const DIRECTION_IN  = 'in';
+    public const DIRECTION_IN = 'in';
+
     public const DIRECTION_OUT = 'out';
 
     // بنود المداخيل
-    public const CATEGORY_REGISTRATION_FEE   = 'registration_fee';   // معاليم التسجيل
-    public const CATEGORY_MONTHLY_FEE        = 'monthly_fee';        // معاليم الأشهر
-    public const CATEGORY_CLUB_FEE           = 'club_fee';           // معاليم النوادي
-    public const CATEGORY_INSTALLMENT        = 'installment';        // خلاص أقساط
-    public const CATEGORY_PRODUCT_SALE       = 'product_sale';       // بيع المنتجات
-    public const CATEGORY_ADVANCE_REPAYMENT  = 'advance_repayment';  // خلاص سلفة
-    public const CATEGORY_OTHER_INCOME       = 'other_income';       // مداخيل أخرى
+    public const CATEGORY_REGISTRATION_FEE = 'registration_fee';   // معاليم التسجيل
+
+    public const CATEGORY_MONTHLY_FEE = 'monthly_fee';        // معاليم الأشهر
+
+    public const CATEGORY_CLUB_FEE = 'club_fee';           // معاليم النوادي
+
+    public const CATEGORY_INSTALLMENT = 'installment';        // خلاص أقساط
+
+    public const CATEGORY_PRODUCT_SALE = 'product_sale';       // بيع المنتجات
+
+    public const CATEGORY_ADVANCE_REPAYMENT = 'advance_repayment';  // خلاص سلفة
+
+    public const CATEGORY_OTHER_INCOME = 'other_income';       // مداخيل أخرى
+
+    // تحصيل ديون السنوات السابقة: قبض نقدي يعقّب صندوق المدرسة،
+    // لكنه ليس مدخولاً للسنة الحالية — لا يدخل في الدخل الصافي ولا في المداخيل.
+    public const CATEGORY_PRIOR_YEAR_DEBT = 'prior_year_debt';    // تحصيل متخلّدات سنوات سابقة
 
     // بنود المصاريف
-    public const CATEGORY_SALARY             = 'salary';             // الأجور
-    public const CATEGORY_EMPLOYEE_ADVANCE   = 'employee_advance';   // سلفة
-    public const CATEGORY_EXPENSE            = 'expense';            // المصاريف
+    public const CATEGORY_SALARY = 'salary';             // الأجور
+
+    public const CATEGORY_EMPLOYEE_ADVANCE = 'employee_advance';   // سلفة
+
+    public const CATEGORY_EXPENSE = 'expense';            // المصاريف
 
     // حركة مستقلة: لا تدخل في الدخل الصافي
-    public const CATEGORY_WITHDRAWAL         = 'withdrawal';         // سحب من الخزينة
+    public const CATEGORY_WITHDRAWAL = 'withdrawal';         // سحب من الخزينة
 
     public const INCOME_CATEGORIES = [
         self::CATEGORY_REGISTRATION_FEE,
@@ -44,6 +57,20 @@ class CashTransaction extends Model
         self::CATEGORY_OTHER_INCOME,
     ];
 
+    /** بنود قبض ديون السنوات السابقة: نقد داخل، لا مدخول. */
+    public const PRIOR_YEAR_DEBT_CATEGORIES = [
+        self::CATEGORY_PRIOR_YEAR_DEBT,
+    ];
+
+    /**
+     * كل بنود الدخول النقدي (للملفّات التي تعرض قبض التلميذ بالكامل):
+     * المداخيل + تحصيل ديون السنوات السابقة.
+     */
+    public const CASH_INFLOW_CATEGORIES = [
+        ...self::INCOME_CATEGORIES,
+        ...self::PRIOR_YEAR_DEBT_CATEGORIES,
+    ];
+
     public const EXPENSE_CATEGORIES = [
         self::CATEGORY_SALARY,
         self::CATEGORY_EMPLOYEE_ADVANCE,
@@ -52,17 +79,18 @@ class CashTransaction extends Model
 
     /** التسميات العربية المعتمدة في التقارير. */
     public const CATEGORY_LABELS = [
-        self::CATEGORY_REGISTRATION_FEE  => 'معاليم التسجيل',
-        self::CATEGORY_MONTHLY_FEE       => 'معاليم الأشهر',
-        self::CATEGORY_CLUB_FEE          => 'معاليم النوادي',
-        self::CATEGORY_INSTALLMENT       => 'خلاص أقساط',
-        self::CATEGORY_PRODUCT_SALE      => 'بيع المنتجات',
+        self::CATEGORY_REGISTRATION_FEE => 'معاليم التسجيل',
+        self::CATEGORY_MONTHLY_FEE => 'معاليم الأشهر',
+        self::CATEGORY_CLUB_FEE => 'معاليم النوادي',
+        self::CATEGORY_INSTALLMENT => 'خلاص أقساط',
+        self::CATEGORY_PRODUCT_SALE => 'بيع المنتجات',
         self::CATEGORY_ADVANCE_REPAYMENT => 'خلاص سلفة',
-        self::CATEGORY_OTHER_INCOME      => 'مداخيل أخرى',
-        self::CATEGORY_SALARY            => 'الأجور',
-        self::CATEGORY_EMPLOYEE_ADVANCE  => 'سلفة',
-        self::CATEGORY_EXPENSE           => 'المصاريف',
-        self::CATEGORY_WITHDRAWAL        => 'سحب من الخزينة',
+        self::CATEGORY_OTHER_INCOME => 'مداخيل أخرى',
+        self::CATEGORY_PRIOR_YEAR_DEBT => 'تحصيل متخلّدات سنوات سابقة',
+        self::CATEGORY_SALARY => 'الأجور',
+        self::CATEGORY_EMPLOYEE_ADVANCE => 'سلفة',
+        self::CATEGORY_EXPENSE => 'المصاريف',
+        self::CATEGORY_WITHDRAWAL => 'سحب من الخزينة',
     ];
 
     protected $fillable = [
@@ -81,9 +109,9 @@ class CashTransaction extends Model
     ];
 
     protected $casts = [
-        'amount'           => 'decimal:2',
+        'amount' => 'decimal:2',
         'transaction_date' => 'date',
-        'cancelled_at'     => 'datetime',
+        'cancelled_at' => 'datetime',
     ];
 
     /** المستند المصدري: Payment | Salary | Expense | EmployeeAdvance | TreasuryWithdrawal */
@@ -139,6 +167,16 @@ class CashTransaction extends Model
     public function scopeExpense($query)
     {
         return $query->whereIn('category', self::EXPENSE_CATEGORIES);
+    }
+
+    public function scopePriorYearDebt($query)
+    {
+        return $query->whereIn('category', self::PRIOR_YEAR_DEBT_CATEGORIES);
+    }
+
+    public function scopeCashInflow($query)
+    {
+        return $query->whereIn('category', self::CASH_INFLOW_CATEGORIES);
     }
 
     public function scopeWithdrawals($query)

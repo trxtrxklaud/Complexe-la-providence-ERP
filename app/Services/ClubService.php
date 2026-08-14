@@ -481,75 +481,8 @@ class ClubService
         $statusFilter = ! empty($filters['status']) && $filters['status'] !== 'all' ? $filters['status'] : null;
         $search = ! empty($filters['search']) ? '%' . trim($filters['search']) . '%' : null;
 
-        if (($sectionId || $levelId) && $clubId) {
-            $club = Club::with('levels')->find($clubId);
-            if ($club && $club->is_active) {
-                $allowedLevels = $club->levels->pluck('id')->all();
-
-                $enrollmentsQuery = Enrollment::where('academic_year_id', $academicYearId)
-                    ->where('status', 'active');
-
-                if ($sectionId) {
-                    $enrollmentsQuery->where('section_id', $sectionId);
-                } elseif ($levelId) {
-                    $enrollmentsQuery->where('level_id', $levelId);
-                }
-
-                if ($allowedLevels !== []) {
-                    $enrollmentsQuery->whereIn('level_id', $allowedLevels);
-                }
-
-                if ($search) {
-                    $enrollmentsQuery->whereHas('student', fn ($q) => $q->where('first_name', 'like', $search)
-                        ->orWhere('last_name', 'like', $search)
-                        ->orWhere('student_code', 'like', $search));
-                }
-
-                $activeEnrollments = $enrollmentsQuery->get();
-
-                foreach ($activeEnrollments as $enr) {
-                    $sub = ClubSubscription::where('student_id', $enr->student_id)
-                        ->where('club_id', $clubId)
-                        ->where('academic_year_id', $academicYearId)
-                        ->first();
-
-                    if ($sub && $sub->excluded_at !== null) {
-                        continue;
-                    }
-
-                    if (! $sub) {
-                        $sub = ClubSubscription::create([
-                            'student_id' => $enr->student_id,
-                            'club_id' => $clubId,
-                            'academic_year_id' => $academicYearId,
-                            'enrollment_id' => $enr->id,
-                            'start_date' => now()->toDateString(),
-                            'status' => 'active',
-                        ]);
-                    }
-
-                    $amountDue = $sub->monthly_fee_override !== null
-                        ? (float) $sub->monthly_fee_override
-                        : (float) $club->monthly_fee;
-
-                    ClubMonthlyFee::firstOrCreate(
-                        [
-                            'student_id' => $enr->student_id,
-                            'club_id' => $clubId,
-                            'month' => $month,
-                            'academic_year_id' => $academicYearId,
-                        ],
-                        [
-                            'enrollment_id' => $enr->id,
-                            'club_subscription_id' => $sub->id,
-                            'amount_due' => number_format($amountDue, 2, '.', ''),
-                            'amount_paid' => '0.00',
-                            'status' => ClubMonthlyFee::STATUS_UNPAID,
-                        ]
-                    );
-                }
-            }
-        }
+        // ملاحظة أمنية: التقرير قراءة صرفة. لا تُنشأ اشتراكات ولا سجلات أشهر هنا أبداً؛
+        // توليد سجلات الشهر حصري عبر POST /reports/club-fees/generate (generateMonthFees).
 
         $query = ClubMonthlyFee::with([
             'student:id,first_name,last_name,student_code',

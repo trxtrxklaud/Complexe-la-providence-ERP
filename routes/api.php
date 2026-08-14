@@ -4,10 +4,9 @@ use App\Http\Controllers\AcademicYearController;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\ClassroomRosterController;
 use App\Http\Controllers\ClubController;
+use App\Http\Controllers\ClubMonthlyDiscountController;
 use App\Http\Controllers\ClubReportController;
 use App\Http\Controllers\ClubSubscriptionController;
-use App\Http\Controllers\ClubMonthlyDiscountController;
-
 use App\Http\Controllers\CollectionController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\DiscountController;
@@ -15,6 +14,7 @@ use App\Http\Controllers\EmployeeAdvanceController;
 use App\Http\Controllers\EmployeeController;
 use App\Http\Controllers\ExpenseCategoryController;
 use App\Http\Controllers\ExpenseController;
+use App\Http\Controllers\FamilyController;
 use App\Http\Controllers\FeeTypeController;
 use App\Http\Controllers\FeeWaiverController;
 use App\Http\Controllers\FinancialReportController;
@@ -80,6 +80,10 @@ Route::middleware(['auth:sanctum', 'active', 'throttle:120,1'])->group(function 
 
         Route::apiResource('/treasury/withdrawals', TreasuryWithdrawalController::class)->except(['destroy']);
         Route::post('/treasury/withdrawals/{withdrawal}/cancel', [TreasuryWithdrawalController::class, 'cancel']);
+
+        // إقفال سنة دراسية وترحيل متخلّداتها كأرصدة افتتاحية — عملية مالية حساسة
+        // فتتبع صلاحية الخزينة ولا يملكها القابض.
+        Route::post('/academic-years/{year}/close', [AcademicYearController::class, 'close']);
     });
 
     // التقارير المالية — قراءة فقط، وكلها تُبنى على الدفتر النقدي المركزي
@@ -175,10 +179,14 @@ Route::middleware(['auth:sanctum', 'active', 'throttle:120,1'])->group(function 
         Route::get('/payments/collect/preview', [CollectionController::class, 'preview']);
         Route::post('/payments/collect', [CollectionController::class, 'collect']);
 
+        // رصيد افتتاحي ومعاينة توزيع الدفعة — يراهما القابض قبل تثبيت الوصل.
+        Route::get('/collection/students/{student}/opening-balances', [CollectionController::class, 'openingBalances']);
+        Route::get('/collection/students/{student}/allocation-preview', [CollectionController::class, 'allocationPreview']);
+
         // موديول العائلات والتحصيل الجماعي
-        Route::get('/families', [\App\Http\Controllers\FamilyController::class, 'index']);
-        Route::get('/families/{family}', [\App\Http\Controllers\FamilyController::class, 'show']);
-        Route::post('/families/{family}/collect', [\App\Http\Controllers\FamilyController::class, 'collect']);
+        Route::get('/families', [FamilyController::class, 'index']);
+        Route::get('/families/{family}', [FamilyController::class, 'show']);
+        Route::post('/families/{family}/collect', [FamilyController::class, 'collect']);
 
         Route::get('/enrollments/{enrollment}/ledger', [CollectionController::class, 'ledger']);
     });
@@ -206,7 +214,6 @@ Route::middleware(['auth:sanctum', 'active', 'throttle:120,1'])->group(function 
         Route::post('/club-subscriptions/{subscription}/monthly-discounts', [ClubMonthlyDiscountController::class, 'store']);
         Route::post('/club-monthly-discounts/{discount}/cancel', [ClubMonthlyDiscountController::class, 'cancel']);
     });
-
 
     // النوادي المدرسية واشتراكاتها
     Route::middleware('permission:manage_students')->group(function () {

@@ -81,6 +81,9 @@ class ClubFeesTest extends TestCase
         $enrollment = $this->makeEnrollment($year);
         $mentalClub = Club::where('name', 'الحساب الذهني')->firstOrFail();
 
+        // سجلات الشهر تُولَّد صراحةً عبر generateMonthFees (التقرير قراءة صرفة).
+        $this->clubService->generateMonthFees($year->id, '2026-05', $mentalClub->id);
+
         $report = $this->clubService->getReport([
             'month' => '2026-05',
             'academic_year_id' => $year->id,
@@ -99,6 +102,9 @@ class ClubFeesTest extends TestCase
         $year = $this->makeAcademicYear();
         $enrollment = $this->makeEnrollment($year);
         $roboticsClub = Club::where('name', 'الروبوتيك')->firstOrFail();
+
+        // سجلات الشهر تُولَّد صراحةً عبر generateMonthFees (التقرير قراءة صرفة).
+        $this->clubService->generateMonthFees($year->id, '2026-05', $roboticsClub->id);
 
         $report = $this->clubService->getReport([
             'month' => '2026-05',
@@ -120,6 +126,9 @@ class ClubFeesTest extends TestCase
         $enrollment2 = $this->makeEnrollment($year); // another level
 
         $mentalClub = Club::where('name', 'الحساب الذهني')->firstOrFail();
+
+        // سجلات الشهر تُولَّد صراحةً قبل التقرير (التقرير قراءة صرفة).
+        $this->clubService->generateMonthFees($year->id, '2026-05', $mentalClub->id);
 
         $report = $this->clubService->getReport([
             'month' => '2026-05',
@@ -188,6 +197,9 @@ class ClubFeesTest extends TestCase
 
         $club = $this->makeClub();
         $this->clubService->subscribeStudent($enrollment1->student_id, $club->id, $year->id);
+        $this->clubService->subscribeStudent($enrollment2->student_id, $club->id, $year->id);
+        // سجلات الشهر تُولَّد صراحةً عبر generateMonthFees (التقرير قراءة صرفة).
+        $this->clubService->generateMonthFees($year->id, '2026-05', $club->id);
 
         $report = $this->clubService->getReport([
             'month' => '2026-05',
@@ -216,6 +228,9 @@ class ClubFeesTest extends TestCase
         $enrSec2->update(['section_id' => $sec2->id]);
 
         $club = $this->makeClub();
+
+        // سجلات الشهر تُولَّد صراحةً قبل كل استعلام تقرير (التقرير قراءة صرفة).
+        $this->clubService->generateMonthFees($year->id, '2026-05', $club->id);
 
         // Query Section 1
         $report1 = $this->clubService->getReport([
@@ -631,5 +646,40 @@ class ClubFeesTest extends TestCase
 
         $unpaidCurrent->refresh();
         $this->assertEquals(15.00, (float) $unpaidCurrent->amount_due);
+    }
+
+    /** 21. التقرير قراءة صرفة: فتحه مع club_id + section/level لا يُنشئ اشتراكاً ولا سجلّ شهر. */
+    public function test_getReport_does_not_write_subscriptions_or_month_fees(): void
+    {
+        $year = $this->makeAcademicYear();
+        $enrollment = $this->makeEnrollment($year);
+        $club = $this->makeClub();
+
+        $subsBefore = ClubSubscription::count();
+        $feesBefore = ClubMonthlyFee::count();
+
+        // قراءة مع club_id + section_id ثم club_id + level_id — يجب ألا تكتب شيئاً.
+        $this->clubService->getReport([
+            'month' => '2026-05',
+            'academic_year_id' => $year->id,
+            'club_id' => $club->id,
+            'section_id' => $enrollment->section_id,
+        ]);
+
+        $this->clubService->getReport([
+            'month' => '2026-05',
+            'academic_year_id' => $year->id,
+            'club_id' => $club->id,
+            'level_id' => $enrollment->level_id,
+        ]);
+
+        $this->assertSame($subsBefore, ClubSubscription::count(), 'التقرير لا يُنشئ اشتراكات نوادٍ');
+        $this->assertSame($feesBefore, ClubMonthlyFee::count(), 'التقرير لا يُنشئ سجلات أشهر');
+        $this->assertEmpty($this->clubService->getReport([
+            'month' => '2026-05',
+            'academic_year_id' => $year->id,
+            'club_id' => $club->id,
+            'section_id' => $enrollment->section_id,
+        ])['records'], 'بدون توليد صريح لا توجد سجلات شهر لعرضها');
     }
 }

@@ -6,13 +6,20 @@ use App\Http\Requests\CollectPaymentRequest;
 use App\Models\AcademicYear;
 use App\Models\Enrollment;
 use App\Models\Section;
+use App\Models\Student;
 use App\Services\CollectionService;
+use App\Services\OpeningBalanceService;
+use App\Services\PaymentAllocationService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 class CollectionController extends Controller
 {
-    public function __construct(private readonly CollectionService $collectionService) {}
+    public function __construct(
+        private readonly CollectionService $collectionService,
+        private readonly OpeningBalanceService $openingBalances,
+        private readonly PaymentAllocationService $allocationService,
+    ) {}
 
     public function years(): JsonResponse
     {
@@ -83,19 +90,19 @@ class CollectionController extends Controller
             return [
                 'enrollment_id' => $e->id,
                 'student' => [
-                    'id'           => $e->student->id,
-                    'first_name'   => $e->student->first_name,
-                    'last_name'    => $e->student->last_name,
+                    'id' => $e->student->id,
+                    'first_name' => $e->student->first_name,
+                    'last_name' => $e->student->last_name,
                     'student_code' => $e->student->student_code,
                 ],
                 'guardian' => $guardian ? [
                     'first_name' => $guardian->first_name,
-                    'last_name'  => $guardian->last_name,
-                    'phone'      => $guardian->phone,
+                    'last_name' => $guardian->last_name,
+                    'phone' => $guardian->phone,
                 ] : null,
             ];
         })
-            ->sortBy(fn ($row) => trim($row['student']['first_name'] . ' ' . $row['student']['last_name']))
+            ->sortBy(fn ($row) => trim($row['student']['first_name'].' '.$row['student']['last_name']))
             ->values();
 
         return response()->json($result);
@@ -126,6 +133,7 @@ class CollectionController extends Controller
             return response()->json(['message' => $e->getMessage()], 422);
         } catch (\Exception $e) {
             report($e);
+
             return response()->json(['message' => 'فشل تسجيل الاستخلاص'], 500);
         }
     }
@@ -134,9 +142,9 @@ class CollectionController extends Controller
     {
         return response()->json([
             'enrollment_id' => $enrollment->id,
-            'paid_months'   => $this->collectionService->getPaidMonths($enrollment->id),
-            'ledger'        => $this->collectionService->monthLedger($enrollment->id),
-            'year_months'   => $enrollment->academicYear
+            'paid_months' => $this->collectionService->getPaidMonths($enrollment->id),
+            'ledger' => $this->collectionService->monthLedger($enrollment->id),
+            'year_months' => $enrollment->academicYear
                 ? $this->collectionService->getAcademicYearMonths($enrollment->academicYear)
                 : [],
         ]);
@@ -146,9 +154,9 @@ class CollectionController extends Controller
     {
         $data = $request->validate([
             'enrollment_id' => ['required', 'integer', 'exists:enrollments,id'],
-            'months'        => ['required', 'array', 'min:1'],
-            'months.*'      => ['required', 'string', 'regex:/^\d{4}-(0[1-9]|1[0-2])$/'],
-            'fee_type_id'   => ['nullable', 'integer', 'exists:fee_types,id'],
+            'months' => ['required', 'array', 'min:1'],
+            'months.*' => ['required', 'string', 'regex:/^\d{4}-(0[1-9]|1[0-2])$/'],
+            'fee_type_id' => ['nullable', 'integer', 'exists:fee_types,id'],
         ]);
 
         $preview = $this->collectionService->preview(
@@ -158,5 +166,47 @@ class CollectionController extends Controller
         );
 
         return response()->json($preview);
+    }
+
+    /**
+     * متخلّدات السنوات السابقة لتلميذ — الرصيد الافتتاحي الذي يُعرض للقابض
+     * قبل القبض حتى يقرّر كيف يوزّع المبلغ بين الدَّين القديم ورسوم السنة.
+     */
+    public function openingBalances(Student $student, Request $request): JsonResponse
+    {
+        $request->validate([
+            'academic_year_id' => ['nullable', 'integer', 'exists:academic_years,id'],
+        ]);
+
+        $yearId = $request->integer('academic_year_id') ?: null;
+
+        return response()->json([
+            'student_id' => $student->id,
+            'academic_year_id' => $yearId,
+            'summary' => $this->openingBalances->summaryForStudent($student, $yearId),
+            'items' => $this->openingBalances->priorYearFeesForStudent($student, $yearId),
+        ]);
+    }
+
+    /**
+     * معاينة توزيع مبلغ على تلميذ حسب الترتيب الافتراضي (الأقدم أولاً).
+     *
+     * يراها المحاسب قبل تثبيت الوصل ويعدّلها يدوياً إن شاء؛ الخادم يتحقق
+     * من التوزيع الصريح النهائي عند الحفظ فلا يتجاوز متبقّي أي رسم.
+     */
+    public function allocationPreview(Student $student, Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'amount' => ['required', 'numeric', 'min:0.01', 'max:1000000'],
+            'academic_year_id' => ['nullable', 'integer', 'exists:academic_years,id'],
+        ]);
+
+        return response()->json(
+            $this->allocationService->suggest(
+                $student,
+                (float) $data['amount'],
+                $request->integer('academic_year_id') ?: null
+            )
+        );
     }
 }

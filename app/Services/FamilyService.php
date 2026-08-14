@@ -28,11 +28,11 @@ class FamilyService
         $query = Guardian::query()
             ->with(['students.enrollments.section.level', 'students.enrollments.studentFees.paymentAllocations']);
 
-        if (!empty($search)) {
+        if (! empty($search)) {
             $query->where(function ($q) use ($search) {
                 $q->where('first_name', 'like', "%{$search}%")
-                  ->orWhere('last_name', 'like', "%{$search}%")
-                  ->orWhere('phone', 'like', "%{$search}%");
+                    ->orWhere('last_name', 'like', "%{$search}%")
+                    ->orWhere('phone', 'like', "%{$search}%");
             });
         }
 
@@ -42,7 +42,7 @@ class FamilyService
             return $this->formatFamilySummary($g);
         });
 
-        if ($paginator->total() === 0 && !empty($search)) {
+        if ($paginator->total() === 0 && ! empty($search)) {
             $phoneStudents = Student::where('guardian_phone', 'like', "%{$search}%")
                 ->orWhere('guardian_first_name', 'like', "%{$search}%")
                 ->orWhere('guardian_last_name', 'like', "%{$search}%")
@@ -52,12 +52,14 @@ class FamilyService
 
             $fallbackItems = [];
             foreach ($phoneStudents as $phone => $sts) {
-                if (empty($phone)) continue;
+                if (empty($phone)) {
+                    continue;
+                }
                 $first = $sts->first();
                 $fallbackItems[] = $this->formatVirtualFamilySummary($phone, $first->guardian_first_name, $first->guardian_last_name, $sts);
             }
 
-            if (!empty($fallbackItems)) {
+            if (! empty($fallbackItems)) {
                 return [
                     'data' => $fallbackItems,
                     'current_page' => 1,
@@ -91,7 +93,7 @@ class FamilyService
                 'students.enrollments.section.level',
                 'students.enrollments.academicYear',
                 'students.enrollments.studentFees.feeType',
-                'students.enrollments.studentFees.paymentAllocations'
+                'students.enrollments.studentFees.paymentAllocations',
             ])->find((int) $familyId);
 
             if ($guardian) {
@@ -100,16 +102,16 @@ class FamilyService
         }
 
         // 2. إذا كان المعرف نصياً يعتمد على الهاتف (مثل phone_95420350 أو 95420350)
-        if (!$details) {
+        if (! $details) {
             $phone = str_replace('phone_', '', (string) $familyId);
             $phoneDigits = preg_replace('/\D/', '', $phone);
 
-            if (!empty($phoneDigits)) {
+            if (! empty($phoneDigits)) {
                 $guardian = Guardian::with([
                     'students.enrollments.section.level',
                     'students.enrollments.academicYear',
                     'students.enrollments.studentFees.feeType',
-                    'students.enrollments.studentFees.paymentAllocations'
+                    'students.enrollments.studentFees.paymentAllocations',
                 ])->where('phone', 'like', "%{$phoneDigits}%")->first();
 
                 if ($guardian) {
@@ -120,7 +122,7 @@ class FamilyService
                             'enrollments.section.level',
                             'enrollments.academicYear',
                             'enrollments.studentFees.feeType',
-                            'enrollments.studentFees.paymentAllocations'
+                            'enrollments.studentFees.paymentAllocations',
                         ])->get();
 
                     if ($students->isNotEmpty()) {
@@ -130,7 +132,7 @@ class FamilyService
             }
         }
 
-        if (!$details) {
+        if (! $details) {
             throw new ModelNotFoundException('العائلة غير موجودة');
         }
 
@@ -163,16 +165,16 @@ class FamilyService
                 $guardian = Guardian::find((int) $familyId);
             }
 
-            if (!$guardian) {
+            if (! $guardian) {
                 $phoneDigits = preg_replace('/\D/', '', (string) $familyId);
-                if (!empty($phoneDigits)) {
+                if (! empty($phoneDigits)) {
                     $guardian = Guardian::where('phone', 'like', "%{$phoneDigits}%")->first();
                 }
             }
 
             $guardianName = $guardian
                 ? "{$guardian->first_name} {$guardian->last_name}"
-                : 'ولي أمر (هاتف ' . str_replace('phone_', '', (string) $familyId) . ')';
+                : 'ولي أمر (هاتف '.str_replace('phone_', '', (string) $familyId).')';
             $guardianIdLabel = $guardian?->id ?? $familyId;
 
             $allocationsInput = $data['allocations'] ?? [];
@@ -200,7 +202,7 @@ class FamilyService
                 $studentFee = null;
 
                 // إذا كان بنداً جديداً تم إنشاؤه في شاشة الاستخلاص (ترسيم جديد أو نادي جديد)
-                if ($feeId === 0 && !empty($alloc['new_item'])) {
+                if ($feeId === 0 && ! empty($alloc['new_item'])) {
                     $newItem = $alloc['new_item'];
                     $stId = (int) $newItem['student_id'];
                     $enrollmentId = (int) $newItem['enrollment_id'];
@@ -212,14 +214,17 @@ class FamilyService
                         $desc = $newItem['description'] ?? 'معلوم ترسيم';
 
                         $existingFee = StudentFee::where('enrollment_id', $enrollmentId)
-                            ->where(function ($q) use ($feeTypeId, $desc) {
-                                if ($feeTypeId > 0) $q->where('fee_type_id', $feeTypeId);
-                                else $q->where('description', 'like', "%ترسيم%");
+                            ->where(function ($q) use ($feeTypeId) {
+                                if ($feeTypeId > 0) {
+                                    $q->where('fee_type_id', $feeTypeId);
+                                } else {
+                                    $q->where('description', 'like', '%ترسيم%');
+                                }
                             })->first();
 
                         if ($existingFee) {
                             if ($existingFee->outstanding() <= 0 || $existingFee->status === 'paid') {
-                                throw new InvalidArgumentException("معلوم الترسيم لهذا التلميذ مدفوع مسبقاً ولا يمكن تكرار استخلاصه");
+                                throw new InvalidArgumentException('معلوم الترسيم لهذا التلميذ مدفوع مسبقاً ولا يمكن تكرار استخلاصه');
                             }
                             $studentFee = $existingFee;
                         } else {
@@ -271,8 +276,8 @@ class FamilyService
                     $studentFee = StudentFee::where('id', $feeId)->lockForUpdate()->first();
                 }
 
-                if (!$studentFee) {
-                    throw new InvalidArgumentException("الرسم المستحق غير موجود");
+                if (! $studentFee) {
+                    throw new InvalidArgumentException('الرسم المستحق غير موجود');
                 }
 
                 $remaining = $studentFee->outstanding();
@@ -315,7 +320,7 @@ class FamilyService
                     'family_id' => $guardianIdLabel,
                     'guardian_name' => $guardianName,
                     'is_collective' => true,
-                ]
+                ],
             ]);
 
             $receiptItems = [];
@@ -344,23 +349,16 @@ class FamilyService
                 $stName = $student ? "{$student->first_name} {$student->last_name}" : 'تلميذ';
 
                 $receiptItems[] = [
-                    'description' => "[{$stName}] " . ($fee->description ?? 'رسم مستحق'),
+                    'description' => "[{$stName}] ".($fee->description ?? 'رسم مستحق'),
                     'amount' => $pay,
                     'student_name' => $stName,
                 ];
             }
 
-            // 3. قيد واحد بالدفتر النقدي المركزي للخزينة cash_transactions
-            $this->ledgerService->post(
-                source: $payment,
-                category: 'monthly_fee',
-                direction: 'in',
-                amount: $totalAmount,
-                date: $paymentDate,
-                academicYearId: null,
-                description: "تحصيل جماعي لعائلة {$guardianName} (وصل #{$payment->id})",
-                createdBy: $userId
-            );
+            // 3. قيد بالدفتر النقدي المركزي عبر recordPayment: يوزّع المبلغ تلقائياً
+            // على بنود المداخيل حسب الرسوم، ويفصل قبض ديون السنوات السابقة
+            // (prior_year_debt) عن مدخول السنة الحالية — نفس منطق الاستخلاص المفرد.
+            $this->ledgerService->recordPayment($payment);
 
             $familyDetailsAfter = $this->getFamilyDetails($familyId);
 
@@ -375,7 +373,7 @@ class FamilyService
                 'student_name' => "عائلة {$guardianName}",
                 'items' => $receiptItems,
                 'remaining_amount' => $familyDetailsAfter['family_remaining_debt'],
-                'user_name' => auth()->user()?->first_name . ' ' . auth()->user()?->last_name,
+                'user_name' => auth()->user()?->first_name.' '.auth()->user()?->last_name,
             ];
         });
     }
@@ -454,7 +452,7 @@ class FamilyService
         });
 
         return [
-            'id' => 'phone_' . preg_replace('/\D/', '', $phone),
+            'id' => 'phone_'.preg_replace('/\D/', '', $phone),
             'guardian_name' => $gName,
             'phone' => $phone,
             'address' => '—',
@@ -533,7 +531,7 @@ class FamilyService
     protected function formatVirtualFamilyFullDetails(string $phone, $students): array
     {
         $first = $students->first();
-        $gName = trim(($first->guardian_first_name ?? '') . ' ' . ($first->guardian_last_name ?? '')) ?: 'ولي أمر';
+        $gName = trim(($first->guardian_first_name ?? '').' '.($first->guardian_last_name ?? '')) ?: 'ولي أمر';
 
         $familyRemaining = 0;
         $familyPaid = 0;
@@ -582,7 +580,7 @@ class FamilyService
         });
 
         return [
-            'id' => 'phone_' . preg_replace('/\D/', '', $phone),
+            'id' => 'phone_'.preg_replace('/\D/', '', $phone),
             'guardian_name' => $gName,
             'phone' => $phone,
             'email' => null,

@@ -49,4 +49,10 @@ class Student extends Model
     {
         return $this->hasMany(ClubSubscription::class);
     }
+
+    /** الأرصدة الافتتاحية المحمولة على هذا التلميذ في السنوات الجديدة. */
+    public function openingBalances(): HasMany
+    {
+        return $this->hasMany(OpeningBalance::class);
+    }
 }

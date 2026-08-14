@@ -9,6 +9,7 @@ import {
   getSectionsByYear,
   getStudentsBySection,
   getCollectionPreview,
+  getStudentOpeningBalances,
   type CollectionPreview,
   paymentsApi,
 } from '../../api/payments';
@@ -85,6 +86,11 @@ export function CollectionPage() {
 
   const [previewData, setPreviewData] = useState<CollectionPreview | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
+
+  // متخلّدات السنوات السابقة (رصيد افتتاحي) — القابض يوزّع جزءاً من الدفعة عليها.
+  const [priorItems, setPriorItems] = useState<any[]>([]);
+  const [priorSelections, setPriorSelections] = useState<Record<number, boolean>>({});
+  const [priorAmounts, setPriorAmounts] = useState<Record<number, string>>({});
 
 
   useEffect(() => {
@@ -198,6 +204,22 @@ export function CollectionPage() {
         uniq.push(r);
       }
       setLedgerRows(uniq.sort((a,b)=>String(b.payment_date).localeCompare(String(a.payment_date))));
+
+      // الرصيد الافتتاحي: متخلّدات السنوات السابقة للمحاسب على الشاشة نفسها.
+      try {
+        const ob: any = await getStudentOpeningBalances(row.student.id);
+        setPriorItems(ob.items || []);
+        const am: Record<number, string> = {};
+        (ob.items || []).forEach((it: any) => {
+          am[it.student_fee_id] = String(it.outstanding ?? it.amount ?? 0);
+        });
+        setPriorAmounts(am);
+        setPriorSelections({});
+      } catch (e: any) {
+        setPriorItems([]);
+        setPriorSelections({});
+        setPriorAmounts({});
+      }
     } catch (e: any) {
       setError(e.message || 'فشل جلب الأشهر');
     } finally {
@@ -237,11 +259,19 @@ export function CollectionPage() {
     }, 0);
   }, [selectedFees, feeAmounts]);
 
+  // قبض ديون السنوات السابقة: يستهلك من رصيد الدفعة لكنه لا يُعتبر مدخولاً جديداً.
+  const priorTotal = useMemo(() => {
+    return Object.entries(priorSelections).reduce((sum, [id, on]) => {
+      if (!on) return sum;
+      return sum + (parseFloat(priorAmounts[Number(id)] || '0') || 0);
+    }, 0);
+  }, [priorSelections, priorAmounts]);
+
   const monthsTotal = parseFloat(monthlyPrice || '0') || 0;
   const itemsTotal = productsTotal + monthsTotal;
   // التخفيض لم يعد يُطبَّق عند القبض: صار سعراً سنوياً ثابتاً في enrollment_discounts.
   // هنا يُدفع السعر الكامل، والتخفيض السنوي يُدار من صفحة التلميذ.
-  const total = itemsTotal;
+  const total = itemsTotal + priorTotal;
 
   async function handleSave() {
     if (!picked) return;
@@ -264,7 +294,12 @@ export function CollectionPage() {
         return acc;
       }, {})
     );
-    if (!mergedItems.length) { setError('أدخل معلوم الشهر أو اختر معلوماً'); return; }
+    const priorAllocs = Object.entries(priorSelections)
+      .filter(([, on]) => on)
+      .map(([id]) => ({ student_fee_id: Number(id), amount: parseFloat(priorAmounts[Number(id)] || '0') }))
+      .filter((x) => x.amount > 0);
+
+    if (!mergedItems.length && priorAllocs.length === 0) { setError('أدخل معلوم الشهر أو اختر معلوماً'); return; }
 
     const payload = {
       student_id: picked.student.id,
@@ -275,6 +310,7 @@ export function CollectionPage() {
       reference: reference || null,
       notes: notes || null,
       items: mergedItems,
+      prior_allocations: priorAllocs,
     };
 
     setSaving(true);
@@ -308,10 +344,12 @@ export function CollectionPage() {
           description: it.description || it.name || it.fee_type_name || it.name_ar
             || it.student_fee?.description || it.feeType?.name_ar || 'بند',
           amount: it.amount ?? it.amount_allocated ?? 0,
+          is_prior_year: Boolean(it.is_prior_year),
         })),
         total: raw.total ?? raw.amount,
         amount: raw.amount ?? raw.total,
         discount: raw.discount ?? 0,
+        prior_total: raw.prior_total ?? 0,
         method_label: raw.method_label || raw.method,
         payment_id: raw.payment_id || raw.id,
         payment_date: raw.payment_date || raw.paid_at,
@@ -513,6 +551,40 @@ export function CollectionPage() {
               )}
             </div>
 
+            {priorItems.length > 0 && (
+              <div className="bg-white rounded-2xl border p-4" style={{ borderColor: '#E7E5E4' }}>
+                <div className="font-semibold mb-1" style={{ color: '#57534E' }}>متخلّدات السنوات السابقة (رصيد افتتاحي)</div>
+                <p className="text-xs mb-2" style={{ color: C.muted }}>
+                  قبض هذه المتخلّدات يزيد الصندوق لكنه لا يُحتسب مدخولاً للسنة الحالية — يمكنك تعديل المبالغ قبل الحفظ.
+                </p>
+                <div className="space-y-2">
+                  {priorItems.map((it) => (
+                    <label key={it.student_fee_id} className="flex items-center gap-3 p-2 rounded-xl border" style={{ borderColor: '#EDE9E9' }}>
+                      <input
+                        type="checkbox"
+                        checked={!!priorSelections[it.student_fee_id]}
+                        onChange={(e) => setPriorSelections((p) => ({ ...p, [it.student_fee_id]: e.target.checked }))}
+                      />
+                      <span className="flex-1 text-sm" style={{ color: '#44403C' }}>
+                        {it.description}
+                        <span className="mr-2 text-xs" style={{ color: '#A8A29E' }}>(متبقّي: {Number(it.outstanding ?? 0).toFixed(2)} د.ت)</span>
+                      </span>
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        max={Number(it.outstanding ?? 0)}
+                        value={priorAmounts[it.student_fee_id] || ''}
+                        onChange={(e) => setPriorAmounts((p) => ({ ...p, [it.student_fee_id]: e.target.value }))}
+                        className="w-24 border rounded-lg px-2 py-1 text-sm"
+                        style={{ borderColor: '#E7E5E4', direction: 'ltr' }}
+                      />
+                    </label>
+                  ))}
+                </div>
+              </div>
+            )}
+
             <div className="bg-white rounded-2xl border p-4" style={{ borderColor: C.line }}>
               <div className="font-semibold mb-2" style={{ color: C.ink }}>المعاليم / النوادي</div>
               <div className="space-y-2">
@@ -595,6 +667,11 @@ export function CollectionPage() {
               <div>
                 <div className="text-xs" style={{ color: C.muted }}>المجموع</div>
                 <div className="text-2xl font-extrabold" style={{ color: C.forest }}>{total.toFixed(2)} د.ت</div>
+                {priorTotal > 0 && (
+                  <div className="text-xs mt-1" style={{ color: '#A16207' }}>
+                    منها قبض دَين سابق (ليس مدخولاً جديداً): {priorTotal.toFixed(2)} د.ت
+                  </div>
+                )}
               </div>
               <button type="button" onClick={handleSave} disabled={saving || total <= 0 || Boolean(previewData?.is_fully_waived)}
                 className="px-6 py-3 rounded-2xl text-white font-bold transition disabled:opacity-50"
