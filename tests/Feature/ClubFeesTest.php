@@ -186,6 +186,26 @@ class ClubFeesTest extends TestCase
         $res->assertJsonPath('result.created', 1);
     }
 
+    /** Dashboard المتخلدات يجمع إجمالي القسم والتلميذ ويعرض تفاصيل المعلوم غير المسدد. */
+    public function test_arrears_dashboard_groups_by_section_and_student(): void
+    {
+        $year = $this->makeAcademicYear();
+        $enrollment = $this->makeEnrollment($year);
+        $club = $this->makeClub(['monthly_fee' => 75.00]);
+        $this->clubService->subscribeStudent($enrollment->student_id, $club->id, $year->id);
+        $this->clubService->generateMonthFees($year->id, '2025-09', $club->id);
+
+        $dashboard = $this->clubService->getArrearsDashboard(['academic_year_id' => $year->id]);
+
+        $this->assertSame(1, $dashboard['summary']['sections_count']);
+        $this->assertSame(1, $dashboard['summary']['students_count']);
+        $this->assertSame(75.0, (float) $dashboard['summary']['total_remaining']);
+        $this->assertSame(75.0, (float) $dashboard['sections'][0]['total_remaining']);
+        $this->assertSame($enrollment->student_id, $dashboard['students'][0]['student_id']);
+        $this->assertSame(75.0, (float) $dashboard['students'][0]['total_remaining']);
+        $this->assertSame('نادي الشطرنج', $dashboard['students'][0]['details'][0]['club_name']);
+    }
+
     /** 7. الفلترة حسب القسم تعيد كافة التلاميذ النشطين في هذا القسم وتستبعد أقساماً أخرى. */
     public function test_filtering_by_section_displays_all_active_students_in_that_section(): void
     {
