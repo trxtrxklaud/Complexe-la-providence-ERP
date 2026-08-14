@@ -72,6 +72,8 @@ export function CollectionPage() {
 
   const [feeAmounts, setFeeAmounts] = useState<Record<number, string>>({});
   const [selectedFees, setSelectedFees] = useState<Record<number, boolean>>({});
+  const [selectedClubFees, setSelectedClubFees] = useState<Record<number, boolean>>({});
+  const [clubAmounts, setClubAmounts] = useState<Record<number, string>>({});
   const [monthlyPrice, setMonthlyPrice] = useState('0');
   const [method, setMethod] = useState<'cash' | 'bank_transfer' | 'check' | 'card'>('cash');
   const [paymentDate, setPaymentDate] = useState(new Date().toISOString().slice(0, 10));
@@ -102,6 +104,12 @@ export function CollectionPage() {
     getCollectionPreview(picked.enrollment_id, selectedMonths, tuitionFee?.id)
       .then((res) => {
         setPreviewData(res);
+        const clubDefaults: Record<number, string> = {};
+        (res.club_items || []).forEach((item: any) => {
+          clubDefaults[item.club_monthly_fee_id] = String(item.remaining_amount ?? 0);
+        });
+        setClubAmounts(clubDefaults);
+        setSelectedClubFees({});
         if (res.items && res.items.length > 0) {
           setMonthlyPrice(String(res.remaining_amount));
         }
@@ -252,6 +260,14 @@ export function CollectionPage() {
     });
   }
 
+  const clubTotal = useMemo(() => {
+    if (!previewData?.club_items) return 0;
+    return previewData.club_items.reduce((sum, item) => {
+      if (!selectedClubFees[item.club_monthly_fee_id]) return sum;
+      return sum + (parseFloat(clubAmounts[item.club_monthly_fee_id] || '0') || 0);
+    }, 0);
+  }, [previewData, selectedClubFees, clubAmounts]);
+
   const productsTotal = useMemo(() => {
     return Object.entries(selectedFees).reduce((sum, [id, on]) => {
       if (!on) return sum;
@@ -268,10 +284,11 @@ export function CollectionPage() {
   }, [priorSelections, priorAmounts]);
 
   const monthsTotal = parseFloat(monthlyPrice || '0') || 0;
-  const itemsTotal = productsTotal + monthsTotal;
+  const itemsTotal = productsTotal + monthsTotal + clubTotal;
   // التخفيض لم يعد يُطبَّق عند القبض: صار سعراً سنوياً ثابتاً في enrollment_discounts.
   // هنا يُدفع السعر الكامل، والتخفيض السنوي يُدار من صفحة التلميذ.
   const total = itemsTotal + priorTotal;
+  const blockedByFullWaiver = Boolean(previewData?.is_fully_waived) && clubTotal <= 0 && priorTotal <= 0;
 
   async function handleSave() {
     if (!picked) return;
@@ -294,6 +311,13 @@ export function CollectionPage() {
         return acc;
       }, {})
     );
+    const clubItems = Object.entries(selectedClubFees)
+      .filter(([, on]) => on)
+      .map(([id]) => ({
+        club_monthly_fee_id: Number(id),
+        amount: parseFloat(clubAmounts[Number(id)] || '0'),
+      }))
+      .filter((x) => x.amount > 0);
     const priorAllocs = Object.entries(priorSelections)
       .filter(([, on]) => on)
       .map(([id]) => ({ student_fee_id: Number(id), amount: parseFloat(priorAmounts[Number(id)] || '0') }))
@@ -310,6 +334,7 @@ export function CollectionPage() {
       reference: reference || null,
       notes: notes || null,
       items: mergedItems,
+      club_items: clubItems,
       prior_allocations: priorAllocs,
     };
 
@@ -359,6 +384,7 @@ export function CollectionPage() {
       await refreshLedger(picked.enrollment_id);
       setSelectedMonths([]);
       setSelectedFees({});
+      setSelectedClubFees({});
     } catch (e: any) {
       setError(e.message || 'فشل الحفظ');
     } finally {
@@ -585,6 +611,22 @@ export function CollectionPage() {
               </div>
             )}
 
+            {previewData?.club_items?.length > 0 && (
+              <div className="bg-white rounded-2xl border p-4" style={{ borderColor: '#D9E6D1' }}>
+                <div className="font-semibold mb-1" style={{ color: C.forest }}>متخلدات النوادي للشهور المختارة</div>
+                <p className="text-xs mb-2" style={{ color: C.muted }}>تُنشأ تلقائياً عند استخلاص المعلوم الشهري، ولا تُقبض إلا إذا اخترتها هنا.</p>
+                <div className="space-y-2">
+                  {previewData.club_items.map((item) => (
+                    <label key={item.club_monthly_fee_id} className="flex items-center gap-3 p-2 rounded-xl border" style={{ borderColor: C.line }}>
+                      <input type="checkbox" checked={!!selectedClubFees[item.club_monthly_fee_id]} onChange={(e) => setSelectedClubFees((p) => ({ ...p, [item.club_monthly_fee_id]: e.target.checked }))} />
+                      <span className="flex-1 text-sm" style={{ color: C.ink }}>{item.club_name} — {monthLabel(item.month)}<span className="mr-2 text-xs" style={{ color: C.muted }}>(متبقّي: {Number(item.remaining_amount).toFixed(2)} د.ت)</span></span>
+                      <input type="number" min="0" max={item.remaining_amount} step="0.01" value={clubAmounts[item.club_monthly_fee_id] || ''} onChange={(e) => setClubAmounts((p) => ({ ...p, [item.club_monthly_fee_id]: e.target.value }))} className="w-24 border rounded-lg px-2 py-1 text-sm" style={{ borderColor: C.line, direction: 'ltr' }} />
+                    </label>
+                  ))}
+                </div>
+              </div>
+            )}
+
             <div className="bg-white rounded-2xl border p-4" style={{ borderColor: C.line }}>
               <div className="font-semibold mb-2" style={{ color: C.ink }}>المعاليم / النوادي</div>
               <div className="space-y-2">
@@ -667,16 +709,19 @@ export function CollectionPage() {
               <div>
                 <div className="text-xs" style={{ color: C.muted }}>المجموع</div>
                 <div className="text-2xl font-extrabold" style={{ color: C.forest }}>{total.toFixed(2)} د.ت</div>
+                {clubTotal > 0 && (
+                  <div className="text-xs mt-1" style={{ color: C.forest }}>منها معاليم نوادٍ: {clubTotal.toFixed(2)} د.ت</div>
+                )}
                 {priorTotal > 0 && (
                   <div className="text-xs mt-1" style={{ color: '#A16207' }}>
                     منها قبض دَين سابق (ليس مدخولاً جديداً): {priorTotal.toFixed(2)} د.ت
                   </div>
                 )}
               </div>
-              <button type="button" onClick={handleSave} disabled={saving || total <= 0 || Boolean(previewData?.is_fully_waived)}
+              <button type="button" onClick={handleSave} disabled={saving || total <= 0 || blockedByFullWaiver}
                 className="px-6 py-3 rounded-2xl text-white font-bold transition disabled:opacity-50"
-                style={{ background: saving || total <= 0 || Boolean(previewData?.is_fully_waived) ? C.muted : C.forest }}>
-                {saving ? 'جاري الحفظ...' : previewData?.is_fully_waived ? 'معفى كلياً — لا يمكن القبض' : 'حفظ'}
+                style={{ background: saving || total <= 0 || blockedByFullWaiver ? C.muted : C.forest }}>
+                {saving ? 'جاري الحفظ...' : blockedByFullWaiver ? 'معفى كلياً — لا يمكن القبض' : 'حفظ'}
               </button>
 
             </div>

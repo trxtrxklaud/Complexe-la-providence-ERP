@@ -29,6 +29,7 @@ const DiscountsPage = lazy(() => import('./pages/Discounts/DiscountsPage').then(
 const MonthlyDiscountsPage = lazy(() => import('./pages/Discounts/MonthlyDiscountsPage').then((module) => ({ default: module.MonthlyDiscountsPage })));
 
 const ClubFeesReportPage = lazy(() => import('./pages/Reports/ClubFeesReportPage'));
+const ClubArrearsDashboardPage = lazy(() => import('./pages/Reports/ClubArrearsDashboardPage'));
 const ClubsPage = lazy(() => import('./pages/Clubs/ClubsPage'));
 const UserForm = lazy(() => import('./pages/Users/UserForm').then((module) => ({ default: module.UserForm })));
 const NewStudentWizard = lazy(() => import('./pages/Students/NewStudentWizard').then((module) => ({ default: module.NewStudentWizard })));
@@ -224,6 +225,12 @@ export default function App() {
                         <Route path="by-year" element={<RevenueByYearPage />} />
                         <Route path="unpaid-monthly" element={<ProtectedRoute permission="view_reports"><UnpaidMonthlyReportPage /></ProtectedRoute>} />
                     </Route>
+
+                    <Route path="/reports/club-arrears" element={
+                        <ProtectedRoute anyOf={['manage_payments', 'view_reports']}>
+                            <Layout><ClubArrearsDashboardPage /></Layout>
+                        </ProtectedRoute>
+                    } />
 
                     <Route path="/reports/club-fees" element={
                         <ProtectedRoute anyOf={['manage_payments', 'view_reports']}>

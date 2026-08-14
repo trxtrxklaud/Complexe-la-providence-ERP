@@ -176,6 +176,16 @@ export function Sidebar() {
 
                 {canAny('manage_payments', 'view_reports') && (
                     <NavLink
+                        to="/reports/club-arrears"
+                        className={({ isActive }) => linkClass(isActive || startsWith('/reports/club-arrears'))}
+                    >
+                        <Wallet size={20} />
+                        <span>Dashboard متخلدات النوادي</span>
+                    </NavLink>
+                )}
+
+                {canAny('manage_payments', 'view_reports') && (
+                    <NavLink
                         to="/reports/club-fees"
                         className={({ isActive }) => linkClass(isActive || startsWith('/reports/club-fees'))}
                     >

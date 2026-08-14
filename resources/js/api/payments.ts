@@ -97,6 +97,7 @@ export async function collectPayment(data: {
   reference?: string | null;
   notes?: string | null;
   items: { fee_type_id: number; amount: number }[];
+  club_items?: { club_monthly_fee_id: number; amount: number }[];
   // توزيع صريح على متخلّدات السنوات السابقة (اختياري).
   prior_allocations?: { student_fee_id: number; amount: number }[];
 }) {
@@ -162,6 +163,17 @@ export type CollectionPreview = {
     is_fully_waived: boolean;
     discount_reason: string | null;
   }>;
+  club_items: Array<{
+    club_monthly_fee_id: number;
+    student_fee_id: number | null;
+    month: string;
+    club_name: string;
+    amount_due: number;
+    amount_paid: number;
+    remaining_amount: number;
+    status: string;
+  }>;
+  club_remaining_amount: number;
 };
 
 export async function getCollectionPreview(enrollmentId: number, months: string[], feeTypeId?: number): Promise<CollectionPreview> {
