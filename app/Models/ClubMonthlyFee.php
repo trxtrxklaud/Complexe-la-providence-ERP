@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 
 class ClubMonthlyFee extends Model
 {
@@ -73,6 +74,11 @@ class ClubMonthlyFee extends Model
     public function subscription(): BelongsTo
     {
         return $this->belongsTo(ClubSubscription::class, 'club_subscription_id');
+    }
+
+    public function studentFee(): HasOne
+    {
+        return $this->hasOne(StudentFee::class, 'club_monthly_fee_id');
     }
 
     public function createdBy(): BelongsTo

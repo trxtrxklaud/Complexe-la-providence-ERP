@@ -12,6 +12,19 @@ class ClubReportController extends Controller
 {
     public function __construct(private readonly ClubService $clubService) {}
 
+    public function arrearsDashboard(Request $request): JsonResponse
+    {
+        $request->validate([
+            'academic_year_id' => ['nullable', 'integer', 'exists:academic_years,id'],
+            'club_id' => ['nullable', 'integer', 'exists:clubs,id'],
+            'level_id' => ['nullable', 'integer', 'exists:levels,id'],
+            'section_id' => ['nullable', 'integer', 'exists:sections,id'],
+            'search' => ['nullable', 'string', 'max:100'],
+        ]);
+
+        return response()->json($this->clubService->getArrearsDashboard($request->all()));
+    }
+
     public function report(Request $request): JsonResponse
     {
         $request->validate([

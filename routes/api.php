@@ -226,6 +226,7 @@ Route::middleware(['auth:sanctum', 'active', 'throttle:120,1'])->group(function 
     // تقارير واستخلاص معلوم النوادي
     Route::middleware('permission:manage_payments')->group(function () {
         Route::get('/reports/club-fees', [ClubReportController::class, 'report']);
+        Route::get('/reports/club-arrears', [ClubReportController::class, 'arrearsDashboard']);
         Route::post('/reports/club-fees/generate', [ClubReportController::class, 'generateMonth']);
         Route::post('/club-monthly-fees/{monthlyFee}/collect', [ClubReportController::class, 'collectPayment']);
         Route::post('/club-monthly-fees/{monthlyFee}/cancel', [ClubReportController::class, 'cancelPayment']);

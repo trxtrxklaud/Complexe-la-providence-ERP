@@ -178,8 +178,9 @@ class PaymentController extends Controller
                     'due_date'    => $fee->due_date,
                     'status'      => $fee->status,
                     'allocated'   => $allocated,
+                    'direct_paid' => $fee->directPaidAmount(),
                     'waived'      => $waived,
-                    'remaining'   => max(0, round((float) $fee->amount_due - $allocated - $waived, 2)),
+                    'remaining'   => max(0, round((float) $fee->amount_due - $allocated - $fee->directPaidAmount() - $waived, 2)),
                     'frequency'   => $fee->feePlan?->frequency,
                     'category'    => $fee->feeType?->resolveLedgerCategory(),
                 ];

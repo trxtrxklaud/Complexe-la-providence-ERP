@@ -10,6 +10,7 @@ class PaymentAllocation extends Model
     protected $fillable = [
         'payment_id',
         'student_fee_id',
+        'club_monthly_fee_id',
         'amount_allocated',
     ];
 
@@ -25,5 +26,10 @@ class PaymentAllocation extends Model
     public function studentFee(): BelongsTo
     {
         return $this->belongsTo(StudentFee::class);
+    }
+
+    public function clubMonthlyFee(): BelongsTo
+    {
+        return $this->belongsTo(ClubMonthlyFee::class, 'club_monthly_fee_id');
     }
 }

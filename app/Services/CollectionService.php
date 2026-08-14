@@ -3,12 +3,14 @@
 namespace App\Services;
 
 use App\Models\AcademicYear;
+use App\Models\ClubMonthlyFee;
 use App\Models\Enrollment;
 use App\Models\FeePlan;
 use App\Models\FeeType;
 use App\Models\MonthlyDiscount;
 use App\Models\Payment;
 use App\Models\PaymentAllocation;
+use App\Models\OpeningBalance;
 use App\Models\StudentFee;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
@@ -27,6 +29,7 @@ class CollectionService
     public function __construct(
         private readonly PaymentService $paymentService,
         private readonly LedgerService $ledgerService,
+        private readonly ClubService $clubService,
     ) {}
 
     public function collect(array $data, int $createdBy): array
@@ -63,19 +66,29 @@ class CollectionService
                     );
                 }
 
-                $months = $data['months'];
+                $months = $data['months'] ?? [];
                 sort($months);
-                $this->validateMonths($months, $enrollment);
-                // إعادة حساب المعاينة والتخفيضات على مستوى الخادم لحماية الاستخلاص
-                $tuitionFeeTypeId = $data['items'][0]['fee_type_id'] ?? null;
-                $preview = $this->preview($enrollment->id, $months, $tuitionFeeTypeId);
+                $items = $data['items'] ?? [];
+                $tuitionFeeTypeId = $items[0]['fee_type_id'] ?? null;
 
-                if ($preview['is_fully_waived']) {
+                if (! empty($months)) {
+                    $this->validateMonths($months, $enrollment);
+                    // إنشاء رسوم النوادي غير المدفوعة للتلميذ ضمن نفس عملية الاستخلاص.
+                    // عدم إدراجها في items يعني أنها تبقى متخلدة، بينما club_items يقبضها اختيارياً.
+                    $this->clubService->ensureFeesForEnrollment($enrollment, $months, $createdBy);
+                    // إعادة حساب المعاينة والتخفيضات على مستوى الخادم لحماية الاستخلاص.
+                    $preview = $this->preview($enrollment->id, $months, $tuitionFeeTypeId);
+                } else {
+                    // سداد دين قديم فقط لا يحتاج إلى شهر حالي أو بند رسوم جديد.
+                    $preview = ['is_fully_waived' => false, 'remaining_amount' => 0.0];
+                }
+
+                if ($preview['is_fully_waived'] && empty($data['club_items']) && empty($data['prior_allocations'])) {
                     throw new \InvalidArgumentException('هذا المعلوم معفى كلياً ولا يوجد مبلغ مستحق.');
                 }
 
                 $maxPayable = (float) $preview['remaining_amount'];
-                $tuitionItem = collect($data['items'])->firstWhere('fee_type_id', $tuitionFeeTypeId);
+                $tuitionItem = collect($items)->firstWhere('fee_type_id', $tuitionFeeTypeId);
                 $tuitionAmount = $tuitionItem ? round((float) $tuitionItem['amount'], 2) : 0.0;
 
                 if ($tuitionAmount > $maxPayable + 0.001) {
@@ -84,7 +97,9 @@ class CollectionService
                     );
                 }
 
-                $itemsTotal = round((float) array_sum(array_column($data['items'], 'amount')), 2);
+                $clubItems = $this->validateClubItems($data['club_items'] ?? [], $enrollment, $months);
+                $clubTotal = round((float) array_sum(array_column($clubItems, 'amount')), 2);
+                $itemsTotal = round((float) array_sum(array_column($items, 'amount')) + $clubTotal, 2);
 
                 $monthsLabel = implode(' / ', array_map(
                     fn ($m) => (self::MONTH_NAMES_AR[substr($m, 5)] ?? $m).' '.substr($m, 0, 4),
@@ -151,7 +166,48 @@ class CollectionService
                     ];
                 }
 
-                foreach ($data['items'] as $item) {
+                foreach ($clubItems as $clubItem) {
+                    $clubFee = ClubMonthlyFee::whereKey($clubItem['club_monthly_fee_id'])->lockForUpdate()->firstOrFail();
+                    $clubFee->update([
+                        'amount_paid' => number_format((float) $clubFee->amount_paid + $clubItem['amount'], 2, '.', ''),
+                        'status' => ((float) $clubFee->amount_paid + $clubItem['amount']) >= (float) $clubFee->amount_due
+                            ? ClubMonthlyFee::STATUS_PAID
+                            : ClubMonthlyFee::STATUS_PARTIAL,
+                        'paid_at' => $data['payment_date'],
+                        'method' => $data['method'],
+                        'reference' => $data['reference'] ?? null,
+                        'notes' => $data['notes'] ?? null,
+                        'created_by' => $createdBy,
+                    ]);
+
+                    $studentFee = $clubFee->studentFee()->firstOrFail();
+                    PaymentAllocation::create([
+                        'payment_id' => $payment->id,
+                        'student_fee_id' => $studentFee->id,
+                        'amount_allocated' => $clubItem['amount'],
+                    ]);
+                    $feeIds[] = $studentFee->id;
+                    $this->paymentService->recalculateStudentFeeStatus($studentFee->id);
+
+                    $label = $studentFee->description ?? 'معلوم النادي';
+                    $receiptItems[] = [
+                        'fee_type_id' => null,
+                        'fee_type_name' => $label,
+                        'description' => $label,
+                        'amount' => (float) $clubItem['amount'],
+                        'is_club_fee' => true,
+                        'is_prior_year' => false,
+                    ];
+                    $allocationsBreakdown[] = [
+                        'type' => 'club_fee',
+                        'student_fee_id' => (int) $studentFee->id,
+                        'club_monthly_fee_id' => (int) $clubFee->id,
+                        'description' => $label,
+                        'amount' => (float) $clubItem['amount'],
+                    ];
+                }
+
+                foreach ($items as $item) {
                     $feeType = FeeType::findOrFail($item['fee_type_id']);
                     $amount = round((float) $item['amount'], 2);
 
@@ -264,6 +320,27 @@ class CollectionService
         }
     }
 
+    private function validateClubItems(array $items, Enrollment $enrollment, array $months): array
+    {
+        $validated = [];
+        foreach ($items as $item) {
+            $fee = ClubMonthlyFee::with('studentFee')
+                ->whereKey((int) ($item['club_monthly_fee_id'] ?? 0))
+                ->lockForUpdate()
+                ->first();
+            $amount = round((float) ($item['amount'] ?? 0), 2);
+            if (! $fee || ! $fee->studentFee || (int) $fee->enrollment_id !== (int) $enrollment->id) {
+                throw new \InvalidArgumentException('رسم النادي المحدد لا يخص هذا التلميذ أو الشهر المختار');
+            }
+            $remaining = round((float) $fee->amount_due - (float) $fee->amount_paid, 2);
+            if ($amount <= 0 || $amount > $remaining) {
+                throw new \InvalidArgumentException('مبلغ معلوم النادي يتجاوز المتبقي لهذا الشهر');
+            }
+            $validated[] = ['club_monthly_fee_id' => $fee->id, 'amount' => $amount];
+        }
+        return $validated;
+    }
+
     private function isDuplicateKey(QueryException $e): bool
     {
         $code = (string) $e->getCode();
@@ -290,10 +367,29 @@ class CollectionService
 
         foreach ($input as $allocation) {
             $feeId = (int) ($allocation['student_fee_id'] ?? 0);
+            $openingBalanceId = (int) ($allocation['opening_balance_id'] ?? 0);
             $amount = round((float) ($allocation['amount'] ?? 0), 2);
 
             if ($amount <= 0) {
                 continue;
+            }
+
+            if (($feeId > 0) === ($openingBalanceId > 0)) {
+                throw new \InvalidArgumentException('يجب تحديد student_fee_id أو opening_balance_id فقط');
+            }
+
+            if ($openingBalanceId > 0) {
+                $balance = OpeningBalance::query()
+                    ->with('sourceStudentFee.enrollment')
+                    ->whereKey($openingBalanceId)
+                    ->lockForUpdate()
+                    ->first();
+
+                $sourceFee = $balance?->sourceStudentFee;
+                if (! $balance || $balance->isCancelled() || (int) $balance->student_id !== (int) $enrollment->student_id || ! $sourceFee) {
+                    throw new \InvalidArgumentException('الرصيد الافتتاحي رقم '.$openingBalanceId.' غير موجود لهذا التلميذ');
+                }
+                $feeId = (int) $sourceFee->id;
             }
 
             /** @var StudentFee|null $fee */
@@ -311,15 +407,16 @@ class CollectionService
 
             $outstanding = $fee->outstanding();
 
-            if ($amount > $outstanding) {
+            $alreadyPlanned = (float) ($planned[$feeId] ?? 0.0);
+            if ($alreadyPlanned + $amount > $outstanding) {
                 throw new \InvalidArgumentException(
-                    'مبلغ التوزيع ('.number_format($amount, 2, '.', '')
+                    'مبلغ التوزيع ('.number_format($alreadyPlanned + $amount, 2, '.', '')
                     .') يتجاوز المتبقّي ('.number_format($outstanding, 2, '.', '')
                     .') للرسم: '.$fee->description
                 );
             }
 
-            $planned[$feeId] = round(($planned[$feeId] ?? 0.0) + $amount, 2);
+            $planned[$feeId] = round($alreadyPlanned + $amount, 2);
         }
 
         return $planned;
@@ -450,6 +547,7 @@ class CollectionService
     {
         $enrollment = Enrollment::with(['student', 'academicYear', 'level'])->findOrFail($enrollmentId);
         $academicYear = $enrollment->academicYear;
+        $this->clubService->ensureFeesForEnrollment($enrollment, $months);
 
         // 1. المعلوم الشهري المحدد في المخطط أو سعر نوع الرسم
         $grossPerMonth = (float) FeePlan::query()
@@ -549,6 +647,24 @@ class CollectionService
             ];
         }
 
+        $clubItems = ClubMonthlyFee::query()
+            ->with(['club:id,name', 'studentFee:id,club_monthly_fee_id'])
+            ->where('enrollment_id', $enrollment->id)
+            ->whereNull('cancelled_at')
+            ->whereColumn('amount_paid', '<', 'amount_due')
+            ->orderBy('month')
+            ->get()
+            ->map(fn (ClubMonthlyFee $fee) => [
+                'club_monthly_fee_id' => $fee->id,
+                'student_fee_id' => $fee->studentFee?->id,
+                'month' => $fee->month,
+                'club_name' => $fee->club?->name ?? 'النادي',
+                'amount_due' => (float) $fee->amount_due,
+                'amount_paid' => (float) $fee->amount_paid,
+                'remaining_amount' => max(0, round((float) $fee->amount_due - (float) $fee->amount_paid, 2)),
+                'status' => $fee->status,
+            ])->values()->all();
+
         return [
             'enrollment_id' => $enrollment->id,
             'student_id' => $enrollment->student_id,
@@ -563,6 +679,8 @@ class CollectionService
             'discount_reason' => $activeDiscountReason,
             'can_collect' => ! $hasFullWaiver && round($totalRemaining, 2) > 0.0,
             'items' => $items,
+            'club_items' => $clubItems,
+            'club_remaining_amount' => round((float) array_sum(array_column($clubItems, 'remaining_amount')), 2),
         ];
     }
 }

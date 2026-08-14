@@ -359,6 +359,10 @@ class LedgerService
      */
     private function categoryForFee(?StudentFee $fee): string
     {
+        if ($fee?->club_monthly_fee_id !== null) {
+            return CashTransaction::CATEGORY_CLUB_FEE;
+        }
+
         if ($fee?->feePlan) {
             return $fee->feePlan->frequency === 'yearly'
                 ? CashTransaction::CATEGORY_REGISTRATION_FEE
