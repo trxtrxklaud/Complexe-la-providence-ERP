@@ -20,7 +20,15 @@ class ClubReportController extends Controller
             'level_id' => ['nullable', 'integer', 'exists:levels,id'],
             'section_id' => ['nullable', 'integer', 'exists:sections,id'],
             'search' => ['nullable', 'string', 'max:100'],
+            'from_month' => ['nullable', 'string', 'regex:/^\d{4}-(0[1-9]|1[0-2])$/'],
+            'to_month' => ['nullable', 'string', 'regex:/^\d{4}-(0[1-9]|1[0-2])$/'],
         ]);
+        
+        if ($request->filled('from_month') && $request->filled('to_month')) {
+            if ($request->from_month > $request->to_month) {
+                return response()->json(['message' => 'شهر البداية يجب أن يكون قبل شهر النهاية'], 422);
+            }
+        }
 
         return response()->json($this->clubService->getArrearsDashboard($request->all()));
     }
@@ -35,7 +43,15 @@ class ClubReportController extends Controller
             'section_id' => ['nullable', 'integer', 'exists:sections,id'],
             'status' => ['nullable', 'string', 'in:paid,unpaid,partial,pending,all'],
             'search' => ['nullable', 'string', 'max:100'],
+            'from_month' => ['nullable', 'string', 'regex:/^\d{4}-(0[1-9]|1[0-2])$/'],
+            'to_month' => ['nullable', 'string', 'regex:/^\d{4}-(0[1-9]|1[0-2])$/'],
         ]);
+        
+        if ($request->filled('from_month') && $request->filled('to_month')) {
+            if ($request->from_month > $request->to_month) {
+                return response()->json(['message' => 'شهر البداية يجب أن يكون قبل شهر النهاية'], 422);
+            }
+        }
 
         $params = $request->all();
         if (isset($params['status']) && ($params['status'] === 'all' || $params['status'] === '')) {

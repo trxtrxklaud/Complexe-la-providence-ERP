@@ -33,6 +33,8 @@ export default function ClubFeesReportPage() {
   // Selected filters
   const [selectedYearId, setSelectedYearId] = useState<number | ''>('');
   const [selectedMonth, setSelectedMonth] = useState<string>(new Date().toISOString().slice(0, 7));
+  const [fromMonth, setFromMonth] = useState<string>('');
+  const [toMonth, setToMonth] = useState<string>('');
   const [selectedClubId, setSelectedClubId] = useState<number | ''>('');
   const [selectedLevelId, setSelectedLevelId] = useState<number | ''>('');
   const [selectedSectionId, setSelectedSectionId] = useState<number | ''>('');
@@ -53,7 +55,7 @@ export default function ClubFeesReportPage() {
 
   useEffect(() => {
     loadReport();
-  }, [selectedYearId, selectedMonth, selectedClubId, selectedLevelId, selectedSectionId, selectedStatus, search]);
+  }, [selectedYearId, selectedMonth, selectedClubId, selectedLevelId, selectedSectionId, selectedStatus, search, fromMonth, toMonth]);
 
   useEffect(() => {
     const handleClubFeeUpdated = async () => {
@@ -98,7 +100,9 @@ export default function ClubFeesReportPage() {
     try {
       const data = await fetchClubFeesReport({
         academic_year_id: selectedYearId ? Number(selectedYearId) : undefined,
-        month: selectedMonth || undefined,
+        month: undefined,
+        from_month: fromMonth || undefined,
+        to_month: toMonth || undefined,
         club_id: selectedClubId ? Number(selectedClubId) : undefined,
         level_id: selectedLevelId ? Number(selectedLevelId) : undefined,
         section_id: selectedSectionId ? Number(selectedSectionId) : undefined,
@@ -341,13 +345,28 @@ export default function ClubFeesReportPage() {
           </div>
 
           <div>
-            <label className="block text-xs font-semibold text-gray-600 mb-1">الشهر</label>
+            <label className="block text-xs font-semibold text-gray-600 mb-1">من شهر</label>
             <input
               type="month"
-              value={selectedMonth}
-              onChange={(e) => setSelectedMonth(e.target.value)}
+              value={fromMonth}
+              onChange={(e) => setFromMonth(e.target.value)}
               className="w-full text-sm border-gray-300 rounded-lg p-2 bg-gray-50"
             />
+          </div>
+          <div>
+            <label className="block text-xs font-semibold text-gray-600 mb-1">إلى شهر</label>
+            <input
+              type="month"
+              value={toMonth}
+              onChange={(e) => setToMonth(e.target.value)}
+              className="w-full text-sm border-gray-300 rounded-lg p-2 bg-gray-50"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-semibold text-blue-600 mb-1 text-center">توليد سجلات</label>
+            <div className="flex gap-1" title="توليد سجلات شهر محدد">
+             <input type="month" value={selectedMonth} onChange={(e) => setSelectedMonth(e.target.value)} className="w-2/3 text-sm border-gray-300 rounded-lg p-1 bg-blue-50 border-blue-200" />
+            </div>
           </div>
 
           <div>
@@ -501,7 +520,7 @@ export default function ClubFeesReportPage() {
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {records.map((r: any) => (
-                  <tr key={r.id} className="hover:bg-gray-50">
+                  <tr key={`${r.id}-${r.month}`} className="hover:bg-gray-50">
                     <td className="p-3 text-gray-500 font-mono">{r.student_code}</td>
                     <td className="p-3 font-semibold text-gray-800">
                       {r.student_name}

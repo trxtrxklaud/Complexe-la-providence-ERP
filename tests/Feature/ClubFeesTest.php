@@ -45,6 +45,19 @@ class ClubFeesTest extends TestCase
         return $user;
     }
 
+    private function attachClubToEnrollment(Club $club, $enrollment)
+    {
+        \Illuminate\Support\Facades\DB::table('club_sections')->updateOrInsert([
+            'club_id' => $club->id,
+            'section_id' => $enrollment->section_id,
+        ]);
+        
+        \Illuminate\Support\Facades\DB::table('club_levels')->updateOrInsert([
+            'club_id' => $club->id,
+            'level_id' => $enrollment->level_id,
+        ]);
+    }
+
     private function makeClub(array $attributes = []): Club
     {
         $category = \App\Models\FeeCategory::firstOrCreate(

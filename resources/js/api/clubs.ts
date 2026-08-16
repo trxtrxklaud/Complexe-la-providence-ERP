@@ -206,6 +206,8 @@ export function fetchClubArrearsDashboard(params: {
   club_id?: number;
   level_id?: number;
   section_id?: number;
+  from_month?: string;
+  to_month?: string;
   search?: string;
 }): Promise<ClubArrearsDashboardData> {
   return apiFetch<ClubArrearsDashboardData>('/reports/club-arrears', { params });

@@ -17,6 +17,8 @@ export default function ClubArrearsDashboardPage() {
   const [clubId, setClubId] = useState<number | ''>('');
   const [levelId, setLevelId] = useState<number | ''>('');
   const [sectionId, setSectionId] = useState<number | ''>('');
+  const [fromMonth, setFromMonth] = useState('');
+  const [toMonth, setToMonth] = useState('');
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -44,11 +46,13 @@ export default function ClubArrearsDashboardPage() {
       level_id: levelId ? Number(levelId) : undefined,
       section_id: sectionId ? Number(sectionId) : undefined,
       search: search.trim() || undefined,
+      from_month: fromMonth || undefined,
+      to_month: toMonth || undefined,
     })
       .then(setData)
       .catch((err: any) => setError(err.message || 'تعذر تحميل Dashboard المتخلدات'))
       .finally(() => setLoading(false));
-  }, [yearId, clubId, levelId, sectionId, search]);
+  }, [yearId, clubId, levelId, sectionId, search, fromMonth, toMonth]);
 
   const filteredSections = useMemo(() => {
     return sections.filter((section) => !levelId || section.level_id === Number(levelId));
@@ -92,7 +96,7 @@ export default function ClubArrearsDashboardPage() {
 
       {error && <div className="no-print flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700"><AlertCircle size={17} /> {error}</div>}
 
-      <div className="no-print grid grid-cols-1 gap-3 rounded-2xl border bg-white p-4 md:grid-cols-5">
+      <div className="no-print flex flex-wrap gap-4 rounded-2xl border bg-white p-4 *:flex-1 *:min-w-[150px]">
         <label className="text-sm font-semibold">السنة الدراسية
           <select value={yearId} onChange={(e) => setYearId(e.target.value ? Number(e.target.value) : '')} className="mt-1 w-full rounded-xl border px-3 py-2 font-normal">
             <option value="">اختر السنة</option>
@@ -116,6 +120,12 @@ export default function ClubArrearsDashboardPage() {
             <option value="">كل الأقسام</option>
             {filteredSections.map((section) => <option key={section.id} value={section.id}>{section.name}</option>)}
           </select>
+        </label>
+        <label className="text-sm font-semibold">من شهر
+          <input type="month" value={fromMonth} onChange={(e) => setFromMonth(e.target.value)} className="mt-1 w-full rounded-xl border px-3 py-2 font-normal" />
+        </label>
+        <label className="text-sm font-semibold">إلى شهر
+          <input type="month" value={toMonth} onChange={(e) => setToMonth(e.target.value)} className="mt-1 w-full rounded-xl border px-3 py-2 font-normal" />
         </label>
         <label className="text-sm font-semibold">بحث عن تلميذ
           <div className="relative mt-1"><Search size={16} className="absolute right-3 top-3 text-slate-400" /><input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="الاسم أو رقم التلميذ" className="w-full rounded-xl border py-2 pr-9 pl-3 font-normal" /></div>
@@ -145,7 +155,7 @@ export default function ClubArrearsDashboardPage() {
                 return <div key={`${section.section_id}-${section.section_name}`} className="rounded-2xl border bg-white p-4">
                   <div className="flex items-center justify-between gap-3"><div><h2 className="font-bold">{section.section_name}</h2><p className="text-xs text-slate-500">{section.students_count} تلميذًا · {section.fees_count} معلومًا</p></div><strong className="text-lg text-[#3B4A36]">{money(section.total_remaining)}</strong></div>
                   <div className="mt-3 h-3 overflow-hidden rounded-full bg-slate-100"><div className="h-full rounded-full bg-amber-500" style={{ width: `${Math.max(4, (section.total_remaining / max) * 100)}%` }} /></div>
-                  <div className="mt-3 space-y-2">{section.students.slice(0, 5).map((student) => <div key={student.student_id} className="flex items-center justify-between border-b pb-2 text-sm last:border-0"><span>{student.student_name}<small className="mr-2 text-slate-400">{student.student_code}</small></span><strong>{money(student.total_remaining)}</strong></div>)}</div>
+                  <div className="mt-3 space-y-2">{section.students.slice(0, 5).map((student) => <div key={`${data.academic_year_id}-${student.student_id}`} className="flex items-center justify-between border-b pb-2 text-sm last:border-0"><span>{student.student_name}<small className="mr-2 text-slate-400">{student.student_code}</small></span><strong>{money(student.total_remaining)}</strong></div>)}</div>
                   {section.students.length > 5 && <p className="mt-2 text-xs text-slate-500">يظهر في الجدول أدناه كامل تلاميذ القسم.</p>}
                 </div>;
               })}
@@ -153,7 +163,7 @@ export default function ClubArrearsDashboardPage() {
 
             <div className="overflow-x-auto rounded-2xl border bg-white">
               <div className="flex items-center justify-between border-b p-4"><div><h2 className="font-bold">التفصيل حسب التلميذ والنادي</h2><p className="text-xs text-slate-500">كل سطر يمثل معلوم نادي غير مسدد أو مسدد جزئيًا.</p></div><strong className="text-[#3B4A36]">{money(data.summary.total_remaining)}</strong></div>
-              <table className="w-full min-w-[900px] text-sm"><thead className="bg-slate-50 text-right"><tr><th className="p-3">القسم</th><th className="p-3">التلميذ</th><th className="p-3">النادي</th><th className="p-3">الشهر</th><th className="p-3">المستحق</th><th className="p-3">المدفوع</th><th className="p-3">المتخلد</th></tr></thead><tbody>{detailRows.map(({ student, detail }) => <tr key={detail.id} className="border-t"><td className="p-3">{detail.section_name}</td><td className="p-3 font-semibold">{student.student_name}<div className="text-xs font-normal text-slate-400">{student.student_code}</div></td><td className="p-3">{detail.club_name}</td><td className="p-3">{detail.month}</td><td className="p-3">{money(detail.amount_due)}</td><td className="p-3 text-emerald-700">{money(detail.amount_paid)}</td><td className="p-3 font-bold text-amber-700">{money(detail.remaining)}</td></tr>)}</tbody><tfoot><tr className="border-t bg-slate-50 font-bold"><td colSpan={6} className="p-3">الإجمالي العام</td><td className="p-3 text-amber-700">{money(data.summary.total_remaining)}</td></tr></tfoot></table>
+              <table className="w-full min-w-[900px] text-sm"><thead className="bg-slate-50 text-right"><tr><th className="p-3">القسم</th><th className="p-3">التلميذ</th><th className="p-3">النادي</th><th className="p-3">الشهر</th><th className="p-3">المستحق</th><th className="p-3">المدفوع</th><th className="p-3">المتخلد</th></tr></thead><tbody>{detailRows.map(({ student, detail }) => <tr key={`${data.academic_year_id}-${detail.id}`} className="border-t"><td className="p-3">{detail.section_name}</td><td className="p-3 font-semibold">{student.student_name}<div className="text-xs font-normal text-slate-400">{student.student_code}</div></td><td className="p-3">{detail.club_name}</td><td className="p-3">{detail.month}</td><td className="p-3">{money(detail.amount_due)}</td><td className="p-3 text-emerald-700">{money(detail.amount_paid)}</td><td className="p-3 font-bold text-amber-700">{money(detail.remaining)}</td></tr>)}</tbody><tfoot><tr className="border-t bg-slate-50 font-bold"><td colSpan={6} className="p-3">الإجمالي العام</td><td className="p-3 text-amber-700">{money(data.summary.total_remaining)}</td></tr></tfoot></table>
             </div>
           </>
         )}
