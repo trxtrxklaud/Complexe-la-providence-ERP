@@ -25,18 +25,18 @@ const C = {
 };
 
 const METHOD_LABELS: Record<string, string> = {
-  cash: 'نقداً',
-  bank_transfer: 'تحويل بنكي',
-  check: 'شيك',
-  card: 'بطاقة',
+  cash: '?????',
+  bank_transfer: '????? ????',
+  check: '???',
+  card: '?????',
 };
 
-const TUITION_AR = 'القسط الشهري';
+const TUITION_AR = '????? ??????';
 
 const MONTH_AR: Record<string, string> = {
-  '01': 'جانفي', '02': 'فيفري', '03': 'مارس', '04': 'أفريل',
-  '05': 'ماي', '06': 'جوان', '07': 'جويلية', '08': 'أوت',
-  '09': 'سبتمبر', '10': 'أكتوبر', '11': 'نوفمبر', '12': 'ديسمبر',
+  '01': '?????', '02': '?????', '03': '????', '04': '?????',
+  '05': '???', '06': '????', '07': '??????', '08': '???',
+  '09': '??????', '10': '??????', '11': '??????', '12': '??????',
 };
 
 function monthLabel(m: string) {
@@ -46,12 +46,12 @@ function monthLabel(m: string) {
 
 
 function userCode(u?: any) {
-  if (!u) return '—';
+  if (!u) return '?';
   if (u.code) return String(u.code);
   const a = (u.first_name || '').trim();
   const b = (u.last_name || '').trim();
   if (a && b) return (a[0] + '.' + b[0]).toUpperCase();
-  return String(u.username || '—').slice(0, 2).toUpperCase();
+  return String(u.username || '?').slice(0, 2).toUpperCase();
 }
 
 export function CollectionPage() {
@@ -89,7 +89,7 @@ export function CollectionPage() {
   const [previewData, setPreviewData] = useState<CollectionPreview | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
 
-  // متخلّدات السنوات السابقة (رصيد افتتاحي) — القابض يوزّع جزءاً من الدفعة عليها.
+  // ???????? ??????? ??????? (???? ???????) ? ?????? ????? ????? ?? ?????? ?????.
   const [priorItems, setPriorItems] = useState<any[]>([]);
   const [priorSelections, setPriorSelections] = useState<Record<number, boolean>>({});
   const [priorAmounts, setPriorAmounts] = useState<Record<number, string>>({});
@@ -115,7 +115,7 @@ export function CollectionPage() {
         }
       })
       .catch((e) => {
-        setError(e.message || 'فشل جلب المعاينة والتخفيض');
+        setError(e.message || '??? ??? ???????? ????????');
       })
       .finally(() => setPreviewLoading(false));
   }, [picked, selectedMonths, tuitionFee]);
@@ -134,7 +134,7 @@ export function CollectionPage() {
         fees.forEach((x: any) => { am[x.id] = String(x.price ?? 0); });
         setFeeAmounts(am);
       })
-      .catch((e) => setError(e.message || 'فشل التحميل'));
+      .catch((e) => setError(e.message || '??? ???????'));
 
     const handleClubFeeUpdated = () => {
       getFeeTypes().then((f) => {
@@ -166,7 +166,7 @@ export function CollectionPage() {
       const s = await getSectionsByYear(Number(id));
       setSections(Array.isArray(s) ? s : []);
     } catch (e: any) {
-      setError(e.message || 'فشل جلب الأقسام');
+      setError(e.message || '??? ??? ???????');
     }
   }
 
@@ -180,7 +180,7 @@ export function CollectionPage() {
       const list = await getStudentsBySection(Number(id), Number(yearId));
       setStudents(Array.isArray(list) ? list : []);
     } catch (e: any) {
-      setError(e.message || 'فشل جلب التلاميذ');
+      setError(e.message || '??? ??? ????????');
     }
   }
 
@@ -213,7 +213,7 @@ export function CollectionPage() {
       }
       setLedgerRows(uniq.sort((a,b)=>String(b.payment_date).localeCompare(String(a.payment_date))));
 
-      // الرصيد الافتتاحي: متخلّدات السنوات السابقة للمحاسب على الشاشة نفسها.
+      // ?????? ?????????: ???????? ??????? ??????? ??????? ??? ?????? ?????.
       try {
         const ob: any = await getStudentOpeningBalances(row.student.id);
         setPriorItems(ob.items || []);
@@ -229,7 +229,7 @@ export function CollectionPage() {
         setPriorAmounts({});
       }
     } catch (e: any) {
-      setError(e.message || 'فشل جلب الأشهر');
+      setError(e.message || '??? ??? ??????');
     } finally {
       setLoading(false);
     }
@@ -247,7 +247,7 @@ export function CollectionPage() {
       const idxs = next.map((x) => yearMonths.indexOf(x)).filter((i) => i >= 0).sort((a, b) => a - b);
       if (!idxs.length) return [];
       if (idxs[0] !== startIdx) {
-        setError('يجب البدء من أول شهر غير مدفوع: ' + monthLabel(firstUnpaid));
+        setError('??? ????? ?? ??? ??? ??? ?????: ' + monthLabel(firstUnpaid));
         return prev;
       }
       const consecutive = [idxs[0]];
@@ -275,7 +275,7 @@ export function CollectionPage() {
     }, 0);
   }, [selectedFees, feeAmounts]);
 
-  // قبض ديون السنوات السابقة: يستهلك من رصيد الدفعة لكنه لا يُعتبر مدخولاً جديداً.
+  // ??? ???? ??????? ???????: ?????? ?? ???? ?????? ???? ?? ?????? ??????? ??????.
   const priorTotal = useMemo(() => {
     return Object.entries(priorSelections).reduce((sum, [id, on]) => {
       if (!on) return sum;
@@ -285,21 +285,21 @@ export function CollectionPage() {
 
   const monthsTotal = parseFloat(monthlyPrice || '0') || 0;
   const itemsTotal = productsTotal + monthsTotal + clubTotal;
-  // التخفيض لم يعد يُطبَّق عند القبض: صار سعراً سنوياً ثابتاً في enrollment_discounts.
-  // هنا يُدفع السعر الكامل، والتخفيض السنوي يُدار من صفحة التلميذ.
+  // ??????? ?? ??? ??????? ??? ?????: ??? ????? ?????? ?????? ?? enrollment_discounts.
+  // ??? ????? ????? ??????? ???????? ?????? ????? ?? ???? ???????.
   const total = itemsTotal + priorTotal;
   const blockedByFullWaiver = Boolean(previewData?.is_fully_waived) && clubTotal <= 0 && priorTotal <= 0;
 
   async function handleSave() {
     if (!picked) return;
-    if (!selectedMonths.length) { setError('اختر شهراً'); return; }
+    if (!selectedMonths.length) { setError('???? ?????'); return; }
     const items = Object.entries(selectedFees)
       .filter(([, on]) => on)
       .map(([id]) => ({ fee_type_id: Number(id), amount: parseFloat(feeAmounts[Number(id)] || '0') }))
       .filter((x) => x.amount > 0);
     const mp = parseFloat(monthlyPrice || '0') || 0;
     if (mp > 0) {
-      if (!tuitionFee) { setError('لا يوجد نوع معلوم باسم «القسط الشهري». شغّل بذرة المعاليم أو أضفه من صفحة أنواع المعاليم.'); return; }
+      if (!tuitionFee) { setError('?? ???? ??? ????? ???? �????? ??????�. ???? ???? ???????? ?? ???? ?? ???? ????? ????????.'); return; }
       items.unshift({ fee_type_id: Number(tuitionFee.id), amount: mp });
     }
     const mergedItems = Object.values(
@@ -323,7 +323,7 @@ export function CollectionPage() {
       .map(([id]) => ({ student_fee_id: Number(id), amount: parseFloat(priorAmounts[Number(id)] || '0') }))
       .filter((x) => x.amount > 0);
 
-    if (!mergedItems.length && priorAllocs.length === 0) { setError('أدخل معلوم الشهر أو اختر معلوماً'); return; }
+    if (!mergedItems.length && priorAllocs.length === 0) { setError('???? ????? ????? ?? ???? ???????'); return; }
 
     const payload = {
       student_id: picked.student.id,
@@ -352,22 +352,22 @@ export function CollectionPage() {
         student_name: raw.student_name
           || [student.first_name, student.last_name].filter(Boolean).join(' ')
           || [picked?.student?.first_name, picked?.student?.last_name].filter(Boolean).join(' ')
-          || '—',
+          || '?',
         section_name: raw.section_name
           || [level.name, section.name].filter(Boolean).join(' - ')
           || (document.querySelector('select') ? '' : '')
           || (sections.find((s: any) => String(s.id) === String(sectionId))
             ? ((sections.find((s: any) => String(s.id) === String(sectionId))?.level?.name || '') + ' ' + (sections.find((s: any) => String(s.id) === String(sectionId))?.name || '')).trim()
-            : '—'),
+            : '?'),
         guardian_name: raw.guardian_name
           || [guardian.first_name, guardian.last_name].filter(Boolean).join(' ')
           || [picked?.guardian?.first_name, picked?.guardian?.last_name].filter(Boolean).join(' ')
-          || '—',
+          || '?',
         months_label: raw.months_label || raw.months || selectedMonths,
         items: (raw.items || raw.allocations || []).map((it: any) => ({
           ...it,
           description: it.description || it.name || it.fee_type_name || it.name_ar
-            || it.student_fee?.description || it.feeType?.name_ar || 'بند',
+            || it.student_fee?.description || it.feeType?.name_ar || '???',
           amount: it.amount ?? it.amount_allocated ?? 0,
           is_prior_year: Boolean(it.is_prior_year),
         })),
@@ -378,7 +378,7 @@ export function CollectionPage() {
         method_label: raw.method_label || raw.method,
         payment_id: raw.payment_id || raw.id,
         payment_date: raw.payment_date || raw.paid_at,
-        user_name: [user?.first_name, user?.last_name].filter(Boolean).join(' ') || '—',
+        user_name: [user?.first_name, user?.last_name].filter(Boolean).join(' ') || '?',
       });
 
       await refreshLedger(picked.enrollment_id);
@@ -386,13 +386,13 @@ export function CollectionPage() {
       setSelectedFees({});
       setSelectedClubFees({});
     } catch (e: any) {
-      setError(e.message || 'فشل الحفظ');
+      setError(e.message || '??? ?????');
     } finally {
       setSaving(false);
     }
   }
 
-  // يُعيد جلب سجل الأشهر والمدفوعات بعد أي تغيير (حفظ أو إلغاء).
+  // ????? ??? ??? ?????? ?????????? ??? ?? ????? (??? ?? ?????).
   async function refreshLedger(enrollmentId?: number) {
     const eid = enrollmentId ?? picked?.enrollment_id;
     if (!eid) return;
@@ -414,18 +414,18 @@ export function CollectionPage() {
     setLedgerRows(uniq.sort((a, b) => String(b.payment_date).localeCompare(String(a.payment_date))));
   }
 
-  // إلغاء موثّق للدفعة: يطلب سبباً إلزامياً ثم يستدعي مسار الإلغاء.
+  // ????? ????? ??????: ???? ????? ???????? ?? ?????? ???? ???????.
   async function handleCancelPayment(paymentId: number): Promise<boolean> {
-    const reason = window.prompt('سبب إلغاء الدفعة (إلزامي):');
+    const reason = window.prompt('??? ????? ?????? (??????):');
     if (reason === null) return false;
-    if (reason.trim().length < 3) { alert('يرجى إدخال سبب واضح (3 أحرف على الأقل)'); return false; }
+    if (reason.trim().length < 3) { alert('???? ????? ??? ???? (3 ???? ??? ?????)'); return false; }
     try {
       await paymentsApi.cancel(paymentId, reason.trim());
       await refreshLedger();
-      alert('تم إلغاء الدفعة وتوثيق السبب. عادت أشهرها متاحة لإعادة الدفع.');
+      alert('?? ????? ?????? ?????? ?????. ???? ?????? ????? ?????? ?????.');
       return true;
     } catch (e: any) {
-      alert(e.message || 'فشل إلغاء الدفعة');
+      alert(e.message || '??? ????? ??????');
       return false;
     }
   }
@@ -467,8 +467,8 @@ export function CollectionPage() {
             <CreditCard size={22} />
           </div>
           <div>
-            <h1 className="text-2xl font-bold" style={{ color: C.ink }}>استخلاص الرسوم</h1>
-            <p className="text-sm" style={{ color: C.muted }}>سنة ← قسم ← تلميذ ← أشهر ← معاليم ← حفظ</p>
+            <h1 className="text-2xl font-bold" style={{ color: C.ink }}>??????? ??????</h1>
+            <p className="text-sm" style={{ color: C.muted }}>??? ? ??? ? ????? ? ???? ? ?????? ? ???</p>
           </div>
         </div>
 
@@ -480,25 +480,25 @@ export function CollectionPage() {
 
         <div className="bg-white rounded-2xl border p-4 grid grid-cols-1 md:grid-cols-3 gap-3" style={{ borderColor: C.line }}>
           <div>
-            <label className="text-sm font-semibold" style={{ color: C.ink }}>السنة الدراسية</label>
+            <label className="text-sm font-semibold" style={{ color: C.ink }}>????? ????????</label>
             <select value={yearId} onChange={(e) => onYearChange(e.target.value)} className="w-full mt-1 border rounded-xl px-3 py-2 text-sm" style={{ borderColor: C.line }}>
-              <option value="">اختر السنة</option>
+              <option value="">???? ?????</option>
               {years.map((y) => <option key={y.id} value={y.id}>{y.name}</option>)}
             </select>
           </div>
           <div>
-            <label className="text-sm font-semibold" style={{ color: C.ink }}>القسم</label>
+            <label className="text-sm font-semibold" style={{ color: C.ink }}>?????</label>
             <select value={sectionId} onChange={(e) => onSectionChange(e.target.value)} disabled={!yearId} className="w-full mt-1 border rounded-xl px-3 py-2 text-sm" style={{ borderColor: C.line }}>
-              <option value="">اختر القسم</option>
+              <option value="">???? ?????</option>
               {sections.map((s) => (
                 <option key={s.id} value={s.id}>{(s.level?.name ? s.level.name + ' - ' : '') + s.name}</option>
               ))}
             </select>
           </div>
           <div>
-            <label className="text-sm font-semibold" style={{ color: C.ink }}>التلميذ</label>
+            <label className="text-sm font-semibold" style={{ color: C.ink }}>???????</label>
             <select value={picked?.enrollment_id || ''} onChange={(e) => onStudentChange(e.target.value)} disabled={!sectionId} className="w-full mt-1 border rounded-xl px-3 py-2 text-sm" style={{ borderColor: C.line }}>
-              <option value="">اختر التلميذ</option>
+              <option value="">???? ???????</option>
               {students.map((row) => (
                 <option key={row.enrollment_id} value={row.enrollment_id}>
                   {row.student.first_name} {row.student.last_name} ({row.student.student_code})
@@ -520,23 +520,23 @@ export function CollectionPage() {
               }`}>
                 <div className="font-bold text-sm mb-1">
                   {previewData.is_fully_waived
-                    ? 'تخفيض كلي — هذا المعلوم معفى كلياً (0 د.ت) ولا يوجد مبلغ مستحق للقبض'
+                    ? '????? ??? ? ??? ??????? ???? ????? (0 ?.?) ??? ???? ???? ????? ?????'
                     : previewData.discount_type === 'humanitarian_fixed'
-                    ? 'تخفيض حالة إنسانية سارٍ'
+                    ? '????? ???? ??????? ????'
                     : previewData.discount_type === 'normal_monthly' || previewData.discount_type === 'normal'
-                    ? 'تخفيض عادي سارٍ'
+                    ? '????? ???? ????'
 
-                    : 'لا يوجد تخفيض على الأشهر المختارة'}
+                    : '?? ???? ????? ??? ?????? ????????'}
                 </div>
                 <div className="text-xs space-y-0.5">
-                  <div>المعلوم الأصلي: {previewData.gross_amount} د | التخفيض: {previewData.discount_amount} د | الصافي المستحق: {previewData.remaining_amount} د</div>
-                  {previewData.discount_reason && <div>السبب: {previewData.discount_reason}</div>}
+                  <div>??????? ??????: {previewData.gross_amount} ? | ???????: {previewData.discount_amount} ? | ?????? ???????: {previewData.remaining_amount} ?</div>
+                  {previewData.discount_reason && <div>?????: {previewData.discount_reason}</div>}
                 </div>
               </div>
             )}
 
             <div className="bg-white rounded-2xl border p-4" style={{ borderColor: C.line }}>
-              <label className="text-sm font-semibold" style={{ color: C.ink }}>مجموع معاليم الأشهر المختارة (د.ت)</label>
+              <label className="text-sm font-semibold" style={{ color: C.ink }}>????? ?????? ?????? ???????? (?.?)</label>
               <input
                 type="number"
                 min="0"
@@ -546,16 +546,16 @@ export function CollectionPage() {
                 onChange={(e) => setMonthlyPrice(e.target.value)}
                 className="w-full mt-1 border rounded-xl px-3 py-2 text-sm disabled:bg-slate-100 disabled:text-slate-400"
                 style={{ borderColor: C.line, direction: 'ltr' }}
-                placeholder="مثال: 150"
+                placeholder="????: 150"
               />
               <p className="text-xs mt-1" style={{ color: C.muted }}>
-                {previewData?.is_fully_waived ? 'المعلوم معفى كلياً ولا يمكن تغيير المبلغ' : 'المجموع الشهري يحسب آلياً بناء على التخفيضات والصافي'}
+                {previewData?.is_fully_waived ? '??????? ???? ????? ??? ???? ????? ??????' : '??????? ?????? ???? ????? ???? ??? ????????? ???????'}
               </p>
             </div>
 
 
             <div className="bg-white rounded-2xl border p-4" style={{ borderColor: C.line }}>
-              <div className="font-semibold mb-2" style={{ color: C.ink }}>الأشهر</div>
+              <div className="font-semibold mb-2" style={{ color: C.ink }}>??????</div>
               {loading ? <Loader2 className="animate-spin" /> : (
                 <div className="flex flex-wrap gap-2">
                   {yearMonths.map((m) => {
@@ -569,7 +569,7 @@ export function CollectionPage() {
                           color: paid ? '#15803D' : active ? 'white' : C.ink,
                           borderColor: C.line,
                         }}>
-                        {monthLabel(m)}{paid ? ' ✓' : ''}
+                        {monthLabel(m)}{paid ? ' ?' : ''}
                       </button>
                     );
                   })}
@@ -579,9 +579,9 @@ export function CollectionPage() {
 
             {priorItems.length > 0 && (
               <div className="bg-white rounded-2xl border p-4" style={{ borderColor: '#E7E5E4' }}>
-                <div className="font-semibold mb-1" style={{ color: '#57534E' }}>متخلّدات السنوات السابقة (رصيد افتتاحي)</div>
+                <div className="font-semibold mb-1" style={{ color: '#57534E' }}>???????? ??????? ??????? (???? ???????)</div>
                 <p className="text-xs mb-2" style={{ color: C.muted }}>
-                  قبض هذه المتخلّدات يزيد الصندوق لكنه لا يُحتسب مدخولاً للسنة الحالية — يمكنك تعديل المبالغ قبل الحفظ.
+                  ??? ??? ?????????? ???? ??????? ???? ?? ?????? ??????? ????? ??????? ? ????? ????? ??????? ??? ?????.
                 </p>
                 <div className="space-y-2">
                   {priorItems.map((it) => (
@@ -593,7 +593,7 @@ export function CollectionPage() {
                       />
                       <span className="flex-1 text-sm" style={{ color: '#44403C' }}>
                         {it.description}
-                        <span className="mr-2 text-xs" style={{ color: '#A8A29E' }}>(متبقّي: {Number(it.outstanding ?? 0).toFixed(2)} د.ت)</span>
+                        <span className="mr-2 text-xs" style={{ color: '#A8A29E' }}>(??????: {Number(it.outstanding ?? 0).toFixed(2)} ?.?)</span>
                       </span>
                       <input
                         type="number"
@@ -613,13 +613,13 @@ export function CollectionPage() {
 
             {previewData?.club_items?.length > 0 && (
               <div className="bg-white rounded-2xl border p-4" style={{ borderColor: '#D9E6D1' }}>
-                <div className="font-semibold mb-1" style={{ color: C.forest }}>متخلدات النوادي للشهور المختارة</div>
-                <p className="text-xs mb-2" style={{ color: C.muted }}>تُنشأ تلقائياً عند استخلاص المعلوم الشهري، ولا تُقبض إلا إذا اخترتها هنا.</p>
+                <div className="font-semibold mb-1" style={{ color: C.forest }}>??????? ??????? ?????? ????????</div>
+                <p className="text-xs mb-2" style={{ color: C.muted }}>????? ???????? ??? ??????? ??????? ??????? ??? ????? ??? ??? ??????? ???.</p>
                 <div className="space-y-2">
                   {previewData.club_items.map((item) => (
                     <label key={item.club_monthly_fee_id} className="flex items-center gap-3 p-2 rounded-xl border" style={{ borderColor: C.line }}>
                       <input type="checkbox" checked={!!selectedClubFees[item.club_monthly_fee_id]} onChange={(e) => setSelectedClubFees((p) => ({ ...p, [item.club_monthly_fee_id]: e.target.checked }))} />
-                      <span className="flex-1 text-sm" style={{ color: C.ink }}>{item.club_name} — {monthLabel(item.month)}<span className="mr-2 text-xs" style={{ color: C.muted }}>(متبقّي: {Number(item.remaining_amount).toFixed(2)} د.ت)</span></span>
+                      <span className="flex-1 text-sm" style={{ color: C.ink }}>{item.club_name} ? {monthLabel(item.month)}<span className="mr-2 text-xs" style={{ color: C.muted }}>(??????: {Number(item.remaining_amount).toFixed(2)} ?.?)</span></span>
                       <input type="number" min="0" max={item.remaining_amount} step="0.01" value={clubAmounts[item.club_monthly_fee_id] || ''} onChange={(e) => setClubAmounts((p) => ({ ...p, [item.club_monthly_fee_id]: e.target.value }))} className="w-24 border rounded-lg px-2 py-1 text-sm" style={{ borderColor: C.line, direction: 'ltr' }} />
                     </label>
                   ))}
@@ -628,7 +628,7 @@ export function CollectionPage() {
             )}
 
             <div className="bg-white rounded-2xl border p-4" style={{ borderColor: C.line }}>
-              <div className="font-semibold mb-2" style={{ color: C.ink }}>المعاليم / النوادي</div>
+              <div className="font-semibold mb-2" style={{ color: C.ink }}>???????? / ???????</div>
               <div className="space-y-2">
                 {feeTypes.map((f) => (
                   <label key={f.id} className="flex items-center gap-3 p-2 rounded-xl border" style={{ borderColor: C.line }}>
@@ -643,12 +643,12 @@ export function CollectionPage() {
 
             <div className="bg-white rounded-2xl border p-4 grid grid-cols-1 md:grid-cols-2 gap-3" style={{ borderColor: C.line }}>
               <div>
-                <label className="text-sm font-semibold" style={{ color: C.ink }}>التاريخ</label>
+                <label className="text-sm font-semibold" style={{ color: C.ink }}>???????</label>
                 <input type="date" value={paymentDate} max={new Date().toISOString().slice(0, 10)} onChange={(e) => setPaymentDate(e.target.value)}
                   className="w-full mt-1 border rounded-xl px-3 py-2 text-sm" style={{ borderColor: C.line }} />
               </div>
               <div className="md:col-span-2">
-                <div className="text-sm font-semibold mb-2" style={{ color: C.ink }}>طريقة الدفع</div>
+                <div className="text-sm font-semibold mb-2" style={{ color: C.ink }}>????? ?????</div>
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
                   {Object.entries(METHOD_LABELS).map(([k, label]) => (
                     <button key={k} type="button" onClick={() => setMethod(k as any)} className="py-2 rounded-xl text-sm border"
@@ -658,25 +658,25 @@ export function CollectionPage() {
                   ))}
                 </div>
               </div>
-              <input value={reference} onChange={(e) => setReference(e.target.value)} placeholder="مرجع / شيك"
+              <input value={reference} onChange={(e) => setReference(e.target.value)} placeholder="???? / ???"
                 className="border rounded-xl px-3 py-2 text-sm" style={{ borderColor: C.line }} />
-              <input value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="ملاحظات"
+              <input value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="???????"
                 className="border rounded-xl px-3 py-2 text-sm" style={{ borderColor: C.line }} />
             </div>
 
             {ledgerRows.length > 0 && (
               <div className="bg-white rounded-2xl border p-4" style={{ borderColor: C.line }}>
-                <div className="font-semibold mb-3" style={{ color: C.ink }}>سجل المدفوعات (مسجّل في النظام)</div>
+                <div className="font-semibold mb-3" style={{ color: C.ink }}>??? ????????? (????? ?? ??????)</div>
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
                     <thead>
                       <tr style={{ color: C.muted, textAlign: 'right' }}>
                         <th className="py-2">#</th>
-                        <th>التاريخ</th>
-                        <th>الأشهر</th>
-                        <th>المبلغ</th>
-                        <th>الطريقة</th>
-                        <th>المستخدم</th>
+                        <th>???????</th>
+                        <th>??????</th>
+                        <th>??????</th>
+                        <th>???????</th>
+                        <th>????????</th>
                         <th></th>
                       </tr>
                     </thead>
@@ -686,16 +686,16 @@ export function CollectionPage() {
                           <td className="py-2">{r.payment_id}</td>
                           <td>{r.payment_date}</td>
                           <td>{monthLabel(r.month)}</td>
-                          <td style={{ color: C.forest, fontWeight: 700 }}>{Number(r.amount).toFixed(2)} د.ت</td>
+                          <td style={{ color: C.forest, fontWeight: 700 }}>{Number(r.amount).toFixed(2)} ?.?</td>
                           <td>{METHOD_LABELS[r.method] || r.method}</td>
-                          <td>{r.created_by || r.user_name || '—'}</td>
+                          <td>{r.created_by || r.user_name || '?'}</td>
                           <td>
                             <button
                               type="button"
                               className="text-xs px-2 py-1 rounded-lg text-white"
                               style={{ background: '#DC2626' }}
                               onClick={() => handleCancelPayment(r.payment_id)}
-                            >إلغاء</button>
+                            >?????</button>
                           </td>
                         </tr>
                       ))}
@@ -707,21 +707,21 @@ export function CollectionPage() {
 
             <div className="bg-white rounded-2xl border p-4 flex items-center justify-between" style={{ borderColor: C.line }}>
               <div>
-                <div className="text-xs" style={{ color: C.muted }}>المجموع</div>
-                <div className="text-2xl font-extrabold" style={{ color: C.forest }}>{total.toFixed(2)} د.ت</div>
+                <div className="text-xs" style={{ color: C.muted }}>???????</div>
+                <div className="text-2xl font-extrabold" style={{ color: C.forest }}>{total.toFixed(2)} ?.?</div>
                 {clubTotal > 0 && (
-                  <div className="text-xs mt-1" style={{ color: C.forest }}>منها معاليم نوادٍ: {clubTotal.toFixed(2)} د.ت</div>
+                  <div className="text-xs mt-1" style={{ color: C.forest }}>???? ?????? ?????: {clubTotal.toFixed(2)} ?.?</div>
                 )}
                 {priorTotal > 0 && (
                   <div className="text-xs mt-1" style={{ color: '#A16207' }}>
-                    منها قبض دَين سابق (ليس مدخولاً جديداً): {priorTotal.toFixed(2)} د.ت
+                    ???? ??? ???? ???? (??? ??????? ??????): {priorTotal.toFixed(2)} ?.?
                   </div>
                 )}
               </div>
               <button type="button" onClick={handleSave} disabled={saving || total <= 0 || blockedByFullWaiver}
                 className="px-6 py-3 rounded-2xl text-white font-bold transition disabled:opacity-50"
                 style={{ background: saving || total <= 0 || blockedByFullWaiver ? C.muted : C.forest }}>
-                {saving ? 'جاري الحفظ...' : blockedByFullWaiver ? 'معفى كلياً — لا يمكن القبض' : 'حفظ'}
+                {saving ? '???? ?????...' : blockedByFullWaiver ? '???? ????? ? ?? ???? ?????' : '???'}
               </button>
 
             </div>

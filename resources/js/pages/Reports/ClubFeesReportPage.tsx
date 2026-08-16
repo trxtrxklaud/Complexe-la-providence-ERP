@@ -114,7 +114,7 @@ export default function ClubFeesReportPage() {
       }
     } catch (err: any) {
       if (requestId === activeRequestId.current) {
-        setError(err.message || 'حدث خطأ أثناء تحميل التقرير');
+        setError(err.message || '??? ??? ????? ????? ???????');
       }
     } finally {
       if (requestId === activeRequestId.current) {
@@ -175,7 +175,7 @@ export default function ClubFeesReportPage() {
 
   const handleGenerateMonth = async () => {
     if (!selectedYearId || !selectedMonth) {
-      setError('اختر السنة الدراسية والشهر أولاً');
+      setError('???? ????? ???????? ?????? ?????');
       return;
     }
     setGenerating(true);
@@ -191,7 +191,7 @@ export default function ClubFeesReportPage() {
       setSuccessMsg(res.message);
       await loadReport();
     } catch (err: any) {
-      setError(err.message || 'فشل توليد سجلات الشهر');
+      setError(err.message || '??? ????? ????? ?????');
     } finally {
       setGenerating(false);
     }
@@ -219,33 +219,33 @@ export default function ClubFeesReportPage() {
         notes: payNotes || undefined,
       });
       setCollectModalRecord(null);
-      setSuccessMsg('تم تسجيل استخلاص معلوم النادي بنجاح');
+      setSuccessMsg('?? ????? ??????? ????? ?????? ?????');
       await loadReport();
     } catch (err: any) {
-      setError(err.message || 'فشل تسجيل الدفع');
+      setError(err.message || '??? ????? ?????');
     } finally {
       setSubmittingPayment(false);
     }
   };
 
   const handleExclude = async (subId: number) => {
-    if (!window.confirm('هل تأكد من استبعاد هذا التلميذ من متابعة معلوم النادي بعد سبتمبر؟ لا يحذف التلميذ ولا مدفوعاته القديمة.')) return;
+    if (!window.confirm('?? ???? ?? ??????? ??? ??????? ?? ?????? ????? ?????? ??? ??????? ?? ???? ??????? ??? ???????? ???????.')) return;
     try {
-      await excludeStudentFromClub(subId, 'استبعاد من متابعة معلوم النادي');
-      setSuccessMsg('تم استبعاد التلميذ بنجاح دون حذف بياناته القديمة');
+      await excludeStudentFromClub(subId, '??????? ?? ?????? ????? ??????');
+      setSuccessMsg('?? ??????? ??????? ????? ??? ??? ??????? ???????');
       await loadReport();
     } catch (err: any) {
-      setError(err.message || 'فشل استبعاد التلميذ');
+      setError(err.message || '??? ??????? ???????');
     }
   };
 
   const handleRestore = async (subId: number) => {
     try {
       await restoreStudentToClub(subId);
-      setSuccessMsg('تمت إعادة التلميذ لمتابعة معلوم النادي بنجاح');
+      setSuccessMsg('??? ????? ??????? ??????? ????? ?????? ?????');
       await loadReport();
     } catch (err: any) {
-      setError(err.message || 'فشل إعادة التلميذ');
+      setError(err.message || '??? ????? ???????');
     }
   };
 
@@ -291,8 +291,8 @@ export default function ClubFeesReportPage() {
       {/* Header & Controls */}
       <div className="flex flex-wrap items-center justify-between gap-4 no-print">
         <div>
-          <h1 className="text-2xl font-bold text-gray-800">تقارير معلوم النوادي المدرسية</h1>
-          <p className="text-sm text-gray-500">متابعة تحصيل واستخلاص معاليم النوادي شهرياً</p>
+          <h1 className="text-2xl font-bold text-gray-800">?????? ????? ??????? ????????</h1>
+          <p className="text-sm text-gray-500">?????? ????? ???????? ?????? ??????? ??????</p>
         </div>
         <div className="flex items-center gap-3">
           <button
@@ -301,7 +301,7 @@ export default function ClubFeesReportPage() {
             className="flex items-center gap-2 px-4 py-2 bg-[#3B4A36] text-white rounded-lg hover:bg-[#2E3B2A] transition disabled:opacity-50"
           >
             <RefreshCw className={`w-4 h-4 ${generating ? 'animate-spin' : ''}`} />
-            توليد سجلات الشهر
+            ????? ????? ?????
           </button>
           <button
             onClick={handlePrint}
@@ -309,7 +309,7 @@ export default function ClubFeesReportPage() {
             className="flex items-center gap-2 px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition disabled:opacity-50"
           >
             <Printer className="w-4 h-4" />
-            طباعة التقرير (A4)
+            ????? ??????? (A4)
           </button>
         </div>
       </div>
@@ -318,13 +318,13 @@ export default function ClubFeesReportPage() {
       {error && (
         <div className="p-4 bg-red-50 text-red-700 rounded-lg border border-red-200 flex items-center justify-between no-print">
           <span>{error}</span>
-          <button onClick={() => setError(null)} className="text-sm underline">إغلاق</button>
+          <button onClick={() => setError(null)} className="text-sm underline">?????</button>
         </div>
       )}
       {successMsg && (
         <div className="p-4 bg-green-50 text-green-700 rounded-lg border border-green-200 flex items-center justify-between no-print">
           <span>{successMsg}</span>
-          <button onClick={() => setSuccessMsg(null)} className="text-sm underline">إغلاق</button>
+          <button onClick={() => setSuccessMsg(null)} className="text-sm underline">?????</button>
         </div>
       )}
 
@@ -332,20 +332,20 @@ export default function ClubFeesReportPage() {
       <div className="p-4 bg-white rounded-xl shadow-sm border border-gray-100 space-y-4 no-print">
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
           <div>
-            <label className="block text-xs font-semibold text-gray-600 mb-1">السنة الدراسية</label>
+            <label className="block text-xs font-semibold text-gray-600 mb-1">????? ????????</label>
             <select
               value={selectedYearId}
               onChange={(e) => setSelectedYearId(e.target.value ? Number(e.target.value) : '')}
               className="w-full text-sm border-gray-300 rounded-lg p-2 bg-gray-50"
             >
               {years.map((y) => (
-                <option key={y.id} value={y.id}>{y.name} {y.is_active ? '(النشطة)' : ''}</option>
+                <option key={y.id} value={y.id}>{y.name} {y.is_active ? '(??????)' : ''}</option>
               ))}
             </select>
           </div>
 
           <div>
-            <label className="block text-xs font-semibold text-gray-600 mb-1">من شهر</label>
+            <label className="block text-xs font-semibold text-gray-600 mb-1">?? ???</label>
             <input
               type="month"
               value={fromMonth}
@@ -354,7 +354,7 @@ export default function ClubFeesReportPage() {
             />
           </div>
           <div>
-            <label className="block text-xs font-semibold text-gray-600 mb-1">إلى شهر</label>
+            <label className="block text-xs font-semibold text-gray-600 mb-1">??? ???</label>
             <input
               type="month"
               value={toMonth}
@@ -363,20 +363,20 @@ export default function ClubFeesReportPage() {
             />
           </div>
           <div>
-            <label className="block text-xs font-semibold text-blue-600 mb-1 text-center">توليد سجلات</label>
-            <div className="flex gap-1" title="توليد سجلات شهر محدد">
+            <label className="block text-xs font-semibold text-blue-600 mb-1 text-center">????? ?????</label>
+            <div className="flex gap-1" title="????? ????? ??? ????">
              <input type="month" value={selectedMonth} onChange={(e) => setSelectedMonth(e.target.value)} className="w-2/3 text-sm border-gray-300 rounded-lg p-1 bg-blue-50 border-blue-200" />
             </div>
           </div>
 
           <div>
-            <label className="block text-xs font-semibold text-gray-600 mb-1">النادي</label>
+            <label className="block text-xs font-semibold text-gray-600 mb-1">??????</label>
             <select
               value={selectedClubId}
               onChange={(e) => handleClubChange(e.target.value ? Number(e.target.value) : '')}
               className="w-full text-sm border-gray-300 rounded-lg p-2 bg-gray-50"
             >
-              <option value="">كل النوادي</option>
+              <option value="">?? ???????</option>
               {clubs.map((c) => (
                 <option key={c.id} value={c.id}>{c.name}</option>
               ))}
@@ -384,13 +384,13 @@ export default function ClubFeesReportPage() {
           </div>
 
           <div>
-            <label className="block text-xs font-semibold text-gray-600 mb-1">المستوى</label>
+            <label className="block text-xs font-semibold text-gray-600 mb-1">???????</label>
             <select
               value={selectedLevelId}
               onChange={(e) => handleLevelChange(e.target.value ? Number(e.target.value) : '')}
               className="w-full text-sm border-gray-300 rounded-lg p-2 bg-gray-50"
             >
-              <option value="">كل المستويات</option>
+              <option value="">?? ?????????</option>
               {availableLevels.map((l) => (
                 <option key={l.id} value={l.id}>{l.name}</option>
               ))}
@@ -398,13 +398,13 @@ export default function ClubFeesReportPage() {
           </div>
 
           <div>
-            <label className="block text-xs font-semibold text-gray-600 mb-1">القسم</label>
+            <label className="block text-xs font-semibold text-gray-600 mb-1">?????</label>
             <select
               value={selectedSectionId}
               onChange={(e) => setSelectedSectionId(e.target.value ? Number(e.target.value) : '')}
               className="w-full text-sm border-gray-300 rounded-lg p-2 bg-gray-50"
             >
-              <option value="">كل الأقسام</option>
+              <option value="">?? ???????</option>
               {availableSections.map((s) => (
                 <option key={s.id} value={s.id}>
                   {selectedLevelId
@@ -416,15 +416,15 @@ export default function ClubFeesReportPage() {
           </div>
 
           <div>
-            <label className="block text-xs font-semibold text-gray-600 mb-1">حالة الدفع</label>
+            <label className="block text-xs font-semibold text-gray-600 mb-1">???? ?????</label>
             <select
               value={selectedStatus}
               onChange={(e) => setSelectedStatus(e.target.value)}
               className="w-full text-sm border-gray-300 rounded-lg p-2 bg-gray-50"
             >
-              <option value="">الكل</option>
-              <option value="paid">خلاص كامل (أخضر)</option>
-              <option value="pending">في انتظار الدفع (برتقالي)</option>
+              <option value="">????</option>
+              <option value="paid">???? ???? (????)</option>
+              <option value="pending">?? ?????? ????? (???????)</option>
             </select>
           </div>
         </div>
@@ -433,7 +433,7 @@ export default function ClubFeesReportPage() {
           <Search className="w-4 h-4 absolute right-3 top-3 text-gray-400" />
           <input
             type="text"
-            placeholder="البحث باسم التلميذ أو الرمز..."
+            placeholder="????? ???? ??????? ?? ?????..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="w-full text-sm pr-9 border-gray-300 rounded-lg p-2 bg-gray-50"
@@ -444,38 +444,38 @@ export default function ClubFeesReportPage() {
       {/* Report Summary Cards */}
       {loading ? (
         <div className="p-4 bg-gray-50 rounded-xl border border-gray-200 text-center text-sm text-gray-500 animate-pulse no-print">
-          جاري تحميل بيانات التقرير للقسم المحدد...
+          ???? ????? ?????? ??????? ????? ??????...
         </div>
       ) : summary ? (
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 no-print">
           <div className="p-3 bg-white rounded-xl border border-gray-100 text-center">
-            <span className="block text-xs text-gray-500">عدد التلاميذ بالمجموعة</span>
+            <span className="block text-xs text-gray-500">??? ???????? ?????????</span>
             <span className="text-xl font-bold text-gray-800">{summary.enrolled_count}</span>
           </div>
 
           <div className="p-3 bg-green-50 border border-green-100 rounded-xl text-center">
-            <span className="block text-xs text-green-700">خلاص كامل</span>
+            <span className="block text-xs text-green-700">???? ????</span>
             <span className="text-xl font-bold text-green-800">{summary.paid_count}</span>
           </div>
 
           <div className="p-3 bg-orange-50 border border-orange-100 rounded-xl text-center">
-            <span className="block text-xs text-orange-700">في انتظار الدفع</span>
+            <span className="block text-xs text-orange-700">?? ?????? ?????</span>
             <span className="text-xl font-bold text-orange-800">{summary.pending_count ?? summary.unpaid_count}</span>
           </div>
 
           <div className="p-3 bg-white rounded-xl border border-gray-100 text-center">
-            <span className="block text-xs text-gray-500">إجمالي المطلوب</span>
-            <span className="text-xl font-bold text-gray-800">{summary.total_due.toFixed(2)} د.ت</span>
+            <span className="block text-xs text-gray-500">?????? ???????</span>
+            <span className="text-xl font-bold text-gray-800">{summary.total_due.toFixed(2)} ?.?</span>
           </div>
 
           <div className="p-3 bg-green-50 border border-green-100 rounded-xl text-center">
-            <span className="block text-xs text-green-700">إجمالي المقبوض</span>
-            <span className="text-xl font-bold text-green-800">{summary.total_paid.toFixed(2)} د.ت</span>
+            <span className="block text-xs text-green-700">?????? ???????</span>
+            <span className="text-xl font-bold text-green-800">{summary.total_paid.toFixed(2)} ?.?</span>
           </div>
 
           <div className="p-3 bg-orange-50 border border-orange-100 rounded-xl text-center">
-            <span className="block text-xs text-orange-700">إجمالي المتبقي</span>
-            <span className="text-xl font-bold text-orange-800">{summary.total_remaining.toFixed(2)} د.ت</span>
+            <span className="block text-xs text-orange-700">?????? ???????</span>
+            <span className="text-xl font-bold text-orange-800">{summary.total_remaining.toFixed(2)} ?.?</span>
           </div>
         </div>
       ) : null}
@@ -484,38 +484,38 @@ export default function ClubFeesReportPage() {
       <div className="printable-area bg-white rounded-xl shadow-sm border border-gray-100 p-6 space-y-6">
         {/* Printable School Header */}
         <div className="hidden print:block border-b border-gray-200 pb-4 text-center">
-          <h2 className="text-xl font-bold text-gray-900">مركب العناية للتعليم الخاص</h2>
-          <p className="text-sm text-gray-600">كشف متابعة معاليم النوادي المدرسية</p>
+          <h2 className="text-xl font-bold text-gray-900">???? ??????? ??????? ?????</h2>
+          <p className="text-sm text-gray-600">??? ?????? ?????? ??????? ????????</p>
           <div className="flex justify-between items-center text-xs text-gray-500 mt-2">
-            <span>الشهر: {selectedMonth}</span>
-            <span>القسم: {selectedSectionId ? sections.find(s => s.id === Number(selectedSectionId))?.name : 'كل الأقسام'}</span>
-            <span>تاريخ الاستخراج: {new Date().toLocaleDateString('ar-TN')}</span>
+            <span>?????: {selectedMonth}</span>
+            <span>?????: {selectedSectionId ? sections.find(s => s.id === Number(selectedSectionId))?.name : '?? ???????'}</span>
+            <span>????? ?????????: {new Date().toLocaleDateString('ar-TN')}</span>
           </div>
         </div>
 
         {/* Records Table */}
         {loading ? (
-          <div className="py-12 text-center text-gray-500">جاري تحميل البيانات...</div>
+          <div className="py-12 text-center text-gray-500">???? ????? ????????...</div>
         ) : records.length === 0 ? (
           <div className="py-12 text-center text-gray-500 space-y-2">
             <AlertCircle className="w-8 h-8 mx-auto text-gray-400" />
-            <p>لا توجد سجلات مطابقة للشروط المختارة.</p>
-            <p className="text-xs text-gray-400">انقر على "توليد سجلات الشهر" لإنشاء السجلات للتلاميذ المسجلين في النوادي.</p>
+            <p>?? ???? ????? ?????? ?????? ????????.</p>
+            <p className="text-xs text-gray-400">???? ??? "????? ????? ?????" ?????? ??????? ???????? ???????? ?? ???????.</p>
           </div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-right border-collapse text-sm">
               <thead>
                 <tr className="bg-gray-50 border-b border-gray-200 text-gray-600 font-semibold">
-                  <th className="p-3">رمز التلميذ</th>
-                  <th className="p-3">اسم التلميذ</th>
-                  <th className="p-3">المستوى والقسم</th>
-                  <th className="p-3">النادي</th>
-                  <th className="p-3 text-left">المطلوب (د.ت)</th>
-                  <th className="p-3 text-left">المدفوع (د.ت)</th>
-                  <th className="p-3 text-left">المتبقي (د.ت)</th>
-                  <th className="p-3 text-center">الحالة</th>
-                  <th className="p-3 no-print text-center">الإجراءات</th>
+                  <th className="p-3">??? ???????</th>
+                  <th className="p-3">??? ???????</th>
+                  <th className="p-3">??????? ??????</th>
+                  <th className="p-3">??????</th>
+                  <th className="p-3 text-left">??????? (?.?)</th>
+                  <th className="p-3 text-left">??????? (?.?)</th>
+                  <th className="p-3 text-left">??????? (?.?)</th>
+                  <th className="p-3 text-center">??????</th>
+                  <th className="p-3 no-print text-center">?????????</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
@@ -524,7 +524,7 @@ export default function ClubFeesReportPage() {
                     <td className="p-3 text-gray-500 font-mono">{r.student_code}</td>
                     <td className="p-3 font-semibold text-gray-800">
                       {r.student_name}
-                      {r.is_excluded && <span className="mr-2 text-xs text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded">(مستبعد)</span>}
+                      {r.is_excluded && <span className="mr-2 text-xs text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded">(??????)</span>}
                     </td>
                     <td className="p-3 text-gray-600">{r.level_name} - {r.section_name}</td>
                     <td className="p-3 font-medium text-gray-700">{r.club_name}</td>
@@ -540,7 +540,7 @@ export default function ClubFeesReportPage() {
                         }`}
                       >
                         {r.status === 'paid' ? <CheckCircle className="w-3.5 h-3.5" /> : <Clock className="w-3.5 h-3.5" />}
-                        {r.status === 'paid' ? 'خلاص كامل' : 'في انتظار الدفع'}
+                        {r.status === 'paid' ? '???? ????' : '?? ?????? ?????'}
                       </span>
                     </td>
                     <td className="p-3 no-print text-center flex items-center justify-center gap-2">
@@ -549,14 +549,14 @@ export default function ClubFeesReportPage() {
                           onClick={() => openCollectModal(r)}
                           className="px-3 py-1 bg-[#3B4A36] text-white text-xs rounded hover:bg-[#2E3B2A] transition"
                         >
-                          تسجيل الدفع
+                          ????? ?????
                         </button>
                       )}
                       {r.subscription_id && (
                         r.is_excluded ? (
                           <button
                             onClick={() => handleRestore(r.subscription_id)}
-                            title="إعادة التلميذ للمتابعة"
+                            title="????? ??????? ????????"
                             className="p-1 text-gray-500 hover:text-green-600 rounded"
                           >
                             <RotateCcw className="w-4 h-4" />
@@ -564,7 +564,7 @@ export default function ClubFeesReportPage() {
                         ) : (
                           <button
                             onClick={() => handleExclude(r.subscription_id)}
-                            title="استبعاد من متابعة النادي"
+                            title="??????? ?? ?????? ??????"
                             className="p-1 text-gray-400 hover:text-red-600 rounded"
                           >
                             <UserX className="w-4 h-4" />
@@ -582,10 +582,10 @@ export default function ClubFeesReportPage() {
         {/* Printable Summary Footer */}
         {summary && (
           <div className="border-t border-gray-200 pt-4 grid grid-cols-2 md:grid-cols-4 gap-4 text-xs font-medium text-gray-700">
-            <div>إجمالي التلاميذ: <span className="font-bold">{summary.enrolled_count}</span></div>
-            <div>إجمالي المطلوب: <span className="font-bold">{summary.total_due.toFixed(2)} د.ت</span></div>
-            <div>إجمالي المقبوض: <span className="font-bold text-green-700">{summary.total_paid.toFixed(2)} د.ت</span></div>
-            <div>إجمالي المتبقي: <span className="font-bold text-orange-600">{summary.total_remaining.toFixed(2)} د.ت</span></div>
+            <div>?????? ????????: <span className="font-bold">{summary.enrolled_count}</span></div>
+            <div>?????? ???????: <span className="font-bold">{summary.total_due.toFixed(2)} ?.?</span></div>
+            <div>?????? ???????: <span className="font-bold text-green-700">{summary.total_paid.toFixed(2)} ?.?</span></div>
+            <div>?????? ???????: <span className="font-bold text-orange-600">{summary.total_remaining.toFixed(2)} ?.?</span></div>
           </div>
         )}
       </div>
@@ -594,14 +594,14 @@ export default function ClubFeesReportPage() {
       {collectModalRecord && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50 no-print">
           <div className="bg-white rounded-xl shadow-xl max-w-md w-full p-6 space-y-4 text-right">
-            <h3 className="text-lg font-bold text-gray-800">تسجيل استخلاص معلوم نادي</h3>
+            <h3 className="text-lg font-bold text-gray-800">????? ??????? ????? ????</h3>
             <p className="text-xs text-gray-500">
-              التلميذ: <span className="font-semibold text-gray-700">{collectModalRecord.student_name}</span> ({collectModalRecord.club_name} - {collectModalRecord.month})
+              ???????: <span className="font-semibold text-gray-700">{collectModalRecord.student_name}</span> ({collectModalRecord.club_name} - {collectModalRecord.month})
             </p>
 
             <form onSubmit={handleCollectSubmit} className="space-y-4 text-sm">
               <div>
-                <label className="block text-xs font-semibold text-gray-600 mb-1">المبلغ المقبوض (د.ت)</label>
+                <label className="block text-xs font-semibold text-gray-600 mb-1">?????? ??????? (?.?)</label>
                 <input
                   type="number"
                   step="0.001"
@@ -613,12 +613,12 @@ export default function ClubFeesReportPage() {
                   required
                 />
                 <span className="text-xs text-gray-400 mt-1 block">
-                  المتبقي: {collectModalRecord.remaining.toFixed(2)} د.ت
+                  ???????: {collectModalRecord.remaining.toFixed(2)} ?.?
                 </span>
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-gray-600 mb-1">تاريخ القبض</label>
+                <label className="block text-xs font-semibold text-gray-600 mb-1">????? ?????</label>
                 <input
                   type="date"
                   value={payDate}
@@ -629,21 +629,21 @@ export default function ClubFeesReportPage() {
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-gray-600 mb-1">طريقة الدفع</label>
+                <label className="block text-xs font-semibold text-gray-600 mb-1">????? ?????</label>
                 <select
                   value={payMethod}
                   onChange={(e) => setPayMethod(e.target.value as any)}
                   className="w-full border-gray-300 rounded-lg p-2 bg-gray-50"
                 >
-                  <option value="cash">نقداً (Cash)</option>
-                  <option value="bank_transfer">تحويل بنكي</option>
-                  <option value="check">شيك</option>
-                  <option value="card">بطاقة بانكية</option>
+                  <option value="cash">????? (Cash)</option>
+                  <option value="bank_transfer">????? ????</option>
+                  <option value="check">???</option>
+                  <option value="card">????? ??????</option>
                 </select>
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-gray-600 mb-1">ملاحظات</label>
+                <label className="block text-xs font-semibold text-gray-600 mb-1">???????</label>
                 <textarea
                   value={payNotes}
                   onChange={(e) => setPayNotes(e.target.value)}
@@ -658,14 +658,14 @@ export default function ClubFeesReportPage() {
                   onClick={() => setCollectModalRecord(null)}
                   className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg transition"
                 >
-                  إلغاء
+                  ?????
                 </button>
                 <button
                   type="submit"
                   disabled={submittingPayment}
                   className="px-4 py-2 bg-[#3B4A36] text-white rounded-lg hover:bg-[#2E3B2A] transition disabled:opacity-50"
                 >
-                  {submittingPayment ? 'جاري التسجيل...' : 'حفظ الاستخلاص'}
+                  {submittingPayment ? '???? ???????...' : '??? ?????????'}
                 </button>
               </div>
             </form>

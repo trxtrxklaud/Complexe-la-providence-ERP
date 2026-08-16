@@ -173,6 +173,8 @@ Route::middleware(['auth:sanctum', 'active', 'throttle:120,1'])->group(function 
         Route::post('/payments/{payment}/cancel', [PaymentController::class, 'cancel']);
         Route::get('/fee-types', [FeeTypeController::class, 'index']);
 
+        Route::get('/club-sections', [App\Http\Controllers\ClubController::class, 'clubSections']);
+
         Route::get('/collection/years', [CollectionController::class, 'years']);
         Route::get('/collection/years/{year}/sections', [CollectionController::class, 'sectionsByYear']);
         Route::get('/collection/sections/{section}/students', [CollectionController::class, 'studentsBySection']);

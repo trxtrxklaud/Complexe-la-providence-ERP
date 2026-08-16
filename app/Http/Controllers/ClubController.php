@@ -3,9 +3,11 @@
 namespace App\Http\Controllers;
 
 use App\Models\Club;
+use App\Models\Section;
 use App\Services\ClubService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 class ClubController extends Controller
 {
@@ -19,6 +21,28 @@ class ClubController extends Controller
             ->get();
 
         return response()->json($clubs);
+    }
+
+    /**
+     * Fetch distinct sections attached to active clubs for reporting filters.
+     * Accessible by manage_payments users.
+     */
+    public function clubSections(Request $request): JsonResponse
+    {
+        $sections = Section::select('sections.id', 'sections.name', 'sections.level_id', 'levels.name as level_name', 'levels.code as level_code')
+            ->join('club_sections', 'club_sections.section_id', '=', 'sections.id')
+            ->join('clubs', function ($join) {
+                $join->on('clubs.id', '=', 'club_sections.club_id')
+                    ->where('clubs.is_active', true);
+            })
+            ->join('levels', 'levels.id', '=', 'sections.level_id')
+            ->distinct()
+            ->orderBy('levels.id')
+            ->orderBy('sections.name')
+            ->get();
+
+        // format as requested: { data: [...] }
+        return response()->json(['data' => $sections]);
     }
 
     public function store(Request $request): JsonResponse
@@ -64,7 +88,7 @@ class ClubController extends Controller
     {
         if ($club->subscriptions()->exists()) {
             $club->update(['is_active' => false]);
-            return response()->json(['message' => 'تم تعطيل النادي لوجود اشتراكات مرتبطة به']);
+            return response()->json(['message' => 'تعطيل النادي لوجود اشتراكات مرتبطة به']);
         }
 
         $club->delete();

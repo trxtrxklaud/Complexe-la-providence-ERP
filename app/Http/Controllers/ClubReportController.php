@@ -37,6 +37,8 @@ class ClubReportController extends Controller
     {
         $request->validate([
             'month' => ['nullable', 'string', 'regex:/^\d{4}-(0[1-9]|1[0-2])$/'],
+            'from_month' => ['nullable', 'string', 'regex:/^\d{4}-(0[1-9]|1[0-2])$/'],
+            'to_month' => ['nullable', 'string', 'regex:/^\d{4}-(0[1-9]|1[0-2])$/'],
             'academic_year_id' => ['nullable', 'integer', 'exists:academic_years,id'],
             'club_id' => ['nullable', 'integer', 'exists:clubs,id'],
             'level_id' => ['nullable', 'integer', 'exists:levels,id'],

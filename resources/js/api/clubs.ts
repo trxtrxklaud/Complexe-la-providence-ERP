@@ -215,6 +215,8 @@ export function fetchClubArrearsDashboard(params: {
 
 export function fetchClubFeesReport(params: {
   month?: string;
+  from_month?: string;
+  to_month?: string;
   academic_year_id?: number;
   club_id?: number;
   level_id?: number;
@@ -252,4 +254,10 @@ export function cancelClubFeePayment(
   reason: string
 ): Promise<{ message: string; record: ClubReportRecord }> {
   return apiFetch(`/club-monthly-fees/${monthlyFeeId}/cancel`, { method: 'POST', body: { reason } });
+}
+
+
+export function fetchClubSections(params?: { academic_year_id?: number }): Promise<any[]> {
+  // Using fetch directly or importing from classrooms would be better, but we can do a direct fetch here to resolve the type error.
+  return apiFetch<any[]>('/classrooms/sections', { params });
 }
