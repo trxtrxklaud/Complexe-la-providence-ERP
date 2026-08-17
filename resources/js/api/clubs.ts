@@ -6,6 +6,12 @@ export interface LevelInfo {
   code: string;
 }
 
+export interface SectionInfo {
+  id: number;
+  name: string;
+  level_id: number;
+}
+
 export interface ClubItem {
   id: number;
   name: string;
@@ -14,6 +20,7 @@ export interface ClubItem {
   monthly_fee: number | string;
   is_active: boolean;
   levels?: LevelInfo[];
+  sections?: SectionInfo[];
 }
 
 export interface ClubSubscriptionItem {
@@ -144,6 +151,7 @@ export function createClub(data: {
   monthly_fee: number;
   is_active?: boolean;
   level_ids?: number[];
+  section_ids?: number[];
 }): Promise<ClubItem> {
   return apiFetch<ClubItem>('/clubs', { method: 'POST', body: data });
 }
@@ -156,6 +164,7 @@ export function updateClub(
     monthly_fee?: number;
     is_active?: boolean;
     level_ids?: number[];
+    section_ids?: number[];
   }
 ): Promise<ClubItem> {
   return apiFetch<ClubItem>(`/clubs/${id}`, { method: 'PUT', body: data });

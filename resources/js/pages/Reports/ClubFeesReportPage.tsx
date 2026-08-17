@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
   fetchClubFeesReport,
   generateClubMonthFees,
@@ -81,26 +81,24 @@ export default function ClubFeesReportPage() {
       setLevels(lList);
       setSections(sList);
 
-      const activeYear = yList.find((y) => y.is_active);
+      const activeYear = yList.find((y) => y.is_active) || yList[0];
       if (activeYear) {
         setSelectedYearId(activeYear.id);
-      } else if (yList.length > 0) {
-        setSelectedYearId(yList[0].id);
       }
     } catch (err: any) {
-      console.error(err);
+      setError(err.message || 'تعذر تحميل خيارات التصفية');
     }
   };
 
   const loadReport = async () => {
+    if (!selectedYearId) return;
     const requestId = ++activeRequestId.current;
     setLoading(true);
-    setReportData(null); // Clear previous section/filter reportData immediately to avoid displaying stale names/totals
     setError(null);
     try {
       const data = await fetchClubFeesReport({
         academic_year_id: selectedYearId ? Number(selectedYearId) : undefined,
-        month: undefined,
+        month: selectedMonth || undefined,
         from_month: fromMonth || undefined,
         to_month: toMonth || undefined,
         club_id: selectedClubId ? Number(selectedClubId) : undefined,
@@ -114,7 +112,7 @@ export default function ClubFeesReportPage() {
       }
     } catch (err: any) {
       if (requestId === activeRequestId.current) {
-        setError(err.message || '??? ??? ????? ????? ???????');
+        setError(err.message || 'حدث خطأ أثناء تحميل التقرير');
       }
     } finally {
       if (requestId === activeRequestId.current) {
@@ -123,59 +121,31 @@ export default function ClubFeesReportPage() {
     }
   };
 
-  const handleClubChange = (clubIdVal: number | '') => {
-    setSelectedClubId(clubIdVal);
-    if (clubIdVal) {
-      const selectedClubObj = clubs.find((c) => c.id === Number(clubIdVal));
-      const allowedLevelIds = (selectedClubObj?.levels && selectedClubObj.levels.length > 0)
-        ? selectedClubObj.levels.map((l) => l.id)
-        : [];
-      if (allowedLevelIds.length > 0) {
-        if (selectedLevelId && !allowedLevelIds.includes(Number(selectedLevelId))) {
-          setSelectedLevelId('');
-        }
-        if (selectedSectionId) {
-          const matchingSec = sections.find((s) => s.id === Number(selectedSectionId));
-          if (matchingSec && !allowedLevelIds.includes(matchingSec.level_id)) {
-            setSelectedSectionId('');
-          }
-        }
-      }
-    }
-  };
-
-  const handleLevelChange = (levelIdVal: number | '') => {
-    setSelectedLevelId(levelIdVal);
-    if (levelIdVal && selectedSectionId) {
-      const matchingSec = sections.find((s) => s.id === Number(selectedSectionId));
-      if (matchingSec && matchingSec.level_id !== Number(levelIdVal)) {
-        setSelectedSectionId('');
-      }
-    }
-  };
-
   const selectedClubObj = selectedClubId ? clubs.find((c) => c.id === Number(selectedClubId)) : null;
-  const clubAllowedLevelIds = (selectedClubObj?.levels && selectedClubObj.levels.length > 0)
-    ? selectedClubObj.levels.map((l) => l.id)
-    : [];
 
-  const availableLevels = clubAllowedLevelIds.length > 0
-    ? levels.filter((l) => clubAllowedLevelIds.includes(l.id))
-    : levels;
+  const availableLevels = useMemo(() => {
+    if (selectedClubId && selectedClubObj?.sections && selectedClubObj.sections.length > 0) {
+      const allowedLevelIds = [...new Set(selectedClubObj.sections.map((s) => s.level_id).filter(Boolean))];
+      return levels.filter((l) => allowedLevelIds.includes(l.id));
+    }
+    return levels;
+  }, [levels, selectedClubId, selectedClubObj]);
 
-  const availableSections = sections.filter((s) => {
-    if (clubAllowedLevelIds.length > 0 && !clubAllowedLevelIds.includes(s.level_id)) {
-      return false;
+  const availableSections = useMemo(() => {
+    let list = sections;
+    if (selectedClubId && selectedClubObj?.sections && selectedClubObj.sections.length > 0) {
+      const allowedSectionIds = selectedClubObj.sections.map((s) => s.id);
+      list = list.filter((s) => allowedSectionIds.includes(s.id));
     }
-    if (selectedLevelId && s.level_id !== Number(selectedLevelId)) {
-      return false;
+    if (selectedLevelId) {
+      list = list.filter((s) => s.level_id === Number(selectedLevelId));
     }
-    return true;
-  });
+    return list;
+  }, [sections, selectedClubId, selectedClubObj, selectedLevelId]);
 
   const handleGenerateMonth = async () => {
     if (!selectedYearId || !selectedMonth) {
-      setError('???? ????? ???????? ?????? ?????');
+      setError('اختر السنة الدراسية والشهر أولاً');
       return;
     }
     setGenerating(true);
@@ -186,12 +156,11 @@ export default function ClubFeesReportPage() {
         academic_year_id: Number(selectedYearId),
         month: selectedMonth,
         club_id: selectedClubId ? Number(selectedClubId) : undefined,
-        section_id: selectedSectionId ? Number(selectedSectionId) : undefined,
       });
       setSuccessMsg(res.message);
       await loadReport();
     } catch (err: any) {
-      setError(err.message || '??? ????? ????? ?????');
+      setError(err.message || 'فشل توليد سجلات الشهر');
     } finally {
       setGenerating(false);
     }
@@ -207,45 +176,45 @@ export default function ClubFeesReportPage() {
 
   const handleCollectSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!collectModalRecord || !payAmount || Number(payAmount) <= 0) return;
-
+    if (!collectModalRecord || !payAmount) return;
     setSubmittingPayment(true);
     setError(null);
+    setSuccessMsg(null);
     try {
-      await collectClubFeePayment(collectModalRecord.id, {
+      const res = await collectClubFeePayment(collectModalRecord.id, {
         amount_paid: Number(payAmount),
         paid_at: payDate,
         method: payMethod,
         notes: payNotes || undefined,
       });
+      setSuccessMsg(res.message || 'تم تسجيل خلاص معلوم النادي بنجاح');
       setCollectModalRecord(null);
-      setSuccessMsg('?? ????? ??????? ????? ?????? ?????');
       await loadReport();
     } catch (err: any) {
-      setError(err.message || '??? ????? ?????');
+      setError(err.message || 'فشل تسجيل خلاص معلوم النادي');
     } finally {
       setSubmittingPayment(false);
     }
   };
 
   const handleExclude = async (subId: number) => {
-    if (!window.confirm('?? ???? ?? ??????? ??? ??????? ?? ?????? ????? ?????? ??? ??????? ?? ???? ??????? ??? ???????? ???????.')) return;
+    if (!confirm('هل أنت متأكد من استبعاد هذا التلميذ من متابعة النادي؟ لن يتم توليد رسوم جديدة له في الأشهر القادمة.')) return;
     try {
-      await excludeStudentFromClub(subId, '??????? ?? ?????? ????? ??????');
-      setSuccessMsg('?? ??????? ??????? ????? ??? ??? ??????? ???????');
+      const res = await excludeStudentFromClub(subId);
+      setSuccessMsg(res.message);
       await loadReport();
     } catch (err: any) {
-      setError(err.message || '??? ??????? ???????');
+      setError(err.message || 'فشل استبعاد التلميذ');
     }
   };
 
   const handleRestore = async (subId: number) => {
     try {
-      await restoreStudentToClub(subId);
-      setSuccessMsg('??? ????? ??????? ??????? ????? ?????? ?????');
+      const res = await restoreStudentToClub(subId);
+      setSuccessMsg(res.message);
       await loadReport();
     } catch (err: any) {
-      setError(err.message || '??? ????? ???????');
+      setError(err.message || 'فشل إعادة التلميذ للمتابعة');
     }
   };
 
@@ -257,126 +226,103 @@ export default function ClubFeesReportPage() {
   const records = reportData?.records || [];
 
   return (
-    <div className="space-y-6 dir-rtl">
-      {/* Printable CSS style */}
+    <div className="space-y-6 dir-rtl text-right">
       <style>{`
         @media print {
-          @page { size: A4 portrait; margin: 10mm 8mm; }
-          body * {
-            visibility: hidden;
-          }
-          .printable-area, .printable-area * {
-            visibility: visible;
-          }
-          .printable-area {
-            position: absolute;
-            left: 0;
-            top: 0;
-            width: 100%;
-            padding: 0;
-          }
-          .no-print, button, input, select {
-            display: none !important;
-            visibility: hidden !important;
-          }
-          thead {
-            display: table-header-group !important;
-          }
-          tr {
-            break-inside: avoid !important;
-          }
+          @page { size: A4 landscape; margin: 10mm; }
+          body * { visibility: hidden; }
+          .printable-report, .printable-report * { visibility: visible; }
+          .printable-report { position: absolute; inset: 0; width: 100%; }
+          .no-print, button, input, select { display: none !important; }
         }
       `}</style>
 
-      {/* Header & Controls */}
-      <div className="flex flex-wrap items-center justify-between gap-4 no-print">
+      {/* Header */}
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-white p-6 rounded-2xl shadow-sm border border-gray-100 no-print">
         <div>
-          <h1 className="text-2xl font-bold text-gray-800">?????? ????? ??????? ????????</h1>
-          <p className="text-sm text-gray-500">?????? ????? ???????? ?????? ??????? ??????</p>
+          <h1 className="text-2xl font-bold text-[#26352B]">كشف استخلاص النوادي</h1>
+          <p className="text-gray-500 text-sm mt-1">متابعة اشتراكات واستخلاصات الأنشطة والنوادي المدرسية</p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
+          <button
+            onClick={loadReport}
+            disabled={loading}
+            className="flex items-center gap-2 px-4 py-2 bg-gray-100 text-gray-700 rounded-xl hover:bg-gray-200 transition text-sm font-medium disabled:opacity-50"
+          >
+            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+            تحديث
+          </button>
           <button
             onClick={handleGenerateMonth}
             disabled={generating || !selectedYearId || !selectedMonth}
-            className="flex items-center gap-2 px-4 py-2 bg-[#3B4A36] text-white rounded-lg hover:bg-[#2E3B2A] transition disabled:opacity-50"
+            className="flex items-center gap-2 px-4 py-2 bg-amber-600 text-white rounded-xl hover:bg-amber-700 transition text-sm font-medium disabled:opacity-50"
           >
             <RefreshCw className={`w-4 h-4 ${generating ? 'animate-spin' : ''}`} />
-            ????? ????? ?????
+            {generating ? 'جاري التوليد...' : 'توليد سجلات الشهر'}
           </button>
           <button
             onClick={handlePrint}
-            disabled={loading || !reportData || records.length === 0}
-            className="flex items-center gap-2 px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition disabled:opacity-50"
+            className="flex items-center gap-2 px-4 py-2 bg-[#3B4A36] text-white rounded-xl hover:bg-[#2E3B2A] transition text-sm font-medium"
           >
             <Printer className="w-4 h-4" />
-            ????? ??????? (A4)
+            طباعة الكشف
           </button>
         </div>
       </div>
 
-      {/* Feedback Messages */}
-      {error && (
-        <div className="p-4 bg-red-50 text-red-700 rounded-lg border border-red-200 flex items-center justify-between no-print">
-          <span>{error}</span>
-          <button onClick={() => setError(null)} className="text-sm underline">?????</button>
+      {/* Notifications */}
+      {successMsg && (
+        <div className="flex items-center gap-2 p-4 bg-green-50 border border-green-200 text-green-800 rounded-xl text-sm no-print">
+          <CheckCircle className="w-5 h-5 flex-shrink-0" />
+          <span>{successMsg}</span>
         </div>
       )}
-      {successMsg && (
-        <div className="p-4 bg-green-50 text-green-700 rounded-lg border border-green-200 flex items-center justify-between no-print">
-          <span>{successMsg}</span>
-          <button onClick={() => setSuccessMsg(null)} className="text-sm underline">?????</button>
+      {error && (
+        <div className="flex items-center gap-2 p-4 bg-red-50 border border-red-200 text-red-800 rounded-xl text-sm no-print">
+          <AlertCircle className="w-5 h-5 flex-shrink-0" />
+          <span>{error}</span>
         </div>
       )}
 
-      {/* Filter Bar */}
-      <div className="p-4 bg-white rounded-xl shadow-sm border border-gray-100 space-y-4 no-print">
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
+      {/* Filters Bar */}
+      <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100 no-print space-y-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4 text-sm">
           <div>
-            <label className="block text-xs font-semibold text-gray-600 mb-1">????? ????????</label>
+            <label className="block text-xs font-semibold text-gray-600 mb-1">السنة الدراسية</label>
             <select
               value={selectedYearId}
               onChange={(e) => setSelectedYearId(e.target.value ? Number(e.target.value) : '')}
-              className="w-full text-sm border-gray-300 rounded-lg p-2 bg-gray-50"
+              className="w-full border-gray-300 rounded-lg p-2 bg-gray-50 text-sm"
             >
+              <option value="">اختر السنة</option>
               {years.map((y) => (
-                <option key={y.id} value={y.id}>{y.name} {y.is_active ? '(??????)' : ''}</option>
+                <option key={y.id} value={y.id}>{y.name}</option>
               ))}
             </select>
           </div>
 
           <div>
-            <label className="block text-xs font-semibold text-gray-600 mb-1">?? ???</label>
+            <label className="block text-xs font-semibold text-gray-600 mb-1">الشهر</label>
             <input
               type="month"
-              value={fromMonth}
-              onChange={(e) => setFromMonth(e.target.value)}
-              className="w-full text-sm border-gray-300 rounded-lg p-2 bg-gray-50"
+              value={selectedMonth}
+              onChange={(e) => setSelectedMonth(e.target.value)}
+              className="w-full border-gray-300 rounded-lg p-2 bg-gray-50 text-sm"
             />
-          </div>
-          <div>
-            <label className="block text-xs font-semibold text-gray-600 mb-1">??? ???</label>
-            <input
-              type="month"
-              value={toMonth}
-              onChange={(e) => setToMonth(e.target.value)}
-              className="w-full text-sm border-gray-300 rounded-lg p-2 bg-gray-50"
-            />
-          </div>
-          <div>
-            <label className="block text-xs font-semibold text-blue-600 mb-1 text-center">????? ?????</label>
-            <div className="flex gap-1" title="????? ????? ??? ????">
-             <input type="month" value={selectedMonth} onChange={(e) => setSelectedMonth(e.target.value)} className="w-2/3 text-sm border-gray-300 rounded-lg p-1 bg-blue-50 border-blue-200" />
-            </div>
           </div>
 
           <div>
-            <label className="block text-xs font-semibold text-gray-600 mb-1">??????</label>
+            <label className="block text-xs font-semibold text-gray-600 mb-1">النادي</label>
             <select
               value={selectedClubId}
-              onChange={(e) => handleClubChange(e.target.value ? Number(e.target.value) : '')}
-              className="w-full text-sm border-gray-300 rounded-lg p-2 bg-gray-50"
+              onChange={(e) => {
+                setSelectedClubId(e.target.value ? Number(e.target.value) : '');
+                setSelectedLevelId('');
+                setSelectedSectionId('');
+              }}
+              className="w-full border-gray-300 rounded-lg p-2 bg-gray-50 text-sm"
             >
-              <option value="">?? ???????</option>
+              <option value="">كل النوادي</option>
               {clubs.map((c) => (
                 <option key={c.id} value={c.id}>{c.name}</option>
               ))}
@@ -384,13 +330,16 @@ export default function ClubFeesReportPage() {
           </div>
 
           <div>
-            <label className="block text-xs font-semibold text-gray-600 mb-1">???????</label>
+            <label className="block text-xs font-semibold text-gray-600 mb-1">المستوى</label>
             <select
               value={selectedLevelId}
-              onChange={(e) => handleLevelChange(e.target.value ? Number(e.target.value) : '')}
-              className="w-full text-sm border-gray-300 rounded-lg p-2 bg-gray-50"
+              onChange={(e) => {
+                setSelectedLevelId(e.target.value ? Number(e.target.value) : '');
+                setSelectedSectionId('');
+              }}
+              className="w-full border-gray-300 rounded-lg p-2 bg-gray-50 text-sm"
             >
-              <option value="">?? ?????????</option>
+              <option value="">كل المستويات</option>
               {availableLevels.map((l) => (
                 <option key={l.id} value={l.id}>{l.name}</option>
               ))}
@@ -398,133 +347,108 @@ export default function ClubFeesReportPage() {
           </div>
 
           <div>
-            <label className="block text-xs font-semibold text-gray-600 mb-1">?????</label>
+            <label className="block text-xs font-semibold text-gray-600 mb-1">القسم</label>
             <select
               value={selectedSectionId}
               onChange={(e) => setSelectedSectionId(e.target.value ? Number(e.target.value) : '')}
-              className="w-full text-sm border-gray-300 rounded-lg p-2 bg-gray-50"
+              className="w-full border-gray-300 rounded-lg p-2 bg-gray-50 text-sm"
             >
-              <option value="">?? ???????</option>
+              <option value="">كل الأقسام</option>
               {availableSections.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {selectedLevelId
-                    ? s.name
-                    : `${levels.find((l) => l.id === s.level_id)?.name || ''} - ${s.name}`}
-                </option>
+                <option key={s.id} value={s.id}>{s.name}</option>
               ))}
             </select>
           </div>
 
           <div>
-            <label className="block text-xs font-semibold text-gray-600 mb-1">???? ?????</label>
+            <label className="block text-xs font-semibold text-gray-600 mb-1">الحالة</label>
             <select
               value={selectedStatus}
               onChange={(e) => setSelectedStatus(e.target.value)}
-              className="w-full text-sm border-gray-300 rounded-lg p-2 bg-gray-50"
+              className="w-full border-gray-300 rounded-lg p-2 bg-gray-50 text-sm"
             >
-              <option value="">????</option>
-              <option value="paid">???? ???? (????)</option>
-              <option value="pending">?? ?????? ????? (???????)</option>
+              <option value="">جميع الحالات</option>
+              <option value="paid">خلاص كامل</option>
+              <option value="pending">في انتظار الدفع</option>
             </select>
           </div>
-        </div>
 
-        <div className="relative">
-          <Search className="w-4 h-4 absolute right-3 top-3 text-gray-400" />
-          <input
-            type="text"
-            placeholder="????? ???? ??????? ?? ?????..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="w-full text-sm pr-9 border-gray-300 rounded-lg p-2 bg-gray-50"
-          />
+          <div>
+            <label className="block text-xs font-semibold text-gray-600 mb-1">بحث عن تلميذ</label>
+            <div className="relative">
+              <input
+                type="text"
+                placeholder="اسم التلميذ أو معرفه..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="w-full border-gray-300 rounded-lg p-2 pl-8 bg-gray-50 text-sm"
+              />
+              <Search className="w-4 h-4 text-gray-400 absolute left-2.5 top-2.5" />
+            </div>
+          </div>
         </div>
       </div>
 
-      {/* Report Summary Cards */}
-      {loading ? (
-        <div className="p-4 bg-gray-50 rounded-xl border border-gray-200 text-center text-sm text-gray-500 animate-pulse no-print">
-          ???? ????? ?????? ??????? ????? ??????...
-        </div>
-      ) : summary ? (
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 no-print">
-          <div className="p-3 bg-white rounded-xl border border-gray-100 text-center">
-            <span className="block text-xs text-gray-500">??? ???????? ?????????</span>
-            <span className="text-xl font-bold text-gray-800">{summary.enrolled_count}</span>
+      {/* Summary KPI Cards */}
+      {summary && (
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 no-print">
+          <div className="bg-white p-4 rounded-xl border border-gray-100 shadow-sm">
+            <span className="text-xs text-gray-500 block">إجمالي المسجلين</span>
+            <span className="text-xl font-bold text-[#26352B] mt-1 block">{summary.enrolled_count}</span>
           </div>
-
-          <div className="p-3 bg-green-50 border border-green-100 rounded-xl text-center">
-            <span className="block text-xs text-green-700">???? ????</span>
-            <span className="text-xl font-bold text-green-800">{summary.paid_count}</span>
+          <div className="bg-white p-4 rounded-xl border border-gray-100 shadow-sm">
+            <span className="text-xs text-gray-500 block">إجمالي المطلوب</span>
+            <span className="text-xl font-bold text-gray-800 mt-1 block">{summary.total_due.toFixed(2)} د.ت</span>
           </div>
-
-          <div className="p-3 bg-orange-50 border border-orange-100 rounded-xl text-center">
-            <span className="block text-xs text-orange-700">?? ?????? ?????</span>
-            <span className="text-xl font-bold text-orange-800">{summary.pending_count ?? summary.unpaid_count}</span>
+          <div className="bg-white p-4 rounded-xl border border-gray-100 shadow-sm">
+            <span className="text-xs text-gray-500 block">إجمالي المقبوض</span>
+            <span className="text-xl font-bold text-green-700 mt-1 block">{summary.total_paid.toFixed(2)} د.ت</span>
           </div>
-
-          <div className="p-3 bg-white rounded-xl border border-gray-100 text-center">
-            <span className="block text-xs text-gray-500">?????? ???????</span>
-            <span className="text-xl font-bold text-gray-800">{summary.total_due.toFixed(2)} ?.?</span>
-          </div>
-
-          <div className="p-3 bg-green-50 border border-green-100 rounded-xl text-center">
-            <span className="block text-xs text-green-700">?????? ???????</span>
-            <span className="text-xl font-bold text-green-800">{summary.total_paid.toFixed(2)} ?.?</span>
-          </div>
-
-          <div className="p-3 bg-orange-50 border border-orange-100 rounded-xl text-center">
-            <span className="block text-xs text-orange-700">?????? ???????</span>
-            <span className="text-xl font-bold text-orange-800">{summary.total_remaining.toFixed(2)} ?.?</span>
+          <div className="bg-white p-4 rounded-xl border border-gray-100 shadow-sm">
+            <span className="text-xs text-gray-500 block">إجمالي المتبقي</span>
+            <span className="text-xl font-bold text-orange-600 mt-1 block">{summary.total_remaining.toFixed(2)} د.ت</span>
           </div>
         </div>
-      ) : null}
+      )}
 
-      {/* Main Printable Content Container */}
-      <div className="printable-area bg-white rounded-xl shadow-sm border border-gray-100 p-6 space-y-6">
-        {/* Printable School Header */}
-        <div className="hidden print:block border-b border-gray-200 pb-4 text-center">
-          <h2 className="text-xl font-bold text-gray-900">???? ??????? ??????? ?????</h2>
-          <p className="text-sm text-gray-600">??? ?????? ?????? ??????? ????????</p>
-          <div className="flex justify-between items-center text-xs text-gray-500 mt-2">
-            <span>?????: {selectedMonth}</span>
-            <span>?????: {selectedSectionId ? sections.find(s => s.id === Number(selectedSectionId))?.name : '?? ???????'}</span>
-            <span>????? ?????????: {new Date().toLocaleDateString('ar-TN')}</span>
-          </div>
+      {/* Printable Report Section */}
+      <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 printable-report space-y-4">
+        <div className="hidden print:block text-center border-b pb-4 mb-4">
+          <h2 className="text-xl font-bold">كشف استخلاص النوادي المدرسية</h2>
+          <p className="text-xs text-gray-600 mt-1">
+            الشهر: {selectedMonth || 'كل الأشهر'} | السنة الدراسية: {years.find((y) => y.id === selectedYearId)?.name || '—'}
+          </p>
         </div>
 
-        {/* Records Table */}
         {loading ? (
-          <div className="py-12 text-center text-gray-500">???? ????? ????????...</div>
+          <div className="py-12 text-center text-gray-500 text-sm">جاري تحميل التقرير...</div>
         ) : records.length === 0 ? (
-          <div className="py-12 text-center text-gray-500 space-y-2">
-            <AlertCircle className="w-8 h-8 mx-auto text-gray-400" />
-            <p>?? ???? ????? ?????? ?????? ????????.</p>
-            <p className="text-xs text-gray-400">???? ??? "????? ????? ?????" ?????? ??????? ???????? ???????? ?? ???????.</p>
+          <div className="py-12 text-center text-gray-400 text-sm">
+            لا توجد بيانات مطابقة لخيارات البحث المحددة.
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-right border-collapse text-sm">
-              <thead>
-                <tr className="bg-gray-50 border-b border-gray-200 text-gray-600 font-semibold">
-                  <th className="p-3">??? ???????</th>
-                  <th className="p-3">??? ???????</th>
-                  <th className="p-3">??????? ??????</th>
-                  <th className="p-3">??????</th>
-                  <th className="p-3 text-left">??????? (?.?)</th>
-                  <th className="p-3 text-left">??????? (?.?)</th>
-                  <th className="p-3 text-left">??????? (?.?)</th>
-                  <th className="p-3 text-center">??????</th>
-                  <th className="p-3 no-print text-center">?????????</th>
+            <table className="w-full text-right text-sm">
+              <thead className="bg-gray-50 text-gray-600 text-xs font-semibold uppercase">
+                <tr>
+                  <th className="p-3">معرف التلميذ</th>
+                  <th className="p-3">اسم التلميذ</th>
+                  <th className="p-3">القسم</th>
+                  <th className="p-3">النادي</th>
+                  <th className="p-3 text-left">المستحق (د.ت)</th>
+                  <th className="p-3 text-left">المدفوع (د.ت)</th>
+                  <th className="p-3 text-left">المتبقي (د.ت)</th>
+                  <th className="p-3 text-center">الحالة</th>
+                  <th className="p-3 no-print text-center">الإجراءات</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {records.map((r: any) => (
-                  <tr key={`${r.id}-${r.month}`} className="hover:bg-gray-50">
+                  <tr key={`${r.academic_year_id || selectedYearId}_${r.student_id}_${r.enrollment_id || r.id}_${r.club_id || ''}_${r.month || ''}`} className="hover:bg-gray-50">
                     <td className="p-3 text-gray-500 font-mono">{r.student_code}</td>
                     <td className="p-3 font-semibold text-gray-800">
                       {r.student_name}
-                      {r.is_excluded && <span className="mr-2 text-xs text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded">(??????)</span>}
+                      {r.is_excluded && <span className="mr-2 text-xs text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded">(مستبعد)</span>}
                     </td>
                     <td className="p-3 text-gray-600">{r.level_name} - {r.section_name}</td>
                     <td className="p-3 font-medium text-gray-700">{r.club_name}</td>
@@ -540,7 +464,7 @@ export default function ClubFeesReportPage() {
                         }`}
                       >
                         {r.status === 'paid' ? <CheckCircle className="w-3.5 h-3.5" /> : <Clock className="w-3.5 h-3.5" />}
-                        {r.status === 'paid' ? '???? ????' : '?? ?????? ?????'}
+                        {r.status === 'paid' ? 'خلاص كامل' : 'في انتظار الدفع'}
                       </span>
                     </td>
                     <td className="p-3 no-print text-center flex items-center justify-center gap-2">
@@ -549,14 +473,14 @@ export default function ClubFeesReportPage() {
                           onClick={() => openCollectModal(r)}
                           className="px-3 py-1 bg-[#3B4A36] text-white text-xs rounded hover:bg-[#2E3B2A] transition"
                         >
-                          ????? ?????
+                          تسجيل الدفع
                         </button>
                       )}
                       {r.subscription_id && (
                         r.is_excluded ? (
                           <button
                             onClick={() => handleRestore(r.subscription_id)}
-                            title="????? ??????? ????????"
+                            title="إعادة التلميذ للمتابعة"
                             className="p-1 text-gray-500 hover:text-green-600 rounded"
                           >
                             <RotateCcw className="w-4 h-4" />
@@ -564,7 +488,7 @@ export default function ClubFeesReportPage() {
                         ) : (
                           <button
                             onClick={() => handleExclude(r.subscription_id)}
-                            title="??????? ?? ?????? ??????"
+                            title="استبعاد من متابعة النادي"
                             className="p-1 text-gray-400 hover:text-red-600 rounded"
                           >
                             <UserX className="w-4 h-4" />
@@ -582,10 +506,10 @@ export default function ClubFeesReportPage() {
         {/* Printable Summary Footer */}
         {summary && (
           <div className="border-t border-gray-200 pt-4 grid grid-cols-2 md:grid-cols-4 gap-4 text-xs font-medium text-gray-700">
-            <div>?????? ????????: <span className="font-bold">{summary.enrolled_count}</span></div>
-            <div>?????? ???????: <span className="font-bold">{summary.total_due.toFixed(2)} ?.?</span></div>
-            <div>?????? ???????: <span className="font-bold text-green-700">{summary.total_paid.toFixed(2)} ?.?</span></div>
-            <div>?????? ???????: <span className="font-bold text-orange-600">{summary.total_remaining.toFixed(2)} ?.?</span></div>
+            <div>إجمالي التلاميذ: <span className="font-bold">{summary.enrolled_count}</span></div>
+            <div>إجمالي المطلوب: <span className="font-bold">{summary.total_due.toFixed(2)} د.ت</span></div>
+            <div>إجمالي المقبوض: <span className="font-bold text-green-700">{summary.total_paid.toFixed(2)} د.ت</span></div>
+            <div>إجمالي المتبقي: <span className="font-bold text-orange-600">{summary.total_remaining.toFixed(2)} د.ت</span></div>
           </div>
         )}
       </div>
@@ -594,14 +518,14 @@ export default function ClubFeesReportPage() {
       {collectModalRecord && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50 no-print">
           <div className="bg-white rounded-xl shadow-xl max-w-md w-full p-6 space-y-4 text-right">
-            <h3 className="text-lg font-bold text-gray-800">????? ??????? ????? ????</h3>
+            <h3 className="text-lg font-bold text-gray-800">تسجيل استخلاص معلوم نادي</h3>
             <p className="text-xs text-gray-500">
-              ???????: <span className="font-semibold text-gray-700">{collectModalRecord.student_name}</span> ({collectModalRecord.club_name} - {collectModalRecord.month})
+              التلميذ: <span className="font-semibold text-gray-700">{collectModalRecord.student_name}</span> ({collectModalRecord.club_name} - {collectModalRecord.month})
             </p>
 
             <form onSubmit={handleCollectSubmit} className="space-y-4 text-sm">
               <div>
-                <label className="block text-xs font-semibold text-gray-600 mb-1">?????? ??????? (?.?)</label>
+                <label className="block text-xs font-semibold text-gray-600 mb-1">المبلغ المقبوض (د.ت)</label>
                 <input
                   type="number"
                   step="0.001"
@@ -613,12 +537,12 @@ export default function ClubFeesReportPage() {
                   required
                 />
                 <span className="text-xs text-gray-400 mt-1 block">
-                  ???????: {collectModalRecord.remaining.toFixed(2)} ?.?
+                  المتبقي: {collectModalRecord.remaining.toFixed(2)} د.ت
                 </span>
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-gray-600 mb-1">????? ?????</label>
+                <label className="block text-xs font-semibold text-gray-600 mb-1">تاريخ القبض</label>
                 <input
                   type="date"
                   value={payDate}
@@ -629,21 +553,21 @@ export default function ClubFeesReportPage() {
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-gray-600 mb-1">????? ?????</label>
+                <label className="block text-xs font-semibold text-gray-600 mb-1">طريقة الدفع</label>
                 <select
                   value={payMethod}
                   onChange={(e) => setPayMethod(e.target.value as any)}
                   className="w-full border-gray-300 rounded-lg p-2 bg-gray-50"
                 >
-                  <option value="cash">????? (Cash)</option>
-                  <option value="bank_transfer">????? ????</option>
-                  <option value="check">???</option>
-                  <option value="card">????? ??????</option>
+                  <option value="cash">نقداً (Cash)</option>
+                  <option value="bank_transfer">تحويل بنكي</option>
+                  <option value="check">شيك</option>
+                  <option value="card">بطاقة بانكية</option>
                 </select>
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-gray-600 mb-1">???????</label>
+                <label className="block text-xs font-semibold text-gray-600 mb-1">ملاحظات</label>
                 <textarea
                   value={payNotes}
                   onChange={(e) => setPayNotes(e.target.value)}
@@ -658,14 +582,14 @@ export default function ClubFeesReportPage() {
                   onClick={() => setCollectModalRecord(null)}
                   className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg transition"
                 >
-                  ?????
+                  إلغاء
                 </button>
                 <button
                   type="submit"
                   disabled={submittingPayment}
                   className="px-4 py-2 bg-[#3B4A36] text-white rounded-lg hover:bg-[#2E3B2A] transition disabled:opacity-50"
                 >
-                  {submittingPayment ? '???? ???????...' : '??? ?????????'}
+                  {submittingPayment ? 'جاري التسجيل...' : 'حفظ الاستخلاص'}
                 </button>
               </div>
             </form>

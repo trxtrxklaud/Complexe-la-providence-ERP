@@ -648,12 +648,42 @@ class CollectionService
         }
 
         $clubItems = ClubMonthlyFee::query()
-            ->with(['club:id,name', 'studentFee:id,club_monthly_fee_id'])
+            ->with(['club:id,name', 'studentFee:id,club_monthly_fee_id', 'subscription'])
             ->where('enrollment_id', $enrollment->id)
+            ->whereIn('month', $months)
             ->whereNull('cancelled_at')
             ->whereColumn('amount_paid', '<', 'amount_due')
+            ->whereHas('club', function ($cq) use ($enrollment) {
+                $cq->where('is_active', true)
+                    ->where(function ($subQ) use ($enrollment) {
+                        $subQ->whereHas('sections', fn ($s) => $s->where('sections.id', $enrollment->section_id))
+                            ->orWhere(function ($noSec) use ($enrollment) {
+                                $noSec->whereDoesntHave('sections')
+                                    ->whereHas('levels', fn ($l) => $l->where('levels.id', $enrollment->level_id));
+                            })
+                            ->orWhere(function ($all) {
+                                $all->whereDoesntHave('sections')->whereDoesntHave('levels');
+                            });
+                    });
+            })
             ->orderBy('month')
             ->get()
+            ->filter(function (ClubMonthlyFee $fee) {
+                $sub = $fee->subscription;
+                if ($sub && $sub->start_date) {
+                    $subStartMonth = substr($sub->start_date->toDateString(), 0, 7);
+                    if ($fee->month < $subStartMonth && (float) $fee->amount_paid <= 0) {
+                        return false;
+                    }
+                }
+                if ($sub && ($sub->excluded_at !== null || $sub->status === 'cancelled') && (float) $fee->amount_paid <= 0) {
+                    $subExcludedMonth = substr($sub->excluded_at->toDateString(), 0, 7);
+                    if ($fee->month >= $subExcludedMonth) {
+                        return false;
+                    }
+                }
+                return true;
+            })
             ->map(fn (ClubMonthlyFee $fee) => [
                 'club_monthly_fee_id' => $fee->id,
                 'student_fee_id' => $fee->studentFee?->id,

@@ -15,7 +15,7 @@ class ClubController extends Controller
 
     public function index(Request $request): JsonResponse
     {
-        $clubs = Club::with(['levels:id,name,code', 'feeCategory:id,name'])
+        $clubs = Club::with(['levels:id,name,code', 'sections:id,name,level_id', 'feeCategory:id,name'])
             ->when($request->boolean('active_only'), fn ($q) => $q->where('is_active', true))
             ->orderBy('name')
             ->get();
@@ -55,16 +55,18 @@ class ClubController extends Controller
             'is_active' => ['nullable', 'boolean'],
             'level_ids' => ['nullable', 'array'],
             'level_ids.*' => ['integer', 'exists:levels,id'],
+            'section_ids' => ['nullable', 'array'],
+            'section_ids.*' => ['integer', 'exists:sections,id'],
         ]);
 
-        $club = $this->clubService->createClub($data, $data['level_ids'] ?? []);
+        $club = $this->clubService->createClub($data, $data['level_ids'] ?? [], $data['section_ids'] ?? []);
 
         return response()->json($club, 201);
     }
 
     public function show(Club $club): JsonResponse
     {
-        return response()->json($club->load(['levels:id,name,code', 'feeCategory:id,name']));
+        return response()->json($club->load(['levels:id,name,code', 'sections:id,name,level_id', 'feeCategory:id,name']));
     }
 
     public function update(Request $request, Club $club): JsonResponse
@@ -77,9 +79,11 @@ class ClubController extends Controller
             'is_active' => ['nullable', 'boolean'],
             'level_ids' => ['nullable', 'array'],
             'level_ids.*' => ['integer', 'exists:levels,id'],
+            'section_ids' => ['nullable', 'array'],
+            'section_ids.*' => ['integer', 'exists:sections,id'],
         ]);
 
-        $updated = $this->clubService->updateClub($club, $data, $data['level_ids'] ?? null);
+        $updated = $this->clubService->updateClub($club, $data, $data['level_ids'] ?? null, $data['section_ids'] ?? null);
 
         return response()->json($updated);
     }
