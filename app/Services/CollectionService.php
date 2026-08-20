@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\AcademicYear;
+use App\Models\ClubMonthlyDiscount;
 use App\Models\ClubMonthlyFee;
 use App\Models\Enrollment;
 use App\Models\FeePlan;
@@ -682,18 +683,49 @@ class CollectionService
                         return false;
                     }
                 }
+                if ($sub) {
+                    $clubWaiver = ClubMonthlyDiscount::query()
+                        ->where('club_subscription_id', $sub->id)
+                        ->active()
+                        ->where('start_month', '<=', $fee->month)
+                        ->where('end_month', '>=', $fee->month)
+                        ->where('discount_type', ClubMonthlyDiscount::TYPE_FULL_WAIVER)
+                        ->exists();
+                    if ($clubWaiver) {
+                        return false;
+                    }
+                }
                 return true;
             })
-            ->map(fn (ClubMonthlyFee $fee) => [
-                'club_monthly_fee_id' => $fee->id,
-                'student_fee_id' => $fee->studentFee?->id,
-                'month' => $fee->month,
-                'club_name' => $fee->club?->name ?? 'النادي',
-                'amount_due' => (float) $fee->amount_due,
-                'amount_paid' => (float) $fee->amount_paid,
-                'remaining_amount' => max(0, round((float) $fee->amount_due - (float) $fee->amount_paid, 2)),
-                'status' => $fee->status,
-            ])->values()->all();
+            ->map(function (ClubMonthlyFee $fee) {
+                $sub = $fee->subscription;
+                $due = (float) $fee->amount_due;
+                $paid = (float) $fee->amount_paid;
+                if ($sub) {
+                    $clubDisc = ClubMonthlyDiscount::query()
+                        ->where('club_subscription_id', $sub->id)
+                        ->active()
+                        ->where('start_month', '<=', $fee->month)
+                        ->where('end_month', '>=', $fee->month)
+                        ->where('discount_type', ClubMonthlyDiscount::TYPE_HUMANITARIAN_FIXED)
+                        ->first();
+                    if ($clubDisc) {
+                        $due = min($due, (float) $clubDisc->monthly_amount);
+                    }
+                }
+                $remaining = max(0, round($due - $paid, 2));
+
+                return [
+                    'club_monthly_fee_id' => $fee->id,
+                    'student_fee_id' => $fee->studentFee?->id,
+                    'month' => $fee->month,
+                    'club_name' => $fee->club?->name ?? 'النادي',
+                    'amount_due' => $due,
+                    'amount_paid' => $paid,
+                    'remaining_amount' => $remaining,
+                    'status' => $fee->status,
+                ];
+            })->values()->all();
 
         return [
             'enrollment_id' => $enrollment->id,

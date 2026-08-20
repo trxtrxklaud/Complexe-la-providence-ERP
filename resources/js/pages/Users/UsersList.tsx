@@ -2,8 +2,9 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { fetchUsers, deleteUser, User } from '../../api/users';
 import { useAuth } from '../../contexts/AuthContext';
-import { Plus, Edit2, Trash2, AlertCircle } from 'lucide-react';
+import { Plus, Edit2, Trash2, AlertCircle, Shield } from 'lucide-react';
 import { TableRowsSkeleton } from '../../components/DataSkeleton';
+import { UserDirectPermissionsModal } from '../../components/Users/UserDirectPermissionsModal';
 
 const C = {
     forest: '#3B4A36',
@@ -18,9 +19,11 @@ export function UsersList() {
     const [users, setUsers]   = useState<User[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError]   = useState<string | null>(null);
+    const [selectedUserForPermissions, setSelectedUserForPermissions] = useState<{ id: number; name: string } | null>(null);
 
     const { user: currentUser, hasPermission } = useAuth();
     const canManage = hasPermission('manage_users');
+    const canManagePermissions = hasPermission('manage_user_permissions') || canManage;
 
     useEffect(() => { loadUsers(); }, []);
 
@@ -130,7 +133,16 @@ export function UsersList() {
                                         </td>
                                         {canManage && (
                                             <td className="px-6 py-4">
-                                                <div className="flex items-center gap-3">
+                                                <div className="flex items-center gap-2">
+                                                    {canManagePermissions && (
+                                                        <button
+                                                            onClick={() => setSelectedUserForPermissions({ id: user.id, name: `${user.first_name} ${user.last_name}` })}
+                                                            className="p-2 rounded-lg hover:bg-emerald-50 text-emerald-700 transition"
+                                                            title="الصلاحيات المباشرة"
+                                                        >
+                                                            <Shield size={17} />
+                                                        </button>
+                                                    )}
                                                     <Link
                                                         to={`/users/edit/${user.id}`}
                                                         className="p-2 rounded-lg hover:bg-[#E3EBDB] transition"
@@ -158,6 +170,15 @@ export function UsersList() {
                     </table>
                 </div>
             </div>
+
+            {/* Direct Permissions Modal */}
+            {selectedUserForPermissions && (
+                <UserDirectPermissionsModal
+                    userId={selectedUserForPermissions.id}
+                    userName={selectedUserForPermissions.name}
+                    onClose={() => setSelectedUserForPermissions(null)}
+                />
+            )}
         </div>
     );
 }

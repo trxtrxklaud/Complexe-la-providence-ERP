@@ -1,12 +1,23 @@
 import React, { useState } from 'react';
-import { C } from './shared';
+import {
+  C,
+} from './shared';
+import {
+  STAFF_TYPE_LABELS, SALARY_TYPE_LABELS,
+  type StaffType, type SalaryType,
+} from '../../api/employees';
 
 export interface EmployeeFormValues {
   first_name: string;
   last_name: string;
   phone: string;
   job_title: string;
+  staff_type: StaffType;
+  salary_type: SalaryType;
+  hourly_rate: string;
+  monthly_salary: string;
   default_salary: string;
+  hire_date: string;
 }
 
 interface Props {
@@ -16,7 +27,10 @@ interface Props {
 }
 
 const EMPTY: EmployeeFormValues = {
-  first_name: '', last_name: '', phone: '', job_title: '', default_salary: '',
+  first_name: '', last_name: '', phone: '', job_title: '',
+  staff_type: 'monthly_teacher', salary_type: 'monthly',
+  hourly_rate: '', monthly_salary: '', default_salary: '',
+  hire_date: '',
 };
 
 const FIELD = 'w-full border rounded-xl px-3 py-2';
@@ -24,6 +38,7 @@ const FIELD = 'w-full border rounded-xl px-3 py-2';
 /** نافذة إضافة إطار جديد؛ تحمل حالتها بنفسها فلا تثقل المكوّن الأب. */
 export function EmployeeFormModal({ saving, onClose, onSubmit }: Props) {
   const [form, setForm] = useState<EmployeeFormValues>(EMPTY);
+  const set = (patch: Partial<EmployeeFormValues>) => setForm((f) => ({ ...f, ...patch }));
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -36,19 +51,47 @@ export function EmployeeFormModal({ saving, onClose, onSubmit }: Props) {
         <h3 className="font-bold text-lg" style={{ color: C.ink }}>إضافة إطار</h3>
 
         <input required placeholder="الاسم" className={FIELD} style={{ borderColor: C.line }}
-          value={form.first_name} onChange={(e) => setForm({ ...form, first_name: e.target.value })} />
+          value={form.first_name} onChange={(e) => set({ first_name: e.target.value })} />
 
         <input required placeholder="اللقب" className={FIELD} style={{ borderColor: C.line }}
-          value={form.last_name} onChange={(e) => setForm({ ...form, last_name: e.target.value })} />
+          value={form.last_name} onChange={(e) => set({ last_name: e.target.value })} />
 
         <input placeholder="الهاتف" className={FIELD} style={{ borderColor: C.line }}
-          value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} />
+          value={form.phone} onChange={(e) => set({ phone: e.target.value })} />
 
         <input placeholder="الوظيفة" className={FIELD} style={{ borderColor: C.line }}
-          value={form.job_title} onChange={(e) => setForm({ ...form, job_title: e.target.value })} />
+          value={form.job_title} onChange={(e) => set({ job_title: e.target.value })} />
 
-        <input type="number" step="0.01" placeholder="الراتب الافتراضي" className={FIELD} style={{ borderColor: C.line }}
-          value={form.default_salary} onChange={(e) => setForm({ ...form, default_salary: e.target.value })} />
+        <input type="date" className={FIELD} style={{ borderColor: C.line }}
+          value={form.hire_date} onChange={(e) => set({ hire_date: e.target.value })} />
+
+        <select required className={FIELD} style={{ borderColor: C.line }}
+          value={form.staff_type} onChange={(e) => set({ staff_type: e.target.value as StaffType })}>
+          {Object.entries(STAFF_TYPE_LABELS).map(([value, label]) => (
+            <option key={value} value={value}>{label}</option>
+          ))}
+        </select>
+
+        <select required className={FIELD} style={{ borderColor: C.line }}
+          value={form.salary_type} onChange={(e) => set({ salary_type: e.target.value as SalaryType })}>
+          {Object.entries(SALARY_TYPE_LABELS).map(([value, label]) => (
+            <option key={value} value={value}>{label}</option>
+          ))}
+        </select>
+
+        {form.salary_type === 'hourly' ? (
+          <input type="number" step="0.001" min="0" placeholder="معلوم الساعة (د.ت)" className={FIELD}
+            style={{ borderColor: C.line }}
+            value={form.hourly_rate} onChange={(e) => set({ hourly_rate: e.target.value })} />
+        ) : (
+          <input type="number" step="0.01" min="0" placeholder="الراتب الشهري (د.ت)" className={FIELD}
+            style={{ borderColor: C.line }}
+            value={form.monthly_salary} onChange={(e) => set({ monthly_salary: e.target.value })} />
+        )}
+
+        <input type="number" step="0.01" min="0" placeholder="الراتب الافتراضي (اختياري)" className={FIELD}
+          style={{ borderColor: C.line }}
+          value={form.default_salary} onChange={(e) => set({ default_salary: e.target.value })} />
 
         <div className="flex gap-2 justify-end">
           <button type="button" onClick={onClose} className="px-4 py-2 rounded-xl border" style={{ borderColor: C.line }}>إلغاء</button>

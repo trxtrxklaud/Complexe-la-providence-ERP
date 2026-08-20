@@ -1,9 +1,11 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowRight, UserCheck, Phone, MapPin, DollarSign, AlertCircle, Loader2, CheckCircle2, PlusCircle } from 'lucide-react';
+import {
+  ArrowRight, UserCheck, Phone, MapPin, DollarSign, AlertCircle, Loader2,
+  CheckCircle2, PlusCircle, Calendar, Award, Shield
+} from 'lucide-react';
 import { fetchFamilyDetails, type FamilyFullDetails } from '../../api/families';
 import { FamilyCollectionModal } from '../../components/Families/FamilyCollectionModal';
-import { AddFeeItemModal } from '../../components/Families/AddFeeItemModal';
 import { ReceiptModal, type ReceiptData } from '../Payments/ReceiptModal';
 
 const C = { forest: '#3B4A36', sage: '#E3EBDB', ink: '#1F261C', muted: '#7C8677', line: '#EDF1E8' };
@@ -19,7 +21,6 @@ export function FamilyDetailPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showCollectModal, setShowCollectModal] = useState(false);
-  const [showAddFeeModal, setShowAddFeeModal] = useState(false);
   const [activeReceipt, setActiveReceipt] = useState<ReceiptData | null>(null);
 
   const loadDetails = useCallback(async () => {
@@ -42,9 +43,8 @@ export function FamilyDetailPage() {
 
   const handleCollectionSuccess = (receipt: ReceiptData) => {
     setShowCollectModal(false);
-    setShowAddFeeModal(false);
     setActiveReceipt(receipt);
-    loadDetails(); // إعادة تحميل بيانات العائلة والأرصدة
+    loadDetails();
   };
 
   if (loading) {
@@ -72,8 +72,10 @@ export function FamilyDetailPage() {
     );
   }
 
-  const totalUnpaidItemsCount = family.students.reduce((acc, st) => acc + (st.unpaid_fees?.length || 0), 0);
-  const hasUnpaidFees = family.family_remaining_debt > 0 || totalUnpaidItemsCount > 0;
+  const remainingDebt = Number(family.remaining_debt ?? family.family_remaining_debt ?? 0);
+  const totalDue = Number(family.total_due ?? family.family_total_due ?? 0);
+  const totalPaid = Number(family.total_paid ?? family.family_total_paid ?? 0);
+  const hasRemainingDebt = remainingDebt > 0;
 
   return (
     <div dir="rtl" className="p-6 max-w-6xl mx-auto space-y-6">
@@ -93,66 +95,25 @@ export function FamilyDetailPage() {
               ملف عائلة {family.guardian_name}
             </h1>
             <p className="text-xs" style={{ color: C.muted }}>
-              بيانات الولي، الأبناء المسجلين، والخدمات المستحقة
+              بيانات الولي، الأبناء المسجلين، والاستخلاص العائلي
             </p>
           </div>
         </div>
 
-        {/* Action Buttons based on Family Status */}
-        {hasUnpaidFees ? (
-          /* الحالة 1: العائلة لديها مستحقات غير مدفوعة -> زر استخلاص جماعي */
-          <button
-            type="button"
-            onClick={() => setShowCollectModal(true)}
-            className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-bold text-white shadow-lg transition hover:bg-emerald-800"
-            style={{ backgroundColor: C.forest }}
-          >
-            <DollarSign size={16} /> استخلاص جماعي للأبناء
-          </button>
-        ) : (
-          /* الحالة 2: العائلة ليس لديها مستحقات -> زر منفصل صريح لإضافة بند جديد */
-          <div className="flex items-center gap-3 flex-wrap">
-            <div className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-50 text-emerald-800 border border-emerald-200 text-xs font-bold shadow-sm">
-              <CheckCircle2 size={16} className="text-emerald-600 shrink-0" />
-              <span>لا توجد مستحقات غير مدفوعة</span>
-            </div>
-
-            <button
-              type="button"
-              onClick={() => setShowAddFeeModal(true)}
-              className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold text-white bg-indigo-700 hover:bg-indigo-600 shadow-md transition"
-            >
-              <PlusCircle size={16} /> إضافة بند جديد (ترسيم / نادي)
-            </button>
-          </div>
-        )}
+        {/* Action Button */}
+        <button
+          type="button"
+          onClick={() => setShowCollectModal(true)}
+          className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-bold text-white shadow-lg transition hover:bg-emerald-800"
+          style={{ backgroundColor: C.forest }}
+        >
+          <DollarSign size={16} /> استخلاص العائلة الموحد
+        </button>
       </div>
-
-      {/* Fully Paid Notice Banner */}
-      {!hasUnpaidFees && (
-        <div className="p-4 rounded-2xl bg-emerald-50 text-emerald-800 border border-emerald-200 flex items-center justify-between flex-wrap gap-3 text-xs sm:text-sm font-bold shadow-sm">
-          <div className="flex items-center gap-3">
-            <CheckCircle2 size={22} className="text-emerald-600 shrink-0" />
-            <div>
-              <p className="text-sm font-extrabold text-emerald-900">جميع مستحقات العائلة مدفوعة بالكامل</p>
-              <p className="text-xs text-emerald-700 font-medium mt-0.5">
-                لا توجد مستحقات غير مدفوعة لهذه العائلة (المتبقي بالذمة: 0.00 د.ت). يمكنك إضافة بند جديد (ترسيم أو نادي) بالضغط على الزر المخصص.
-              </p>
-            </div>
-          </div>
-          <button
-            type="button"
-            onClick={() => setShowAddFeeModal(true)}
-            className="px-3.5 py-1.5 rounded-xl bg-emerald-700 text-white text-xs font-bold hover:bg-emerald-800 transition shrink-0"
-          >
-            + إضافة بند جديد
-          </button>
-        </div>
-      )}
 
       {/* Guardian & Financial Summary Card */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div className="bg-white p-5 rounded-2xl border shadow-sm space-y-2 md:col-span-2" style={{ borderColor: C.line }}>
+        <div className="bg-white p-5 rounded-2xl border shadow-xs space-y-2 md:col-span-2" style={{ borderColor: C.line }}>
           <h2 className="text-base font-bold flex items-center gap-2" style={{ color: C.ink }}>
             <UserCheck size={18} style={{ color: C.forest }} /> بيانات الولي
           </h2>
@@ -167,10 +128,18 @@ export function FamilyDetailPage() {
                 <Phone size={13} className="text-slate-400" /> {family.phone || '—'}
               </span>
             </div>
+            {family.mother_name && (
+              <div>
+                <span className="text-slate-500 block">اسم الأم:</span>
+                <span className="font-bold">{family.mother_name}</span>
+              </div>
+            )}
             {family.mother_phone && (
               <div>
                 <span className="text-slate-500 block">رقم هاتف الأم:</span>
-                <span className="font-mono font-bold" dir="ltr">{family.mother_phone}</span>
+                <span className="font-mono font-bold flex items-center gap-1" dir="ltr">
+                  <Phone size={13} className="text-slate-400" /> {family.mother_phone}
+                </span>
               </div>
             )}
             <div>
@@ -186,78 +155,125 @@ export function FamilyDetailPage() {
         <div className="bg-slate-900 text-white p-5 rounded-2xl shadow-md flex flex-col justify-between">
           <div>
             <span className="text-xs text-slate-400">إجمالي المتبقي بالذمة للعائلة:</span>
-            <p className={`text-2xl font-extrabold mt-1 ${hasUnpaidFees ? 'text-red-400' : 'text-emerald-400'}`} dir="ltr">
-              {money(family.family_remaining_debt)} د.ت
+            <p className={`text-2xl font-extrabold mt-1 ${hasRemainingDebt ? 'text-red-400' : 'text-emerald-400'}`} dir="ltr">
+              {money(remainingDebt)} د.ت
             </p>
           </div>
           <div className="pt-3 border-t border-slate-800 text-xs flex justify-between text-slate-300">
-            <span>المطلوب: {money(family.family_total_due)} د.ت</span>
-            <span>المدفوع: {money(family.family_total_paid)} د.ت</span>
+            <span>المطلوب: {money(totalDue)} د.ت</span>
+            <span>المدفوع: {money(totalPaid)} د.ت</span>
           </div>
         </div>
       </div>
 
-      {/* Children List */}
+      {/* Children List Grid */}
       <div className="space-y-4">
         <h2 className="text-lg font-bold" style={{ color: C.forest }}>
           أبناء العائلة المسجلين ({family.students_count})
         </h2>
 
-        <div className="grid grid-cols-1 gap-4">
+        <div className="grid grid-cols-1 gap-5">
           {family.students.map((st) => {
-            const hasUnpaid = st.unpaid_fees.length > 0;
+            const hasStudentDebt = Number(st.remaining_debt || 0) > 0;
 
             return (
-              <div key={st.id} className="bg-white p-5 rounded-2xl border shadow-sm space-y-4" style={{ borderColor: C.line }}>
+              <div key={st.id} className="bg-white p-5 rounded-2xl border shadow-xs space-y-4" style={{ borderColor: C.line }}>
+                {/* Child Header */}
                 <div className="flex items-center justify-between flex-wrap gap-2 pb-3 border-b" style={{ borderColor: C.line }}>
                   <div>
                     <h3 className="text-base font-bold" style={{ color: C.ink }}>
-                      {st.name} <span className="text-xs font-mono text-slate-400">({st.student_code})</span>
+                      {st.full_name || st.name} {st.student_code && <span className="text-xs font-mono text-slate-400">({st.student_code})</span>}
                     </h3>
                     <p className="text-xs text-slate-500">
-                      القسم: <b>{st.section_name}</b> | السنة الدراسية: {st.academic_year}
+                      المستوى: <b>{st.level_name}</b> | القسم: <b>{st.section_name}</b> | المعلوم الأساسي: <b>{money(st.base_monthly_fee)} د.ت</b>
                     </p>
                   </div>
                   <div className="text-left">
-                    <span className="text-xs text-slate-500 block">المتبقي بالذمة للابن:</span>
-                    <span className={`text-sm font-bold ${hasUnpaid ? 'text-red-600' : 'text-emerald-600'}`} dir="ltr">
+                    <span className="text-xs text-slate-500 block">المتبقي بالذمة:</span>
+                    <span className={`text-sm font-bold ${hasStudentDebt ? 'text-red-600' : 'text-emerald-600'}`} dir="ltr">
                       {money(st.remaining_debt)} د.ت
                     </span>
                   </div>
                 </div>
 
-                {/* Unpaid Fees List */}
-                <div>
-                  <h4 className="text-xs font-bold mb-2 text-slate-700">البنود المستحقة وغير المدفوعة بالكامل:</h4>
-                  {!hasUnpaid ? (
-                    <p className="text-xs text-emerald-600 font-semibold bg-emerald-50 p-2.5 rounded-xl border border-emerald-100 flex items-center gap-2">
-                      <CheckCircle2 size={16} /> جميع المستحقات لهذا الابن مدفوعة بالكامل.
-                    </p>
-                  ) : (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5">
-                      {st.unpaid_fees.map((fee) => (
-                        <div key={fee.id} className="p-3 rounded-xl border bg-slate-50/70 text-xs space-y-1" style={{ borderColor: C.line }}>
-                          <p className="font-bold text-slate-800">{fee.description}</p>
-                          <div className="flex justify-between text-slate-600 text-[11px]">
-                            <span>المطلوب: {money(fee.gross_amount)}</span>
-                            <span>المدفوع: {money(fee.paid_amount)}</span>
-                          </div>
-                          <div className="flex justify-between font-bold pt-1 border-t border-slate-200">
-                            <span className="text-slate-700">المتبقي:</span>
-                            <span className="text-red-600" dir="ltr">{money(fee.remaining_amount)} د.ت</span>
-                          </div>
+                {/* 10-Month Grid Preview */}
+                <div className="space-y-1.5">
+                  <span className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                    <Calendar size={13} className="text-slate-400" />
+                    معاليم الأشهر الدراسية (سبتمبر - جوان):
+                  </span>
+
+                  <div className="grid grid-cols-2 sm:grid-cols-5 md:grid-cols-10 gap-2">
+                    {(st.months_grid || []).map((m) => {
+                      const isPaid = m.status === 'paid';
+                      const isWaived = m.status === 'waived';
+
+                      return (
+                        <div
+                          key={m.month}
+                          className={`p-2 rounded-xl border text-center text-xs flex flex-col items-center justify-between ${
+                            isPaid
+                              ? 'bg-emerald-50 border-emerald-200 text-emerald-900 font-bold'
+                              : isWaived
+                              ? 'bg-slate-50 border-slate-200 text-slate-400'
+                              : 'bg-white border-slate-200 text-slate-700'
+                          }`}
+                        >
+                          <span className="text-[11px] font-bold">{m.name_ar}</span>
+                          <span
+                            className={`text-[10px] mt-1 px-1.5 py-0.5 rounded-md ${
+                              isPaid ? 'bg-emerald-100 text-emerald-800' : isWaived ? 'bg-slate-200 text-slate-600' : 'bg-slate-100 text-slate-600'
+                            }`}
+                          >
+                            {isPaid ? 'مدفوع ✓' : isWaived ? 'معفى' : `${money(m.net_amount)} د.ت`}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Subscribed Clubs */}
+                {st.clubs && st.clubs.length > 0 && (
+                  <div className="space-y-1.5 pt-2 border-t border-slate-100">
+                    <span className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                      <Award size={13} className="text-amber-500" />
+                      النوادي المشترك بها:
+                    </span>
+                    <div className="flex flex-wrap gap-2">
+                      {st.clubs.map((c) => (
+                        <span key={c.club_id} className="px-3 py-1 rounded-xl bg-amber-50 text-amber-900 border border-amber-200 text-xs font-medium">
+                          {c.club_name} ({money(c.monthly_fee)} د.ت)
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Arrears */}
+                {st.arrears && st.arrears.length > 0 && (
+                  <div className="space-y-1.5 pt-2 border-t border-slate-100">
+                    <span className="text-xs font-bold text-amber-800 flex items-center gap-1.5">
+                      <AlertCircle size={13} />
+                      المتخلدات السابقة:
+                    </span>
+                    <div className="space-y-1.5">
+                      {st.arrears.map((arr) => (
+                        <div key={arr.student_fee_id} className="p-2 rounded-xl bg-amber-50/50 border border-amber-200 flex justify-between text-xs">
+                          <span>{arr.description}</span>
+                          <span className="font-bold text-red-600">{money(arr.remaining_amount)} د.ت متبقٍ</span>
                         </div>
                       ))}
                     </div>
-                  )}
-                </div>
+                  </div>
+                )}
               </div>
             );
           })}
         </div>
       </div>
 
-      {/* Mode 1: Collective Collection Modal for Unpaid Fees */}
+      {/* Family Collection Modal */}
       {showCollectModal && (
         <FamilyCollectionModal
           family={family}
@@ -266,16 +282,7 @@ export function FamilyDetailPage() {
         />
       )}
 
-      {/* Mode 2: Dedicated Add Fee Item Modal for Fully Paid Family */}
-      {showAddFeeModal && (
-        <AddFeeItemModal
-          family={family}
-          onClose={() => setShowAddFeeModal(false)}
-          onSuccess={handleCollectionSuccess}
-        />
-      )}
-
-      {/* Receipt Modal Output */}
+      {/* Unified Receipt Modal Output */}
       {activeReceipt && (
         <ReceiptModal
           receipt={activeReceipt}

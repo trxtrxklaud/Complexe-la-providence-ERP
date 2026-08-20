@@ -29,7 +29,7 @@ class FamilyController extends Controller
     }
 
     /**
-     * تفاصيل عائلة محددة وأبنائها ورسومهم المستحقة (يدعم ID رقمي أو معرف هاتف مثل phone_55296000).
+     * تفاصيل عائلة محددة وأبنائها ورسومهم المستحقة (يدعم ID رقمي أو معرف هاتف مثل phone_50247050).
      */
     public function show(string|int $id): JsonResponse
     {
@@ -40,7 +40,7 @@ class FamilyController extends Controller
             return response()->json(['message' => 'العائلة غير موجودة'], 404);
         } catch (\Exception $e) {
             report($e);
-            return response()->json(['message' => 'تعذّر تحميل بيانات العائلة'], 404);
+            return response()->json(['message' => 'تعذّر تحميل بيانات العائلة: ' . $e->getMessage()], 404);
         }
     }
 
@@ -50,23 +50,30 @@ class FamilyController extends Controller
     public function collect(Request $request, string|int $id): JsonResponse
     {
         $request->validate([
-            'allocations' => ['required', 'array', 'min:1'],
-            'allocations.*.student_id' => ['required', 'integer'],
-            'allocations.*.student_fee_id' => ['required', 'integer', 'min:0'],
-            'allocations.*.amount' => ['required', 'numeric', 'gt:0'],
-            'allocations.*.new_item' => ['nullable', 'array'],
             'payment_date' => ['required', 'date'],
             'method' => ['required', 'string', 'in:cash,bank_transfer,check,card'],
             'reference' => ['nullable', 'string', 'max:255'],
             'notes' => ['nullable', 'string', 'max:1000'],
+            'students_allocations' => ['nullable', 'array'],
+            'students_allocations.*.student_id' => ['required_with:students_allocations', 'integer'],
+            'students_allocations.*.enrollment_id' => ['required_with:students_allocations', 'integer'],
+            'students_allocations.*.months' => ['nullable', 'array'],
+            'students_allocations.*.club_items' => ['nullable', 'array'],
+            'students_allocations.*.prior_allocations' => ['nullable', 'array'],
+            // Backwards compatibility validation if allocations array is sent
+            'allocations' => ['nullable', 'array'],
         ]);
 
         try {
-            $payload = array_merge($request->all(), ['family_id' => $id]);
+            $payload = array_merge($request->all(), [
+                'family_id' => $id,
+                'idempotency_key' => $request->header('Idempotency-Key') ?: ($request->input('idempotency_key') ?: null),
+            ]);
+
             $receipt = $this->familyService->collectFamilyPayment($payload, (int) auth()->id());
 
             return response()->json([
-                'message' => 'تم تسجيل الاستخلاص الجماعي بنجاح',
+                'message' => 'تم تسجيل الاستخلاص العائلي بنجاح',
                 'receipt' => $receipt,
             ], 201);
         } catch (InvalidArgumentException $e) {
@@ -75,7 +82,7 @@ class FamilyController extends Controller
             return response()->json(['message' => 'العائلة غير موجودة'], 404);
         } catch (\Exception $e) {
             report($e);
-            return response()->json(['message' => 'فشل تنفيذ الاستخلاص الجماعي: ' . $e->getMessage()], 500);
+            return response()->json(['message' => 'فشل تنفيذ الاستخلاص العائلي: ' . $e->getMessage()], 500);
         }
     }
 }

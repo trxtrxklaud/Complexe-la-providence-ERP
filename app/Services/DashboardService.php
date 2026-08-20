@@ -81,6 +81,8 @@ class DashboardService
             ->where('enrollments.status', 'active')
             ->whereNull('enrollments.deleted_at')
             ->whereIn('student_fees.status', ['pending', 'partial', 'overdue'])
+            // القاعدة الذهبية: المتخلد = شهر حان استحقاقه ولم يُدفع؛ المستقبل ليس ديناً.
+            ->whereDate('student_fees.due_date', '<=', now())
             ->selectRaw('COALESCE(SUM(CASE WHEN student_fees.amount_due - COALESCE(pa.total_allocated, 0) > 0 THEN student_fees.amount_due - COALESCE(pa.total_allocated, 0) ELSE 0 END), 0) AS balance')
             ->value('balance') ?? 0;
 

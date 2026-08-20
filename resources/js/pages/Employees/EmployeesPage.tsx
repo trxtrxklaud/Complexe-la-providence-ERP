@@ -15,6 +15,7 @@ import {
 import { SalariesTab } from './SalariesTab';
 import { AdvancesTab } from './AdvancesTab';
 import { StaffTab } from './StaffTab';
+import { ScheduleTab } from './ScheduleTab';
 import { EmployeeFormModal, type EmployeeFormValues } from './EmployeeFormModal';
 import { AdvanceFormModal, type AdvanceFormValues } from './AdvanceFormModal';
 import { SettleAdvanceModal, type SettleFormValues } from './SettleAdvanceModal';
@@ -24,6 +25,7 @@ const TABS: Array<{ key: Tab; label: string }> = [
   { key: 'salaries', label: 'الرواتب' },
   { key: 'advances', label: 'التسبقات والسلف' },
   { key: 'staff', label: 'قائمة الإطارات' },
+  { key: 'schedule', label: 'جدول الحصص' },
 ];
 
 /**
@@ -126,7 +128,12 @@ export function EmployeesPage() {
         last_name: values.last_name,
         phone: values.phone || null,
         job_title: values.job_title || null,
+        staff_type: values.staff_type,
+        salary_type: values.salary_type,
+        hourly_rate: values.salary_type === 'hourly' && values.hourly_rate ? Number(values.hourly_rate) : null,
+        monthly_salary: values.salary_type === 'monthly' && values.monthly_salary ? Number(values.monthly_salary) : null,
         default_salary: values.default_salary ? Number(values.default_salary) : null,
+        hire_date: values.hire_date || null,
         is_active: true,
       });
       setShowEmpForm(false);
@@ -322,6 +329,17 @@ export function EmployeesPage() {
           employees={employees}
           onNewEmployee={() => setShowEmpForm(true)}
           onDeleteEmployee={onDeleteEmployee}
+        />
+      )}
+
+      {tab === 'schedule' && (
+        <ScheduleTab
+          employees={employees}
+          years={years}
+          defaultYearId={yearId}
+          onCreateSalary={onCreateSalary}
+          salarySaving={saving}
+          onError={(message) => setError(message)}
         />
       )}
 

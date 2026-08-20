@@ -1,7 +1,8 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
-  getOutstandingAdvances, getOutstandingLoans,
+  getOutstandingAdvances, getOutstandingLoans, getEmployeeMonthlySummary,
   type Employee, type EmployeeAdvance, type LoanDeductionInput,
+  type HoursMonthlySummary,
 } from '../../api/employees';
 import { TreasuryBalanceHint } from '../../components/TreasuryBalanceHint';
 import { C, money, today, remainingOf, type AcademicYearOption } from './shared';
@@ -57,6 +58,51 @@ export function SalaryFormModal({
   const [loanAmounts, setLoanAmounts] = useState<Record<number, string>>({});
 
   const [debtsLoading, setDebtsLoading] = useState(false);
+
+  // ملخص الحصص للمعلم الساعي: يجلب تلقائياً عند اختيار إطار ساعي
+  // أو تغيير شهر الفترة، ويملأ الراتب الخام بالراتب المحتسب — قابل للتعديل
+  // يدوياً قبل الحفظ، والنظام لا يخلّص شيئاً تلقائياً.
+  const [hourlySummary, setHourlySummary] = useState<HoursMonthlySummary | null>(null);
+  const [summaryLoading, setSummaryLoading] = useState(false);
+  const lastAutoKey = useRef<string>('');
+
+  const selectedEmployee = employees.find((e) => e.id === Number(form.employee_id));
+  const isHourly = selectedEmployee?.salary_type === 'hourly';
+  const periodMonth = (form.period_from || today()).slice(0, 7);
+
+  useEffect(() => {
+    setHourlySummary(null);
+
+    if (!isHourly) {
+      lastAutoKey.current = '';
+      return;
+    }
+
+    let cancelled = false;
+    setSummaryLoading(true);
+
+    const key = `${form.employee_id}:${periodMonth}`;
+    const autoFill = lastAutoKey.current !== key;
+
+    getEmployeeMonthlySummary(Number(form.employee_id), periodMonth)
+      .then((summary) => {
+        if (cancelled) return;
+        setHourlySummary(summary);
+        // لا يُعاد ملء الحقل بعد أول ملء لنفس الشهر — المسؤول قد عدّله يدوياً.
+        if (autoFill) {
+          lastAutoKey.current = key;
+          setForm((f) => ({ ...f, gross_amount: String(summary.total_salary) }));
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setHourlySummary(null);
+      })
+      .finally(() => {
+        if (!cancelled) setSummaryLoading(false);
+      });
+
+    return () => { cancelled = true; };
+  }, [form.employee_id, periodMonth, isHourly]);
 
   // عند تغيير الإطار تُجلَب ديونه وحده، وتُمسح الاختيارات السابقة
   // حتّى لا يُخصم من إطار دَين إطار آخر.
@@ -180,6 +226,27 @@ export function SalaryFormModal({
 
         <div>
           <label className="text-xs" style={{ color: C.muted }}>الراتب الخام</label>
+
+          {isHourly && (
+            <div className="mt-1 rounded-xl border px-3 py-2 text-xs flex flex-wrap items-center justify-between gap-2"
+              style={{ borderColor: C.line, background: C.sage }}>
+              {summaryLoading ? (
+                <span className="animate-pulse" style={{ color: C.muted }}>جارٍ حساب ساعات الشهر...</span>
+              ) : hourlySummary ? (
+                <>
+                  <span style={{ color: C.ink }}>
+                    إجمالي الساعات: <strong>{hourlySummary.total_hours}</strong> | الراتب المحتسب: <strong>{money(hourlySummary.total_salary)} د.ت</strong>
+                  </span>
+                  <span style={{ color: C.muted }}>
+                    ({hourlySummary.work_days} عمل / {hourlySummary.absence_days} غياب) — اقتراح قابل للتعديل يدوياً
+                  </span>
+                </>
+              ) : (
+                <span style={{ color: C.muted }}>لا ساعات مسجلة لهذا الشهر — يُترك الراتب فارغاً.</span>
+              )}
+            </div>
+          )}
+
           <input required type="number" step="0.01" placeholder="مثال: 500" className={`mt-1 ${FIELD}`} style={{ borderColor: C.line }}
             value={form.gross_amount} onChange={(e) => setForm({ ...form, gross_amount: e.target.value })} />
         </div>

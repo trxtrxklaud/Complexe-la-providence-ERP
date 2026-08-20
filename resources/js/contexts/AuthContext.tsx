@@ -50,9 +50,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
 
     const hasPermission = (permissionName: string): boolean => {
-        if (!user?.role) return false;
-        if (user.role.name === 'admin') return true;
-        return user.role.permissions?.some(p => p.name === permissionName) ?? false;
+        if (!user) return false;
+        if (Array.isArray(user.effective_permissions)) {
+            return user.effective_permissions.includes(permissionName);
+        }
+        return user.role?.permissions?.some(p => p.name === permissionName) ?? false;
     };
 
     return (

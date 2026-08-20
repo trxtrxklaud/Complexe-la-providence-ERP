@@ -80,18 +80,18 @@ class DashboardTest extends TestCase
         Sanctum::actingAs($this->makeUserWithPermissions('admin', ['manage_students']));
         $year = $this->makeAcademicYear();
 
-        $level = \App\Models\Level::firstOrCreate(['id' => 1], ['name' => 'السنة الأولى', 'code' => 'L1']);
-        $sec1 = \App\Models\Section::firstOrCreate(['id' => 881], ['level_id' => $level->id, 'name' => 'قسم 1', 'code' => 'S881']);
-        $sec2 = \App\Models\Section::firstOrCreate(['id' => 882], ['level_id' => $level->id, 'name' => 'قسم 2', 'code' => 'S882']);
+        $level = Level::firstOrCreate(['id' => 1], ['name' => 'السنة الأولى', 'code' => 'L1']);
+        $sec1 = Section::firstOrCreate(['id' => 881], ['level_id' => $level->id, 'name' => 'قسم 1', 'code' => 'S881']);
+        $sec2 = Section::firstOrCreate(['id' => 882], ['level_id' => $level->id, 'name' => 'قسم 2', 'code' => 'S882']);
 
         // Student 1: Male
-        $maleStudent = \App\Models\Student::create([
+        $maleStudent = Student::create([
             'student_code' => 'ST_MALE_1',
             'first_name' => 'أحمد',
             'last_name' => 'علي',
             'gender' => 'male',
         ]);
-        \App\Models\Enrollment::create([
+        Enrollment::create([
             'student_id' => $maleStudent->id,
             'academic_year_id' => $year->id,
             'level_id' => $level->id,
@@ -101,13 +101,13 @@ class DashboardTest extends TestCase
         ]);
 
         // Student 2: Female with duplicate enrollment row in same active year
-        $femaleStudent = \App\Models\Student::create([
+        $femaleStudent = Student::create([
             'student_code' => 'ST_FEMALE_1',
             'first_name' => 'مريم',
             'last_name' => 'بن طالب',
             'gender' => 'female',
         ]);
-        \App\Models\Enrollment::create([
+        Enrollment::create([
             'student_id' => $femaleStudent->id,
             'academic_year_id' => $year->id,
             'level_id' => $level->id,
@@ -115,7 +115,7 @@ class DashboardTest extends TestCase
             'status' => 'active',
             'enrollment_date' => now()->toDateString(),
         ]);
-        \App\Models\Enrollment::create([
+        Enrollment::create([
             'student_id' => $femaleStudent->id,
             'academic_year_id' => $year->id,
             'level_id' => $level->id,
@@ -125,13 +125,13 @@ class DashboardTest extends TestCase
         ]);
 
         // Student 3: Null/Unspecified gender with generic name
-        $unspecifiedStudent = \App\Models\Student::create([
+        $unspecifiedStudent = Student::create([
             'student_code' => 'ST_UNK_1',
             'first_name' => 'غير_معروف_123',
             'last_name' => 'مستورد',
             'gender' => null,
         ]);
-        \App\Models\Enrollment::create([
+        Enrollment::create([
             'student_id' => $unspecifiedStudent->id,
             'academic_year_id' => $year->id,
             'level_id' => $level->id,
@@ -141,13 +141,13 @@ class DashboardTest extends TestCase
         ]);
 
         // Student 4: Null/Unspecified gender with male Arabic first name 'محمد'
-        $unspecifiedArabicName = \App\Models\Student::create([
+        $unspecifiedArabicName = Student::create([
             'student_code' => 'ST_UNK_2',
             'first_name' => 'محمد',
             'last_name' => 'التونسي',
             'gender' => null,
         ]);
-        \App\Models\Enrollment::create([
+        Enrollment::create([
             'student_id' => $unspecifiedArabicName->id,
             'academic_year_id' => $year->id,
             'level_id' => $level->id,
@@ -174,8 +174,8 @@ class DashboardTest extends TestCase
         );
     }
 
-    /** التوزيعات المنتمية لدفعات ملغاة لا تُخصم من متخلّد السنة الحالية. */
-    public function test_dashboard_current_year_outstanding_excludes_cancelled_payment_allocations(): void
+    /** إلغاء استخلاص = مسح كلي: الرسوم المؤقتة التي أنشأها تُحذف فلا يبقى شيء في المتخلّد. */
+    public function test_dashboard_current_year_outstanding_erased_when_collection_payment_cancelled(): void
     {
         // admin دور خارق يتجاوز فحص الصلاحيات (تسجيل واستقبال وإلغاء ولوحة مالية).
         $user = $this->makeUserWithPermissions('admin', []);
@@ -186,11 +186,11 @@ class DashboardTest extends TestCase
 
         $fee = StudentFee::create([
             'enrollment_id' => $enrollment->id,
-            'fee_plan_id'   => null,
-            'description'   => 'قسط شهري',
-            'amount_due'    => 300,
-            'due_date'      => '2025-09-05',
-            'status'        => 'pending',
+            'fee_plan_id' => null,
+            'description' => 'قسط شهري',
+            'amount_due' => 300,
+            'due_date' => '2025-09-05',
+            'status' => 'pending',
         ]);
 
         // قبل السداد: كل المتخلَّد (300) على العام.
@@ -198,21 +198,23 @@ class DashboardTest extends TestCase
 
         // سداد جزئي 200 → يتبقّى 100.
         $payment = app(PaymentService::class)->recordPayment([
-            'student_id'    => $enrollment->student_id,
+            'student_id' => $enrollment->student_id,
             'enrollment_id' => $enrollment->id,
-            'amount'        => 200,
-            'payment_date'  => '2025-09-10',
-            'method'        => 'cash',
-            'allocations'   => [['student_fee_id' => $fee->id, 'amount' => 200]],
+            'amount' => 200,
+            'payment_date' => '2025-09-10',
+            'method' => 'cash',
+            'allocations' => [['student_fee_id' => $fee->id, 'amount' => 200]],
         ], $user->id);
 
         $this->assertEquals(100, $this->dashboardPendingAmount());
 
-        // إلغاء الدفعة: توزيعاتها لا تُحتسب في المتبقّي → يعود المتخلَّد 300.
+        // إلغاء الدفعة: بصمة العملية تُمحى كلياً — الرسم المؤقت يُحذف
+        // فلا يظهر المبلغ في المتخلّد إطلاقاً.
         $this->postJson("/api/payments/{$payment->id}/cancel", ['reason' => 'تدقيق داخلي'])
             ->assertOk();
 
-        $this->assertEquals(300, $this->dashboardPendingAmount());
+        $this->assertEquals(0, $this->dashboardPendingAmount());
+        $this->assertDatabaseMissing('student_fees', ['id' => $fee->id]);
     }
 
     /** التوزيعات المنتمية لدفعات ملغاة لا تُخصم من متخلّد السنوات السابقة. */
@@ -222,17 +224,17 @@ class DashboardTest extends TestCase
         Sanctum::actingAs($user);
 
         $old = AcademicYear::create([
-            'name'       => '2025-2026',
+            'name' => '2025-2026',
             'start_date' => '2025-09-01',
-            'end_date'   => '2026-06-30',
-            'is_active'  => false,
+            'end_date' => '2026-06-30',
+            'is_active' => false,
         ]);
 
         $new = AcademicYear::create([
-            'name'       => '2026-2027',
+            'name' => '2026-2027',
             'start_date' => '2026-09-01',
-            'end_date'   => '2027-06-30',
-            'is_active'  => true,
+            'end_date' => '2027-06-30',
+            'is_active' => true,
         ]);
 
         $level = Level::firstOrCreate(
@@ -246,28 +248,28 @@ class DashboardTest extends TestCase
 
         $student = Student::create([
             'student_code' => 'ST-PRIOR-YEAR',
-            'first_name'   => 'ليلى',
-            'last_name'    => 'بن عامر',
-            'gender'       => 'female',
-            'status'       => 'active',
+            'first_name' => 'ليلى',
+            'last_name' => 'بن عامر',
+            'gender' => 'female',
+            'status' => 'active',
         ]);
 
         $oldEnrollment = Enrollment::create([
-            'student_id'       => $student->id,
+            'student_id' => $student->id,
             'academic_year_id' => $old->id,
-            'level_id'         => $level->id,
-            'section_id'       => $section->id,
-            'enrollment_date'  => '2025-09-01',
-            'status'           => 'active',
+            'level_id' => $level->id,
+            'section_id' => $section->id,
+            'enrollment_date' => '2025-09-01',
+            'status' => 'active',
         ]);
 
         $oldFee = StudentFee::create([
             'enrollment_id' => $oldEnrollment->id,
-            'fee_plan_id'   => null,
-            'description'   => 'القسط الشهري — سبتمبر 2025',
-            'amount_due'    => 200,
-            'due_date'      => '2025-09-05',
-            'status'        => 'pending',
+            'fee_plan_id' => null,
+            'description' => 'القسط الشهري — سبتمبر 2025',
+            'amount_due' => 200,
+            'due_date' => '2025-09-05',
+            'status' => 'pending',
         ]);
 
         // إقفال السنة القديمة يرفع الرصيد الافتتاحي 200 إلى السنة النشطة.
@@ -276,12 +278,12 @@ class DashboardTest extends TestCase
 
         // قبض الدَّين القديم بالكامل → متخلَّد السنوات السابقة = 0.
         $payment = app(PaymentService::class)->recordPayment([
-            'student_id'    => $student->id,
+            'student_id' => $student->id,
             'enrollment_id' => $oldEnrollment->id,
-            'amount'        => 200,
-            'payment_date'  => '2026-09-15',
-            'method'        => 'cash',
-            'allocations'   => [['student_fee_id' => $oldFee->id, 'amount' => 200]],
+            'amount' => 200,
+            'payment_date' => '2026-09-15',
+            'method' => 'cash',
+            'allocations' => [['student_fee_id' => $oldFee->id, 'amount' => 200]],
         ], $user->id);
 
         $this->assertEquals(0, $this->dashboardPriorYearOutstanding());

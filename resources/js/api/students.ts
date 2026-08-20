@@ -1,5 +1,5 @@
 import type { User } from '../types';
-import { apiFetch, API_BASE, getCsrfTokenFromCookie } from './http';
+import { apiFetch, API_BASE, getHeaders } from './http';
 
 export interface Guardian {
     first_name: string;
@@ -125,14 +125,10 @@ export type TransferStudentsPayload = {
     student_ids: number[];
 };
 
-/** رؤوس بدون Content-Type: مطلوبة لطلبات FormData. */
+/** رؤوس موحّدة تتضمن توكن Sanctum، بلا Content-Type: مطلوبة لطلبات FormData. */
 function authHeaders(): Record<string, string> {
-    const xsrfToken = getCsrfTokenFromCookie();
-    return {
-        'Accept': 'application/json',
-        'X-Requested-With': 'XMLHttpRequest',
-        ...(xsrfToken ? { 'X-XSRF-TOKEN': xsrfToken } : {}),
-    };
+    const { 'Content-Type': _contentType, ...rest } = getHeaders();
+    return rest;
 }
 
 /** يستخرج أول رسالة تحقّق من ردّ 422، وإلا فرسالة الخطأ العامة. */

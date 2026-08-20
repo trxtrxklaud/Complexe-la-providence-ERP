@@ -27,6 +27,7 @@ import {
 const UsersList = lazy(() => loadUsersList().then((module) => ({ default: module.UsersList })));
 const DiscountsPage = lazy(() => import('./pages/Discounts/DiscountsPage').then((module) => ({ default: module.DiscountsPage })));
 const MonthlyDiscountsPage = lazy(() => import('./pages/Discounts/MonthlyDiscountsPage').then((module) => ({ default: module.MonthlyDiscountsPage })));
+const ExemptionsPage = lazy(() => import('./pages/Exemptions/ExemptionsPage').then((module) => ({ default: module.ExemptionsPage })));
 
 const ClubFeesReportPage = lazy(() => import('./pages/Reports/ClubFeesReportPage'));
 const ClubArrearsDashboardPage = lazy(() => import('./pages/Reports/ClubArrearsDashboardPage'));
@@ -291,16 +292,23 @@ export default function App() {
                     <Route path="/collection" element={<Navigate to="/income/billing" replace />} />
 
                     {/* التخفيضات السنوية — الخادم يحرسها بصلاحية waive_fees حصراً */}
-<Route path='/discounts' element={
-<ProtectedRoute permission='waive_fees'>
-<Layout><DiscountsPage /></Layout>
-</ProtectedRoute>
-} />
-<Route path='/discounts/monthly' element={
-<ProtectedRoute permission='waive_fees'>
-<Layout><MonthlyDiscountsPage /></Layout>
-</ProtectedRoute>
-} />
+                    <Route path='/discounts' element={
+                        <ProtectedRoute permission='waive_fees'>
+                            <Layout><DiscountsPage /></Layout>
+                        </ProtectedRoute>
+                    } />
+                    <Route path='/discounts/monthly' element={
+                        <ProtectedRoute permission='waive_fees'>
+                            <Layout><MonthlyDiscountsPage /></Layout>
+                        </ProtectedRoute>
+                    } />
+
+                    {/* إدارة الإعفاءات والتخفيضات للتلاميذ — موديول رئيسي مستقل */}
+                    <Route path="/exemptions" element={
+                        <ProtectedRoute anyOf={['waive_fees', 'manage_students', 'manage_payments']}>
+                            <Layout><ExemptionsPage /></Layout>
+                        </ProtectedRoute>
+                    } />
 
 {/* Historique — سجل الوصولات الملغاة، يقرأ من /payments */}
                     <Route path="/historique" element={

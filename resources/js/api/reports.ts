@@ -141,6 +141,15 @@ export type UnpaidMonthlyRow = {
   mother_name: string | null;
   mother_phone: string | null;
   enrollment_date: string | null;
+  gross_amount?: number;
+  discount_amount?: number;
+  net_due?: number;
+  remaining_amount?: number;
+  discount_type?: string | null;
+  discount_reason?: string | null;
+  is_waived?: boolean;
+  status?: string;
+  status_label?: string;
 };
 
 export type UnpaidMonthlyReport = {
@@ -153,7 +162,11 @@ export type UnpaidMonthlyReport = {
   report_date: string;
   report_time: string;
   rows: UnpaidMonthlyRow[];
-  summary: { unpaid_students_count: number };
+  summary: {
+    unpaid_students_count: number;
+    waived_students_count?: number;
+    total_students_count?: number;
+  };
 };
 
 export type PeriodParams = {

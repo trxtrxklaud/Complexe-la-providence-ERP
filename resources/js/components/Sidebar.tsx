@@ -1,7 +1,7 @@
 import { NavLink, useNavigate, useLocation } from 'react-router-dom';
 import {
     LayoutDashboard, Users, LogOut, GraduationCap, Tags, Layers,
-    ClipboardList, History, Wallet, Receipt, Landmark, TrendingUp, BadgePercent, Award,
+    ClipboardList, History, Wallet, Receipt, Landmark, TrendingUp, BadgePercent, Award, HeartHandshake,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import {
@@ -263,15 +263,25 @@ export function Sidebar() {
                     </NavLink>
                 )}
 
-{hasPermission('waive_fees') && (
-<NavLink
-to='/discounts'
-className={({ isActive }) => linkClass(isActive || startsWith('/discounts'))}
->
-<BadgePercent size={20} />
-<span>التخفيضات</span>
-</NavLink>
-)}
+                {hasPermission('waive_fees') && (
+                    <NavLink
+                        to="/discounts"
+                        className={({ isActive }) => linkClass(isActive || startsWith('/discounts'))}
+                    >
+                        <BadgePercent size={20} />
+                        <span>التخفيضات</span>
+                    </NavLink>
+                )}
+
+                {canAny('waive_fees', 'manage_students', 'manage_payments') && (
+                    <NavLink
+                        to="/exemptions"
+                        className={({ isActive }) => linkClass(isActive || startsWith('/exemptions'))}
+                    >
+                        <HeartHandshake size={20} />
+                        <span>إدارة الإعفاءات</span>
+                    </NavLink>
+                )}
 
                 {/* ─── الموارد البشرية ─── */}
                 {showHr && (

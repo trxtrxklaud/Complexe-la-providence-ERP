@@ -12,6 +12,7 @@ use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\DiscountController;
 use App\Http\Controllers\EmployeeAdvanceController;
 use App\Http\Controllers\EmployeeController;
+use App\Http\Controllers\EmployeeHoursController;
 use App\Http\Controllers\ExpenseCategoryController;
 use App\Http\Controllers\ExpenseController;
 use App\Http\Controllers\FamilyController;
@@ -30,6 +31,7 @@ use App\Http\Controllers\TreasuryDaybookController;
 use App\Http\Controllers\TreasuryWithdrawalController;
 use App\Http\Controllers\UnpaidMonthlyReportController;
 use App\Http\Controllers\UserController;
+use App\Http\Controllers\UserPermissionOverrideController;
 use Illuminate\Support\Facades\Route;
 
 Route::middleware('throttle:5,1')->post('/login', [AuthController::class, 'login']);
@@ -45,6 +47,11 @@ Route::middleware(['auth:sanctum', 'active', 'throttle:120,1'])->group(function 
 
     // الموظفون — صلاحية منفصلة
     Route::middleware('permission:manage_employees')->group(function () {
+        // جدول الحصص: يحسب ويقترح فحسب — لا يُنشئ راتباً ولا صفّاً نقدياً.
+        Route::get('/employees/{employee}/hours/monthly-summary', [EmployeeHoursController::class, 'monthlySummary']);
+        Route::get('/employees/{employee}/hours', [EmployeeHoursController::class, 'index']);
+        Route::post('/employees/{employee}/hours', [EmployeeHoursController::class, 'store']);
+
         Route::apiResource('/employees', EmployeeController::class);
     });
 
@@ -123,6 +130,15 @@ Route::middleware(['auth:sanctum', 'active', 'throttle:120,1'])->group(function 
         Route::apiResource('/fee-types', FeeTypeController::class)->except(['index']);
     });
 
+    // Direct Permission Overrides (منح / منع الصلاحيات المباشرة للمستخدم)
+    Route::middleware('permission:manage_user_permissions')->group(function () {
+        Route::get('/users/{user}/permission-overrides', [UserPermissionOverrideController::class, 'index']);
+        Route::post('/users/{user}/permission-overrides', [UserPermissionOverrideController::class, 'store']);
+        Route::put('/users/{user}/permission-overrides/{permission}', [UserPermissionOverrideController::class, 'update']);
+        Route::delete('/users/{user}/permission-overrides/{permission}', [UserPermissionOverrideController::class, 'destroy']);
+        Route::get('/users/{user}/effective-permissions', [UserPermissionOverrideController::class, 'effectivePermissions']);
+    });
+
     // School structure — المستويات والأقسام
     Route::middleware('permission:manage_users')->group(function () {
         Route::get('/levels', [LevelController::class, 'index']);
@@ -166,6 +182,7 @@ Route::middleware(['auth:sanctum', 'active', 'throttle:120,1'])->group(function 
         Route::get('/students/{student}/fees', [PaymentController::class, 'studentFees']);
         Route::get('/students/{student}/payments', [StudentController::class, 'paymentHistory']);
     });
+
 
     // Payments
     Route::middleware('permission:manage_payments')->group(function () {
@@ -215,6 +232,14 @@ Route::middleware(['auth:sanctum', 'active', 'throttle:120,1'])->group(function 
         Route::get('/club-subscriptions/{subscription}/monthly-discounts', [ClubMonthlyDiscountController::class, 'index']);
         Route::post('/club-subscriptions/{subscription}/monthly-discounts', [ClubMonthlyDiscountController::class, 'store']);
         Route::post('/club-monthly-discounts/{discount}/cancel', [ClubMonthlyDiscountController::class, 'cancel']);
+
+        // إدارة الإعفاءات للتلاميذ (دراسي / نوادي)
+        Route::get('/exemptions', [\App\Http\Controllers\ExemptionController::class, 'allExemptions']);
+        Route::get('/enrollments/{enrollment}/exemptions', [\App\Http\Controllers\ExemptionController::class, 'index']);
+        Route::post('/enrollments/{enrollment}/exemptions/monthly', [\App\Http\Controllers\ExemptionController::class, 'storeMonthly']);
+        Route::post('/enrollments/{enrollment}/exemptions/club/{clubSubscription}', [\App\Http\Controllers\ExemptionController::class, 'storeClub']);
+        Route::delete('/exemptions/monthly/{monthlyDiscount}', [\App\Http\Controllers\ExemptionController::class, 'cancelMonthly']);
+        Route::delete('/exemptions/club/{clubMonthlyDiscount}', [\App\Http\Controllers\ExemptionController::class, 'cancelClub']);
     });
 
     // النوادي المدرسية واشتراكاتها

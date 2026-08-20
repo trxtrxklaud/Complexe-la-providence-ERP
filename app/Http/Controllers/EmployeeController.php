@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\Employee;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
 
 class EmployeeController extends Controller
 {
@@ -16,17 +17,12 @@ class EmployeeController extends Controller
 
     public function store(Request $request): JsonResponse
     {
-        $data = $request->validate([
-            'first_name' => ['required', 'string', 'max:100'],
-            'last_name' => ['required', 'string', 'max:100'],
-            'phone' => ['nullable', 'string', 'max:30'],
-            'email' => ['nullable', 'email', 'max:150'],
-            'job_title' => ['nullable', 'string', 'max:100'],
-            'default_salary' => ['nullable', 'numeric', 'min:0'],
-            'is_active' => ['nullable', 'boolean'],
-            'notes' => ['nullable', 'string'],
-        ]);
+        $data = $request->validate($this->rules());
         $data['is_active'] = $data['is_active'] ?? true;
+        $data['staff_type'] = $data['staff_type'] ?? 'monthly_teacher';
+        $data['salary_type'] = $data['salary_type'] ?? 'monthly';
+
+        // backfill (monthly_salary من default_salary) يقوم به نموذج Employee عند الإنشاء.
         $emp = Employee::create($data);
         return response()->json($emp, 201);
     }
@@ -38,18 +34,29 @@ class EmployeeController extends Controller
 
     public function update(Request $request, Employee $employee): JsonResponse
     {
-        $data = $request->validate([
-            'first_name' => ['sometimes', 'string', 'max:100'],
-            'last_name' => ['sometimes', 'string', 'max:100'],
+        $data = $request->validate($this->rules(true));
+        $employee->update($data);
+        return response()->json($employee->fresh());
+    }
+
+    private function rules(bool $partial = false): array
+    {
+        $prefix = $partial ? 'sometimes' : 'required';
+
+        return [
+            'first_name' => [$prefix, 'string', 'max:100'],
+            'last_name' => [$prefix, 'string', 'max:100'],
             'phone' => ['nullable', 'string', 'max:30'],
             'email' => ['nullable', 'email', 'max:150'],
             'job_title' => ['nullable', 'string', 'max:100'],
+            'staff_type' => ['nullable', Rule::in(array_keys(Employee::STAFF_TYPES))],
+            'salary_type' => ['nullable', Rule::in(array_keys(Employee::SALARY_TYPES))],
+            'hourly_rate' => ['nullable', 'numeric', 'min:0'],
+            'monthly_salary' => ['nullable', 'numeric', 'min:0'],
             'default_salary' => ['nullable', 'numeric', 'min:0'],
             'is_active' => ['nullable', 'boolean'],
             'notes' => ['nullable', 'string'],
-        ]);
-        $employee->update($data);
-        return response()->json($employee->fresh());
+        ];
     }
 
     public function destroy(Employee $employee): JsonResponse

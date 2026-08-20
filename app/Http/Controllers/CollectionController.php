@@ -68,12 +68,20 @@ class CollectionController extends Controller
 
     public function studentsBySection(Section $section, Request $request): JsonResponse
     {
-        $request->validate([
-            'year_id' => ['required', 'integer', 'exists:academic_years,id'],
-        ]);
+        $yearId = $request->input('year_id');
+
+        if ($yearId !== null && $yearId !== '') {
+            $request->validate([
+                'year_id' => ['integer', 'exists:academic_years,id'],
+            ]);
+            $yearId = (int) $yearId;
+        } else {
+            $yearId = AcademicYear::where('is_active', true)->value('id')
+                ?? AcademicYear::latest('id')->value('id');
+        }
 
         $enrollments = Enrollment::where('section_id', $section->id)
-            ->where('academic_year_id', $request->integer('year_id'))
+            ->where('academic_year_id', $yearId)
             // المغادر والمنقول لا يُستخلص منهما في هذا القسم.
             ->where('status', 'active')
             ->with([
