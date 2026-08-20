@@ -32,10 +32,12 @@ class CollectPaymentRequest extends FormRequest
             'club_items.*.club_monthly_fee_id' => ['required', 'integer', 'distinct', 'exists:club_monthly_fees,id'],
             'club_items.*.amount' => ['required', 'numeric', 'min:0.01', 'max:1000000'],
 
-            // توزيع صريح على متخلّدات السنوات السابقة (اختياري).
+            // توزيع صريح على متخلّدات السنوات السابقة (اختياري):
+            // رسم سابق، أو رصيد افتتاحي، أو دَين قديم مُدخل يدوياً.
             'prior_allocations' => ['nullable', 'array', 'max:50'],
-            'prior_allocations.*.student_fee_id' => ['nullable', 'integer', 'distinct', 'exists:student_fees,id', 'required_without:prior_allocations.*.opening_balance_id'],
-            'prior_allocations.*.opening_balance_id' => ['nullable', 'integer', 'distinct', 'exists:opening_balances,id', 'required_without:prior_allocations.*.student_fee_id'],
+            'prior_allocations.*.student_fee_id' => ['nullable', 'integer', 'distinct', 'exists:student_fees,id', 'required_without_all:prior_allocations.*.opening_balance_id,prior_allocations.*.manual_student_debt_id'],
+            'prior_allocations.*.opening_balance_id' => ['nullable', 'integer', 'distinct', 'exists:opening_balances,id', 'required_without_all:prior_allocations.*.student_fee_id,prior_allocations.*.manual_student_debt_id'],
+            'prior_allocations.*.manual_student_debt_id' => ['nullable', 'integer', 'distinct', 'exists:manual_student_debts,id', 'required_without_all:prior_allocations.*.student_fee_id,prior_allocations.*.opening_balance_id'],
             'prior_allocations.*.amount' => ['required', 'numeric', 'min:0.01', 'max:1000000'],
         ];
     }
@@ -72,11 +74,13 @@ class CollectPaymentRequest extends FormRequest
             foreach ((array) $this->input('prior_allocations', []) as $index => $allocation) {
                 $hasFee = ! empty($allocation['student_fee_id']);
                 $hasOpeningBalance = ! empty($allocation['opening_balance_id']);
+                $hasManualDebt = ! empty($allocation['manual_student_debt_id']);
+                $targets = array_sum([$hasFee, $hasOpeningBalance, $hasManualDebt]);
 
-                if ($hasFee === $hasOpeningBalance) {
+                if ($targets !== 1) {
                     $validator->errors()->add(
                         "prior_allocations.$index",
-                        'يجب تحديد student_fee_id أو opening_balance_id فقط'
+                        'يجب تحديد student_fee_id أو opening_balance_id أو manual_student_debt_id فقط'
                     );
                 }
             }

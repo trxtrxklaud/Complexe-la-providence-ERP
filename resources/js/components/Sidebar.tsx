@@ -238,6 +238,37 @@ export function Sidebar() {
                     </NavLink>
                 )}
 
+                {/* الأرصدة الافتتاحية — ديون التلاميذ ومستحقات الإطارات القديمة.
+                    الإدخال لا يحرّك مالاً (manage_treasury) والتقارير قراءة (view_reports). */}
+                {canAny('manage_treasury', 'view_reports') && (
+                    <NavLink
+                        to="/opening-balances"
+                        className={({ isActive }) => linkClass(isActive || startsWith('/opening-balances'))}
+                    >
+                        <Landmark size={20} />
+                        <span>الأرصدة الافتتاحية</span>
+                    </NavLink>
+                )}
+
+                {hasPermission('view_reports') && (
+                    <>
+                        <NavLink
+                            to="/reports/old-debts"
+                            className={({ isActive }) => linkClass(isActive || startsWith('/reports/old-debts'))}
+                        >
+                            <Receipt size={20} />
+                            <span>كشف الديون القديمة</span>
+                        </NavLink>
+                        <NavLink
+                            to="/reports/employee-liabilities"
+                            className={({ isActive }) => linkClass(isActive || startsWith('/reports/employee-liabilities'))}
+                        >
+                            <Receipt size={20} />
+                            <span>مستحقات الإطارات القديمة</span>
+                        </NavLink>
+                    </>
+                )}
+
                 {/* الدخل الصافي — موديول مستقل لأنه يقرأ من كل المصادر لا من الخزينة وحدها */}
                 {hasPermission('view_reports') && (
                     <NavLink

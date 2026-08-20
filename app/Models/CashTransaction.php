@@ -44,6 +44,10 @@ class CashTransaction extends Model
 
     public const CATEGORY_EXPENSE = 'expense';            // المصاريف
 
+    // خلاص مستحقّات الإطارات القديمة: خروج نقدي لكنه ليس صرفاً للسنة الحالية
+    // — بند مستقل يحفظ الفارق بين أجور الحالي والمتخلّدات السابقة.
+    public const CATEGORY_OLD_LIABILITY_PAYMENT = 'old_liability_payment';  // خلاص مستحقّات قديمة
+
     // حركة مستقلة: لا تدخل في الدخل الصافي
     public const CATEGORY_WITHDRAWAL = 'withdrawal';         // سحب من الخزينة
 
@@ -75,6 +79,7 @@ class CashTransaction extends Model
         self::CATEGORY_SALARY,
         self::CATEGORY_EMPLOYEE_ADVANCE,
         self::CATEGORY_EXPENSE,
+        self::CATEGORY_OLD_LIABILITY_PAYMENT,
     ];
 
     /** التسميات العربية المعتمدة في التقارير. */
@@ -90,6 +95,7 @@ class CashTransaction extends Model
         self::CATEGORY_SALARY => 'الأجور',
         self::CATEGORY_EMPLOYEE_ADVANCE => 'سلفة',
         self::CATEGORY_EXPENSE => 'المصاريف',
+        self::CATEGORY_OLD_LIABILITY_PAYMENT => 'خلاص مستحقّات قديمة',
         self::CATEGORY_WITHDRAWAL => 'سحب من الخزينة',
     ];
 

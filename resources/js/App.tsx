@@ -64,6 +64,9 @@ const TreasuryWithdrawalsPage = lazy(() => import('./pages/Treasury/TreasuryWith
 const NetIncomeDailyPage = lazy(() => loadNetIncomeDailyPage().then((module) => ({ default: module.NetIncomeDailyPage })));
 const NetRevenueMonthlyPage = lazy(() => import('./pages/NetIncome/NetRevenueMonthlyPage').then((module) => ({ default: module.NetRevenueMonthlyPage })));
 const NetRevenueYearlyPage = lazy(() => import('./pages/NetIncome/NetRevenueYearlyPage').then((module) => ({ default: module.NetRevenueYearlyPage })));
+const OpeningBalancesPage = lazy(() => import('./pages/Finance/OpeningBalancesPage').then((module) => ({ default: module.OpeningBalancesPage })));
+const OldDebtReportPage = lazy(() => import('./pages/Finance/OldDebtReportPage').then((module) => ({ default: module.OldDebtReportPage })));
+const EmployeeLiabilityReportPage = lazy(() => import('./pages/Finance/EmployeeLiabilityReportPage').then((module) => ({ default: module.EmployeeLiabilityReportPage })));
 
 function RouteContentSkeleton() {
     return (
@@ -314,6 +317,26 @@ export default function App() {
                     <Route path="/historique" element={
                         <ProtectedRoute permission="manage_payments">
                             <Layout><HistoriquePage /></Layout>
+                        </ProtectedRoute>
+                    } />
+
+                    {/* ═══ الأرصدة الافتتاحية اليدوية ═══
+                        الإدخال والإلغاء manage_treasury؛ القائمة ترى من view_reports أيضاً */}
+                    <Route path="/opening-balances" element={
+                        <ProtectedRoute anyOf={['manage_treasury', 'view_reports']}>
+                            <Layout><OpeningBalancesPage /></Layout>
+                        </ProtectedRoute>
+                    } />
+
+                    {/* تقارير الأرصدة الافتتاحية — قراءة بحتة */}
+                    <Route path="/reports/old-debts" element={
+                        <ProtectedRoute permission="view_reports">
+                            <Layout><OldDebtReportPage /></Layout>
+                        </ProtectedRoute>
+                    } />
+                    <Route path="/reports/employee-liabilities" element={
+                        <ProtectedRoute permission="view_reports">
+                            <Layout><EmployeeLiabilityReportPage /></Layout>
                         </ProtectedRoute>
                     } />
 

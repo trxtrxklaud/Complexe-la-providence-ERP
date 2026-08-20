@@ -3,7 +3,10 @@
 namespace App\Http\Controllers;
 
 use App\Models\CashTransaction;
+use App\Models\EmployeeLiability;
 use App\Models\Enrollment;
+use App\Models\ManualStudentDebt;
+use App\Models\OpeningBalance;
 use App\Models\Payment;
 use App\Models\Section;
 use App\Models\Student;
@@ -474,6 +477,215 @@ class FinancialReportController extends Controller
                 'payments_count' => count(array_filter($payments, fn ($p) => ! $p['cancelled'])),
                 'cancelled_count' => count(array_filter($payments, fn ($p) => $p['cancelled'])),
                 'total' => $total,
+            ],
+        ]);
+    }
+
+    // ==================== تقارير الأرصدة الافتتاحية ====================
+
+    /**
+     * كشف الديون القديمة المدخلة يدوياً: ما دخل، ما بقي، لكل دَين.
+     *
+     * الدَّين نفسه سجلّ إداري لا مبلغ — المال لا يتحرّك إلا عند تحصيله عبر
+     * cash_transactions (prior_year_debt)، فالمحصَّل هنا يُقرأ من التوزيعات
+     * الفعلية (PaymentAllocation) للرسم الجسر، لا من عمود مخزّن.
+     */
+    public function manualDebts(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'academic_year_id' => ['nullable', 'integer', 'exists:academic_years,id'],
+            'student_id' => ['nullable', 'integer', 'exists:students,id'],
+            'debt_type' => ['nullable', 'string', 'in:'.implode(',', ManualStudentDebt::DEBT_TYPES)],
+            'status' => ['nullable', 'string', 'in:pending,partial,paid,cancelled'],
+            'exclude_cancelled' => ['nullable', 'boolean'],
+        ]);
+
+        $query = ManualStudentDebt::with([
+            'student:id,first_name,last_name,student_code',
+            'academicYear:id,name',
+        ])
+            ->when($data['academic_year_id'] ?? null, fn ($q, $v) => $q->where('academic_year_id', (int) $v))
+            ->when($data['student_id'] ?? null, fn ($q, $v) => $q->where('student_id', (int) $v))
+            ->when($data['debt_type'] ?? null, fn ($q, $v) => $q->where('debt_type', $v))
+            ->when($data['status'] ?? null, fn ($q, $v) => $q->where('status', $v))
+            ->when($request->boolean('exclude_cancelled'), fn ($q) => $q->whereNull('cancelled_at'))
+            ->latest('id');
+
+        $rows = $query->get()->map(function (ManualStudentDebt $debt) {
+            return [
+                'id' => $debt->id,
+                'student' => $debt->student,
+                'academic_year' => $debt->academicYear,
+                'original_year_label' => $debt->original_year_label,
+                'debt_type' => $debt->debt_type,
+                'description' => $debt->description,
+                'original_amount' => (float) $debt->original_amount,
+                'collected_amount' => $debt->collected(),
+                'outstanding_amount' => $debt->outstanding(),
+                'status' => $debt->status,
+                'cancelled_at' => $debt->cancelled_at,
+                'created_at' => $debt->created_at,
+            ];
+        });
+
+        $active = $rows->reject(fn (array $row) => $row['cancelled_at'] !== null)->values();
+
+        return response()->json([
+            'filters' => $data,
+            'items' => $rows,
+            'totals' => [
+                'count' => $active->count(),
+                'original_amount' => round($active->sum('original_amount'), 2),
+                'collected_amount' => round($active->sum('collected_amount'), 2),
+                'outstanding_amount' => round($active->sum('outstanding_amount'), 2),
+            ],
+        ]);
+    }
+
+    /**
+     * ملخّص الأرصدة الافتتاحية: المسار الآلي (opening_balances) والمسار
+     * اليدوي (manual_student_debts) معاً، مجمّعَين بالنوع مع مجاميع كلية.
+     *
+     * للآلي يُشتقّ النوع من طبيعة الرسم المصدر (أقساط شهرية/ربع سنوية، تسجيل
+     * سنوي، أو رسم حرّ). للّيدوي يُستعمل debt_type نفسه.
+     */
+    public function openingBalancesSummary(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'academic_year_id' => ['nullable', 'integer', 'exists:academic_years,id'],
+        ]);
+
+        $yearId = $data['academic_year_id'] ?? null;
+
+        // ---- المسار الآلي: قراءة من جداول المصدر عبر الرسم الجسر ----
+        $auto = OpeningBalance::query()
+            ->with('sourceStudentFee.feePlan')
+            ->when($yearId, fn ($q, $v) => $q->where('academic_year_id', (int) $v))
+            ->whereNull('cancelled_at')
+            ->get()
+            ->map(function (OpeningBalance $balance) {
+                $plan = $balance->sourceStudentFee?->feePlan;
+                $type = match ($plan?->frequency) {
+                    'monthly', 'quarterly' => 'tuition',
+                    'yearly' => 'registration',
+                    default => 'other',
+                };
+
+                return [
+                    'type' => $type,
+                    'original_amount' => (float) $balance->amount,
+                    'outstanding_amount' => $balance->outstanding(),
+                ];
+            });
+
+        $autoTotals = [
+            'count' => $auto->count(),
+            'original_amount' => round($auto->sum('original_amount'), 2),
+            'outstanding_amount' => round($auto->sum('outstanding_amount'), 2),
+        ];
+
+        // ---- المسار اليدوي ----
+        $manual = ManualStudentDebt::query()
+            ->when($yearId, fn ($q, $v) => $q->where('academic_year_id', (int) $v))
+            ->whereNull('cancelled_at')
+            ->get();
+
+        $manualGrouped = $manual
+            ->groupBy('debt_type')
+            ->map(fn ($group) => [
+                'count' => $group->count(),
+                'original_amount' => round($group->sum(fn ($d) => (float) $d->original_amount), 2),
+                'outstanding_amount' => round($group->sum(fn ($d) => $d->outstanding()), 2),
+            ]);
+
+        $manualTotals = [
+            'count' => $manual->count(),
+            'original_amount' => round($manual->sum(fn ($d) => (float) $d->original_amount), 2),
+            'outstanding_amount' => round($manual->sum(fn ($d) => $d->outstanding()), 2),
+        ];
+
+        return response()->json([
+            'filters' => $data,
+            'summary' => [
+                'auto' => [
+                    'count' => $autoTotals['count'],
+                    'original_amount' => $autoTotals['original_amount'],
+                    'outstanding_amount' => $autoTotals['outstanding_amount'],
+                    'by_type' => $auto->groupBy('type')->map(fn ($group) => [
+                        'count' => $group->count(),
+                        'original_amount' => round($group->sum('original_amount'), 2),
+                        'outstanding_amount' => round($group->sum('outstanding_amount'), 2),
+                    ]),
+                ],
+                'manual' => [
+                    'count' => $manualTotals['count'],
+                    'original_amount' => $manualTotals['original_amount'],
+                    'outstanding_amount' => $manualTotals['outstanding_amount'],
+                    'by_type' => $manualGrouped,
+                ],
+                'grand_total' => [
+                    'count' => $autoTotals['count'] + $manualTotals['count'],
+                    'original_amount' => round($autoTotals['original_amount'] + $manualTotals['original_amount'], 2),
+                    'outstanding_amount' => round($autoTotals['outstanding_amount'] + $manualTotals['outstanding_amount'], 2),
+                ],
+            ],
+        ]);
+    }
+
+    /**
+     * كشف مستحقات الإطارات القديمة: ما دُفع، ما بقي، لكل استحقاق.
+     *
+     * المدفوع يُقرأ من الرواتب والسلف الفعلية المرتبطة بالاستحقاق
+     * (employee_liability_id)، لا من عمود مخزّن.
+     */
+    public function employeeLiabilities(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'academic_year_id' => ['nullable', 'integer', 'exists:academic_years,id'],
+            'employee_id' => ['nullable', 'integer', 'exists:employees,id'],
+            'liability_type' => ['nullable', 'string', 'in:'.implode(',', EmployeeLiability::LIABILITY_TYPES)],
+            'status' => ['nullable', 'string', 'in:pending,partial,paid,cancelled'],
+            'exclude_cancelled' => ['nullable', 'boolean'],
+        ]);
+
+        $query = EmployeeLiability::with([
+            'employee:id,first_name,last_name,job_title',
+            'academicYear:id,name',
+        ])
+            ->when($data['academic_year_id'] ?? null, fn ($q, $v) => $q->where('academic_year_id', (int) $v))
+            ->when($data['employee_id'] ?? null, fn ($q, $v) => $q->where('employee_id', (int) $v))
+            ->when($data['liability_type'] ?? null, fn ($q, $v) => $q->where('liability_type', $v))
+            ->when($data['status'] ?? null, fn ($q, $v) => $q->where('status', $v))
+            ->when($request->boolean('exclude_cancelled'), fn ($q) => $q->whereNull('cancelled_at'))
+            ->latest('id');
+
+        $rows = $query->get()->map(function (EmployeeLiability $liability) {
+            return [
+                'id' => $liability->id,
+                'employee' => $liability->employee,
+                'academic_year' => $liability->academicYear,
+                'original_year_label' => $liability->original_year_label,
+                'liability_type' => $liability->liability_type,
+                'description' => $liability->description,
+                'original_amount' => (float) $liability->original_amount,
+                'paid_amount' => $liability->paid(),
+                'outstanding_amount' => $liability->outstanding(),
+                'status' => $liability->status,
+                'cancelled_at' => $liability->cancelled_at,
+                'created_at' => $liability->created_at,
+            ];
+        });
+
+        $active = $rows->reject(fn (array $row) => $row['cancelled_at'] !== null)->values();
+
+        return response()->json([
+            'filters' => $data,
+            'items' => $rows,
+            'totals' => [
+                'count' => $active->count(),
+                'original_amount' => round($active->sum('original_amount'), 2),
+                'paid_amount' => round($active->sum('paid_amount'), 2),
+                'outstanding_amount' => round($active->sum('outstanding_amount'), 2),
             ],
         ]);
     }

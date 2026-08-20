@@ -7,6 +7,7 @@ use App\Models\CashTransaction;
 use App\Models\ClubMonthlyFee;
 use App\Models\EmployeeAdvance;
 use App\Models\EmployeeAdvanceRepayment;
+use App\Models\EmployeeLiability;
 use App\Models\Expense;
 use App\Models\Payment;
 use App\Models\Salary;
@@ -325,6 +326,40 @@ class LedgerService
             academicYearId: $repayment->academic_year_id,
             description: 'خلاص سلفة: '.($repayment->employee?->full_name ?? ('إطار #'.$repayment->employee_id)),
             createdBy: $repayment->created_by,
+        );
+    }
+
+    /**
+     * خلاص استحقاق قديم لإطار → خروج نقدي في بند مستقل عن مصاريف السنة الحالية.
+     *
+     * الراتب هنا هو أداة تسجيل الخلاص فقط (amount هو الصافي المدفوع)،
+     * فلا يُسقَط عبر recordSalary لئلا يُحسب كأجر حالي — المستحقّ القديم
+     * بندٌ قائم بذاته يظهر في تقارير مستحقات الإطارات.
+     */
+    public function recordLiabilityPayment(Salary $salary, EmployeeLiability $liability): void
+    {
+        if ($salary->cancelled_at !== null) {
+            $this->cancelFor($salary, $salary->cancelled_by, $salary->cancellation_reason);
+
+            return;
+        }
+
+        $salary->loadMissing('employee');
+
+        $date = $salary->paid_at?->toDateString()
+            ?? $salary->period_to?->toDateString()
+            ?? now()->toDateString();
+
+        $this->post(
+            source: $salary,
+            category: CashTransaction::CATEGORY_OLD_LIABILITY_PAYMENT,
+            direction: CashTransaction::DIRECTION_OUT,
+            amount: (float) $salary->amount,
+            date: $date,
+            academicYearId: $salary->academic_year_id,
+            description: 'خلاص مستحقّ سابق: '.($salary->employee?->full_name ?? ('إطار #'.$salary->employee_id))
+                .' — '.$liability->description,
+            createdBy: $salary->created_by,
         );
     }
 

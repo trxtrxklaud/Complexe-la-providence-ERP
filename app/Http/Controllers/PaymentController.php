@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Http\Requests\StorePaymentRequest;
+use App\Models\ManualStudentDebt;
 use App\Models\OpeningBalance;
 use App\Models\Payment;
 use App\Models\Student;
@@ -132,6 +133,7 @@ class PaymentController extends Controller
                 // رسوم الاستخلاص المؤقتة فقط (fee_plan_id = null وغير مرتبطة بنادٍ)
                 // هي بصمة العملية وتُمحى كلياً، بشرط ألّا تخصّها دفعة أخرى سارية،
                 // وألّا تكون محالة إلى رصيد افتتاحي (قيد فرادة يمنع حذفها)،
+                // وألّا تكون الرسم الجسر لدَين قديم مُدخل يدوياً (يقف بذاته)،
                 // وألّا يكون عليها تنازل. عند الحذف تُحذف توزيعاتها آلياً (cascade).
                 $hasOtherActiveAllocations = $fee->paymentAllocations()
                     ->where('payment_id', '!=', $payment->id)
@@ -140,10 +142,13 @@ class PaymentController extends Controller
 
                 $isPriorYearDebt = OpeningBalance::where('source_student_fee_id', $fee->id)->exists();
 
+                $isManualDebtBridge = ManualStudentDebt::where('source_student_fee_id', $fee->id)->exists();
+
                 if ($fee->fee_plan_id === null
                     && $fee->club_monthly_fee_id === null
                     && ! $hasOtherActiveAllocations
                     && ! $isPriorYearDebt
+                    && ! $isManualDebtBridge
                     && ! $fee->waivers()->exists()
                 ) {
                     $fee->delete();
@@ -154,6 +159,22 @@ class PaymentController extends Controller
                 // رسم قائم أصلاً → يعود غير مدفوع تلقائياً.
                 $this->paymentService->recalculateStudentFeeStatus((int) $feeId);
             }
+
+            // الديون اليدوية المرتبطة برسوم جسر: حالة «مُحصّل» لا تعود صحيحة
+            // بعد إلغاء الوصل — تُشتقّ من المتبقّي الفعلي من جديد.
+            ManualStudentDebt::whereIn('source_student_fee_id', $feeIds)
+                ->get()
+                ->reject(fn (ManualStudentDebt $debt) => $debt->isCancelled())
+                ->each(function (ManualStudentDebt $debt) {
+                    $remaining = $debt->outstanding();
+                    $debt->update([
+                        'status' => $remaining <= 0
+                            ? ManualStudentDebt::STATUS_PAID
+                            : ($remaining >= (float) $debt->original_amount
+                                ? ManualStudentDebt::STATUS_PENDING
+                                : ManualStudentDebt::STATUS_PARTIAL),
+                    ]);
+                });
 
             // سحب أثر الدفعة من الدفتر النقدي المركزي بنفس السبب والمنفّذ.
             $this->ledger->cancelFor($payment, $request->user()?->id, $data['reason']);

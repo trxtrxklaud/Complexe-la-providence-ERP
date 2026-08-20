@@ -8,10 +8,11 @@ use App\Models\ClubMonthlyFee;
 use App\Models\Enrollment;
 use App\Models\FeePlan;
 use App\Models\FeeType;
+use App\Models\ManualStudentDebt;
 use App\Models\MonthlyDiscount;
+use App\Models\OpeningBalance;
 use App\Models\Payment;
 use App\Models\PaymentAllocation;
-use App\Models\OpeningBalance;
 use App\Models\StudentFee;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
@@ -339,6 +340,7 @@ class CollectionService
             }
             $validated[] = ['club_monthly_fee_id' => $fee->id, 'amount' => $amount];
         }
+
         return $validated;
     }
 
@@ -355,8 +357,10 @@ class CollectionService
      * تحقق من التوزيع الصريح على متخلّدات السنوات السابقة قبل إنشاء الدفعة.
      *
      * قواعد صارمة:
-     *  - الرسم يجب أن يخصّ التلميذ نفسه.
+     *  - الهدف واحد فقط: student_fee_id أو opening_balance_id أو manual_student_debt_id.
+     *  - الرسم/الرصيد/الدَّين يجب أن يخصّ التلميذ نفسه.
      *  - الرسم يجب أن يكون من سنة دراسية سابقة (مصدر الدَّين القديم).
+     *  - الدَّين اليدوي يجب أن يكون محمولاً إلى سنة تسجيل التلميذ الحالية وغير ملغى.
      *  - لا يمكن توزيع أكثر من متبقّي الرسم (مع القفل ضد التزامن).
      *
      * @return array<int,float> fee_id => مبلغ موزَّع
@@ -365,18 +369,20 @@ class CollectionService
     {
         $input = $data['prior_allocations'] ?? [];
         $planned = [];
+        $plannedManualDebts = [];
 
         foreach ($input as $allocation) {
             $feeId = (int) ($allocation['student_fee_id'] ?? 0);
             $openingBalanceId = (int) ($allocation['opening_balance_id'] ?? 0);
+            $manualDebtId = (int) ($allocation['manual_student_debt_id'] ?? 0);
             $amount = round((float) ($allocation['amount'] ?? 0), 2);
 
             if ($amount <= 0) {
                 continue;
             }
 
-            if (($feeId > 0) === ($openingBalanceId > 0)) {
-                throw new \InvalidArgumentException('يجب تحديد student_fee_id أو opening_balance_id فقط');
+            if (array_sum([$feeId > 0, $openingBalanceId > 0, $manualDebtId > 0]) !== 1) {
+                throw new \InvalidArgumentException('يجب تحديد student_fee_id أو opening_balance_id أو manual_student_debt_id فقط');
             }
 
             if ($openingBalanceId > 0) {
@@ -391,6 +397,28 @@ class CollectionService
                     throw new \InvalidArgumentException('الرصيد الافتتاحي رقم '.$openingBalanceId.' غير موجود لهذا التلميذ');
                 }
                 $feeId = (int) $sourceFee->id;
+            }
+
+            if ($manualDebtId > 0) {
+                /** @var ManualStudentDebt|null $debt */
+                $debt = ManualStudentDebt::query()
+                    ->with('sourceStudentFee')
+                    ->whereKey($manualDebtId)
+                    ->lockForUpdate()
+                    ->first();
+
+                if (! $debt || $debt->isCancelled() || (int) $debt->student_id !== (int) $enrollment->student_id) {
+                    throw new \InvalidArgumentException('الدَّين اليدوي رقم '.$manualDebtId.' غير موجود لهذا التلميذ');
+                }
+
+                if ((int) $debt->academic_year_id !== (int) $enrollment->academic_year_id) {
+                    throw new \InvalidArgumentException('الدَّين اليدوي رقم '.$manualDebtId.' محمول إلى سنة دراسية أخرى');
+                }
+
+                $feeId = (int) ($debt->source_student_fee_id ?? 0);
+                if (! $feeId) {
+                    throw new \InvalidArgumentException('الدَّين اليدوي رقم '.$manualDebtId.' بلا رسم مصدر');
+                }
             }
 
             /** @var StudentFee|null $fee */
@@ -418,6 +446,29 @@ class CollectionService
             }
 
             $planned[$feeId] = round($alreadyPlanned + $amount, 2);
+
+            if ($manualDebtId > 0) {
+                $plannedManualDebts[$manualDebtId] = round(
+                    (float) ($plannedManualDebts[$manualDebtId] ?? 0.0) + $amount,
+                    2
+                );
+            }
+        }
+
+        // تحديث حالة الديون اليدوية بعد التخطيط من المتبقّي الفعلي لا من واجهة المستخدم.
+        foreach ($plannedManualDebts as $debtId => $amount) {
+            /** @var ManualStudentDebt|null $debt */
+            $debt = ManualStudentDebt::query()->find($debtId);
+            if (! $debt) {
+                continue;
+            }
+
+            $remaining = round(max(0, $debt->outstanding() - $amount), 2);
+            $debt->update([
+                'status' => $remaining > 0
+                    ? ManualStudentDebt::STATUS_PARTIAL
+                    : ManualStudentDebt::STATUS_PAID,
+            ]);
         }
 
         return $planned;
@@ -695,6 +746,7 @@ class CollectionService
                         return false;
                     }
                 }
+
                 return true;
             })
             ->map(function (ClubMonthlyFee $fee) {
