@@ -377,7 +377,13 @@ function ReceiptHalf({ receipt, copyLabel, isGuardian, method, cashier, total }:
                         <div>معلوم دراسي: <b>{sib.months.join(' / ')}</b></div>
                       )}
                       {sib.items && sib.items
-                        .filter(it => !sib.months?.some(m => (it.description ?? '').includes(m.slice(5))))
+                        .filter(it => {
+                          const desc = it.description ?? '';
+                          // أظهر فقط البنود التي ليست معلوم تمدرس شهري (محسوب في sib.months)
+                          const isTuition = sib.months && sib.months.length > 0 &&
+                            (desc.includes('معلوم التمدرس') || desc.includes('معلوم دراسي شهر'));
+                          return !isTuition;
+                        })
                         .map((it, idx) => (
                           <div key={idx} style={{ color: '#555' }}>{it.description}</div>
                         ))
