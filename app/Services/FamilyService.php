@@ -273,7 +273,7 @@ class FamilyService
 
                 // 4. الرسوم المباشرة والمتخلدات السابقة الأخرى (إن وجدت)
                 foreach ($currentEnrollment->studentFees as $sf) {
-                    // استثناء رسوم النوادي — محسوبة مسبقاً في قسم النوادي
+                    // استثناء رسوم النوادي — محسوبة مسبقاً
                     if ($sf->club_monthly_fee_id !== null) {
                         continue;
                     }
@@ -281,23 +281,18 @@ class FamilyService
                     if ($sf->fee_type_id !== null && $sf->feeType && str_contains(FeeType::normalize($sf->feeType->name_ar), 'تمدرس')) {
                         continue;
                     }
-                    // استثناء الرسوم المدفوعة بالكامل
-                    if ($sf->status === 'paid') {
-                        $studentDue += (float) $sf->amount_due;
-                        $studentPaid += (float) $sf->amount_due;
-                        continue;
-                    }
-                    // استثناء الرسوم التي لها دفعات ملغاة — الإلغاء لا يحوّل الرسم إلى متخلد
-                    if (in_array($sf->id, $feesWithCancelledPayments, true)) {
-                        $studentDue += (float) $sf->amount_due;
-                        $studentPaid += (float) $sf->amount_paid;
-                        continue;
-                    }
                     $sfDue = (float) $sf->amount_due;
                     $sfPaid = (float) $sf->amount_paid;
                     $sfRem = max(0.0, round($sfDue - $sfPaid, 2));
                     $studentDue += $sfDue;
                     $studentPaid += $sfPaid;
+                    // الرسوم المدفوعة والملغاة لا تدخل في المتبقي
+                    if ($sf->status === 'paid') {
+                        continue;
+                    }
+                    if (in_array($sf->id, $feesWithCancelledPayments, true)) {
+                        continue;
+                    }
                     if ($sf->due_date && $sf->due_date->lte(now())) {
                         $remainingDebt += $sfRem;
                     }
