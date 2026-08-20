@@ -79,7 +79,7 @@ export function FamilyDetailPage() {
   const hasRemainingDebt = remainingDebt > 0;
 
   async function handleCancelPayment(): Promise<void> {
-    if (!activeReceipt?.payment_id) return;
+    if (!activeReceipt) return;
     const reason = window.prompt('سبب إلغاء المقبوض (إلزامي):');
     if (reason === null) return;
     if (reason.trim().length < 3) {
@@ -87,7 +87,18 @@ export function FamilyDetailPage() {
       return;
     }
     try {
-      await paymentsApi.cancel(Number(activeReceipt.payment_id), reason.trim());
+      // الوصل العائلي: إلغاء كل دفعات الأبناء
+      if (activeReceipt.is_family_receipt && activeReceipt.siblings && activeReceipt.siblings.length > 0) {
+        const paymentIds = activeReceipt.siblings
+          .map((s) => s.payment_id)
+          .filter((id): id is number => typeof id === 'number');
+        for (const pid of paymentIds) {
+          await paymentsApi.cancel(pid, reason.trim());
+        }
+      } else if (activeReceipt.payment_id) {
+        // وصل فردي: إلغاء دفعة واحدة
+        await paymentsApi.cancel(Number(activeReceipt.payment_id), reason.trim());
+      }
       setActiveReceipt(null);
       await loadDetails();
       alert('تم إلغاء المقبوض بنجاح وتحديث الحساب.');
