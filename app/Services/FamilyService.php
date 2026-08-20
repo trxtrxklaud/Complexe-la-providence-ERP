@@ -4,6 +4,10 @@ namespace App\Services;
 
 use App\Models\AcademicYear;
 use App\Models\Club;
+use App\Models\ClubMonthlyFee;
+use App\Models\ClubSubscription;
+use App\Models\Enrollment;
+use App\Models\FeePlan;
 use App\Models\FeeType;
 use App\Models\Guardian;
 use App\Models\Payment;
@@ -12,128 +16,577 @@ use App\Models\Student;
 use App\Models\StudentFee;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use InvalidArgumentException;
 
 class FamilyService
 {
+    private const SCHOOL_MONTHS = [9, 10, 11, 12, 1, 2, 3, 4, 5, 6];
+    private const CLUB_MONTHS = [9, 10, 11, 12, 1, 2, 3, 4, 5];
+
+    private const MONTH_NAMES_AR = [
+        '01' => 'جانفي', '02' => 'فيفري', '03' => 'مارس',
+        '04' => 'أفريل', '05' => 'ماي', '06' => 'جوان',
+        '07' => 'جويلية', '08' => 'أوت', '09' => 'سبتمبر',
+        '10' => 'أكتوبر', '11' => 'نوفمبر', '12' => 'ديسمبر',
+    ];
+
     public function __construct(
+        protected CollectionService $collectionService,
+        protected ClubService $clubService,
+        protected PaymentService $paymentService,
         protected LedgerService $ledgerService
     ) {}
 
     /**
-     * قائمة العائلات مع تجميع الأبناء وحساب إجمالي المستحقات.
+     * استخراج نوع الرسم الشهري الأساسي للمنصة بدقة ومطابقة تامة.
+     */
+    public static function findTuitionFeeType(): FeeType
+    {
+        $feeType = FeeType::where('is_active', true)
+            ->where(function ($q) {
+                $q->where('name_ar', 'like', '%تمدرس%')
+                    ->orWhere('name_ar', 'like', '%شهر%')
+                    ->orWhere('name_ar', 'like', '%التعليم الأساسي%')
+                    ->orWhere('code', 'TUITION')
+                    ->orWhere('code', 'like', '%month%')
+                    ->orWhere('name_fr', 'like', '%mensuel%')
+                    ->orWhere('name_fr', 'like', '%scolarite%')
+                    ->orWhere('ledger_category', 'monthly_fee');
+            })->first();
+
+        if (! $feeType) {
+            throw new \RuntimeException('لم يتم العثور على نوع المعلوم الشهري — تأكد من إعداد fee_types بشكل صحيح');
+        }
+
+        return $feeType;
+    }
+
+    /**
+     * تنقيح وتطبيع رقم الهاتف إلى الصيغة القياسية (8 أرقام).
+     */
+    public static function normalizePhone(?string $phone): ?string
+    {
+        if (! $phone) {
+            return null;
+        }
+        $digits = preg_replace('/\D/', '', $phone);
+        if (empty($digits)) {
+            return null;
+        }
+        if (str_starts_with($digits, '216') && strlen($digits) === 11) {
+            $digits = substr($digits, 3);
+        }
+        if (str_starts_with($digits, '00216') && strlen($digits) === 13) {
+            $digits = substr($digits, 5);
+        }
+        if (str_starts_with($digits, '0') && strlen($digits) === 9) {
+            $digits = substr($digits, 1);
+        }
+
+        return strlen($digits) >= 8 ? substr($digits, -8) : ($digits ?: null);
+    }
+
+    /**
+     * قائمة العائلات مع تجميع الأبناء بالاعتماد على رقم الهاتف الموحد وحساب إجمالي المستحقات.
      */
     public function listFamilies(?string $search = null, int $perPage = 25, int $page = 1): array
     {
-        $query = Guardian::query()
-            ->with(['students.enrollments.section.level', 'students.enrollments.studentFees.paymentAllocations']);
+        $activeYear = AcademicYear::where('is_active', true)->first()
+            ?? AcademicYear::latest('start_date')->first();
 
+        $academicMonths = $activeYear ? $this->collectionService->getAcademicYearMonths($activeYear) : [];
+
+        // التحميل المسبق لخطط الرسوم حسب المستويات
+        $feePlans = $activeYear ? FeePlan::where('academic_year_id', $activeYear->id)
+            ->where('frequency', 'monthly')
+            ->get()
+            ->keyBy('level_id') : collect();
+
+        // التحميل المسبق لربط النوادي بالأقسام والمستويات حسب إدارة النوادي
+        $allActiveClubs = Club::with('sections')->where('is_active', true)->get();
+        $sectionClubsMap = [];
+        foreach ($allActiveClubs as $club) {
+            foreach ($club->sections as $sec) {
+                $sectionClubsMap[$sec->id][$club->id] = $club;
+            }
+        }
+
+        // التحميل المسبق لاشتراكات واستثناءات النوادي الفردية
+        $clubSubscriptionsByEnrollment = $activeYear ? ClubSubscription::where('academic_year_id', $activeYear->id)
+            ->get()
+            ->groupBy('enrollment_id') : collect();
+
+        // التحميل المسبق لمعاليم النوادي غير الملغاة مفهرسة حسب التسجيل
+        $clubFeesByEnrollment = $activeYear ? ClubMonthlyFee::where('academic_year_id', $activeYear->id)
+            ->whereNull('cancelled_at')
+            ->get()
+            ->groupBy('enrollment_id') : collect();
+
+        // التحميل المسبق للمدفوعات غير الملغاة مفهرسة حسب التسجيل
+        $paymentsByEnrollment = Payment::whereNull('cancelled_at')
+            ->get()
+            ->groupBy('enrollment_id');
+
+        // جلب جميع التلاميذ مع تسجيلاتهم وتخفيضاتهم ورسومهم
+        $studentsQuery = Student::query()
+            ->with([
+                'enrollments' => fn ($q) => $q->when($activeYear, fn ($eq) => $eq->where('academic_year_id', $activeYear->id))
+                    ->with([
+                        'section.level',
+                        'monthlyDiscounts' => fn ($dq) => $dq->whereNull('cancelled_at'),
+                        'discounts' => fn ($dq) => $dq->when($activeYear, fn ($yq) => $yq->where('academic_year_id', $activeYear->id))->whereNull('cancelled_at'),
+                        'studentFees' => fn ($fq) => $fq->with(['paymentAllocations' => fn ($pq) => $pq->whereHas('payment', fn ($p) => $p->whereNull('cancelled_at'))]),
+                    ]),
+            ]);
+
+        $allStudents = $studentsQuery->get();
+
+        // تجميع التلاميذ في عائلات اعتماداً على رقم الهاتف المنقح
+        $groupedFamilies = [];
+
+        foreach ($allStudents as $student) {
+            $phoneKey = self::normalizePhone($student->guardian_phone);
+            if (! $phoneKey) {
+                $phoneKey = self::normalizePhone($student->mother_phone);
+            }
+
+            // إذا لم يتوفر أي هاتف للتلميذ، يفرد له ملف عائلة مستقل بمعرفه
+            $familyKey = $phoneKey ? 'phone_' . $phoneKey : 'student_' . $student->id;
+
+            if (! isset($groupedFamilies[$familyKey])) {
+                $gName = trim(($student->guardian_first_name ?? '') . ' ' . ($student->guardian_last_name ?? ''));
+                if (empty($gName)) {
+                    $gName = trim((string) ($student->mother_name ?? ''));
+                }
+                if (empty($gName)) {
+                    $gName = 'ولي أمر (هاتف ' . ($phoneKey ?: '—') . ')';
+                }
+
+                $groupedFamilies[$familyKey] = [
+                    'id' => $familyKey,
+                    'guardian_name' => $gName,
+                    'phone' => $phoneKey ?? ($student->guardian_phone ?: ($student->mother_phone ?: '—')),
+                    'mother_name' => $student->mother_name ?: null,
+                    'mother_phone' => self::normalizePhone($student->mother_phone) ?: ($student->mother_phone ?: null),
+                    'students' => [],
+                    'students_count' => 0,
+                    'family_total_due' => 0.0,
+                    'family_total_paid' => 0.0,
+                    'family_remaining_debt' => 0.0,
+                ];
+            }
+
+            // حساب المستحقات والمدفوعات والمتبقي للتلميذ
+            $currentEnrollment = $student->enrollments->first();
+            $studentDue = 0.0;
+            $studentPaid = 0.0;
+            $remainingDebt = 0.0;
+
+            if ($currentEnrollment) {
+                $levelId = $currentEnrollment->level_id ?? $currentEnrollment->section?->level_id;
+                $feePlan = $feePlans->get($levelId);
+                $baseAmount = (float) ($feePlan?->amount ?? 150.0);
+
+                // 1. استخراج الأشهر المدفوعة للتلميذ
+                $paidMonths = [];
+                $enrollmentPayments = $paymentsByEnrollment->get($currentEnrollment->id, collect());
+                foreach ($enrollmentPayments as $p) {
+                    if (is_array($p->months)) {
+                        foreach ($p->months as $pm) {
+                            $paidMonths[] = $pm;
+                        }
+                    }
+                }
+                $paidMonths = array_unique($paidMonths);
+
+                // 2. حساب معاليم الأشهر الدراسية (الـ 10 أشهر)
+                foreach ($academicMonths as $m) {
+                    if (in_array($m, $paidMonths, true)) {
+                        $studentPaid += $baseAmount;
+                        $studentDue += $baseAmount;
+                    } else {
+                        // فحص التخفيض الشهري أو السنوي
+                        $monthlyDisc = $currentEnrollment->monthlyDiscounts->first(
+                            fn ($d) => $d->start_month <= $m && $d->end_month >= $m
+                        );
+                        $netDue = $baseAmount;
+
+                        if ($monthlyDisc) {
+                            if ($monthlyDisc->discount_type === 'full_waiver') {
+                                $netDue = 0.0;
+                            } elseif (in_array($monthlyDisc->discount_type, ['humanitarian_fixed', 'normal_monthly'], true)) {
+                                $netDue = max(0.0, round($baseAmount - (float) $monthlyDisc->monthly_amount, 2));
+                            }
+                        } else {
+                            $annualDisc = $currentEnrollment->discounts->first();
+                            if ($annualDisc && (float) $annualDisc->amount > 0) {
+                                $netDue = max(0.0, round($baseAmount - (float) $annualDisc->amount, 2));
+                            }
+                        }
+
+                        $studentDue += $netDue;
+                        // القاعدة الذهبية: شهر مستقبلي لا يدخل في رقم الدين.
+                        if ($m <= now()->format('Y-m')) {
+                            $remainingDebt += $netDue;
+                        }
+                    }
+                }
+
+                // 3. حساب معاليم النوادي مربوطة بالقسم المسجل في إدارة النوادي (سبتمبر إلى ماي فقط — 9 أشهر)
+                $secClubs = $sectionClubsMap[$currentEnrollment->section_id] ?? [];
+                $enrSubs = $clubSubscriptionsByEnrollment->get($currentEnrollment->id, collect())->keyBy('club_id');
+                $enrClubFees = $clubFeesByEnrollment->get($currentEnrollment->id, collect());
+
+                foreach ($secClubs as $cId => $cObj) {
+                    $sub = $enrSubs->get($cId);
+                    // إذا كان التلميذ مستبعداً أو ملغى اشتراكه في هذا النادي
+                    if ($sub && ($sub->excluded_at !== null || $sub->status === 'cancelled')) {
+                        continue;
+                    }
+                    $monthlyClubFee = (float) ($sub?->monthly_fee_override ?? $cObj->monthly_fee ?? 20.0);
+
+                    foreach (self::CLUB_MONTHS as $mNum) {
+                        $mStr = ($mNum >= 9 ? '2026-' : '2027-') . str_pad($mNum, 2, '0', STR_PAD_LEFT);
+                        $feeRec = $enrClubFees->first(fn ($f) => $f->club_id == $cId && $f->month == $mStr);
+
+                        $cDue = $monthlyClubFee;
+                        $cPaid = $feeRec ? (float) $feeRec->amount_paid : 0.0;
+                        $cRem = max(0.0, round($cDue - $cPaid, 2));
+
+                        $studentDue += $cDue;
+                        $studentPaid += $cPaid;
+                        // القاعدة الذهبية: شهر مستقبلي لا يدخل في رقم الدين.
+                        if ($mStr <= now()->format('Y-m')) {
+                            $remainingDebt += $cRem;
+                        }
+                    }
+                }
+
+                // 4. الرسوم المباشرة والمتخلدات السابقة الأخرى (إن وجدت)
+                foreach ($currentEnrollment->studentFees as $sf) {
+                    if ($sf->club_monthly_fee_id !== null) {
+                        continue; // محسوبة مسبقاً في النوادي
+                    }
+                    if ($sf->feeType && str_contains(FeeType::normalize($sf->feeType->name_ar), 'تمدرس')) {
+                        continue; // محسوبة مسبقاً في الأشهر الدراسية
+                    }
+                    $sfDue = (float) $sf->amount_due;
+                    $sfPaid = (float) $sf->amount_paid;
+                    $sfRem = max(0.0, round($sfDue - $sfPaid, 2));
+
+                    $studentDue += $sfDue;
+                    $studentPaid += $sfPaid;
+                    // القاعدة الذهبية: مستقبل بلا استحقاق بعد ليس متخلداً.
+                    if ($sf->due_date && $sf->due_date->lte(now())) {
+                        $remainingDebt += $sfRem;
+                    }
+                }
+            }
+
+            $remainingDebt = max(0.0, round($remainingDebt, 2));
+            $studentPaid = round($studentPaid, 2);
+            $studentDue = round($studentDue, 2);
+
+            $groupedFamilies[$familyKey]['students'][] = [
+                'id' => $student->id,
+                'name' => trim($student->first_name . ' ' . $student->last_name),
+                'student_code' => $student->student_code,
+                'level_name' => $currentEnrollment?->section?->level?->name ?? '—',
+                'section_name' => $currentEnrollment?->section?->name ?? '—',
+                'remaining_debt' => $remainingDebt,
+                'total_paid' => $studentPaid,
+            ];
+
+            $groupedFamilies[$familyKey]['students_count']++;
+            $groupedFamilies[$familyKey]['family_total_due'] += $studentDue;
+            $groupedFamilies[$familyKey]['family_total_paid'] += $studentPaid;
+            $groupedFamilies[$familyKey]['family_remaining_debt'] += $remainingDebt;
+        }
+
+        // تحويل المصفوفة إلى Collection للفرز والبحث والـ Pagination
+        $familiesCollection = collect(array_values($groupedFamilies));
+
+        // التصفية بالبحث إن وُجد
         if (! empty($search)) {
-            $query->where(function ($q) use ($search) {
-                $q->where('first_name', 'like', "%{$search}%")
-                    ->orWhere('last_name', 'like', "%{$search}%")
-                    ->orWhere('phone', 'like', "%{$search}%");
+            $searchClean = trim($search);
+            $searchNormalized = self::normalizePhone($searchClean);
+
+            $familiesCollection = $familiesCollection->filter(function ($fam) use ($searchClean, $searchNormalized) {
+                if ($searchNormalized && str_contains(self::normalizePhone($fam['phone']) ?? '', $searchNormalized)) {
+                    return true;
+                }
+                if ($searchNormalized && str_contains(self::normalizePhone($fam['mother_phone']) ?? '', $searchNormalized)) {
+                    return true;
+                }
+                if (mb_stripos($fam['guardian_name'], $searchClean) !== false) {
+                    return true;
+                }
+                if (! empty($fam['mother_name']) && mb_stripos($fam['mother_name'], $searchClean) !== false) {
+                    return true;
+                }
+                foreach ($fam['students'] as $st) {
+                    if (mb_stripos($st['name'], $searchClean) !== false || mb_stripos($st['student_code'] ?? '', $searchClean) !== false) {
+                        return true;
+                    }
+                }
+
+                return false;
             });
         }
 
-        $paginator = $query->paginate($perPage, ['*'], 'page', $page);
+        // الفرز: العائلات التي لديها عدة أبناء أولاً ثم حسب الاسم
+        $sortedFamilies = $familiesCollection->sortByDesc('students_count')
+            ->values();
 
-        $items = collect($paginator->items())->map(function (Guardian $g) {
-            return $this->formatFamilySummary($g);
-        });
-
-        if ($paginator->total() === 0 && ! empty($search)) {
-            $phoneStudents = Student::where('guardian_phone', 'like', "%{$search}%")
-                ->orWhere('guardian_first_name', 'like', "%{$search}%")
-                ->orWhere('guardian_last_name', 'like', "%{$search}%")
-                ->with(['enrollments.section.level', 'enrollments.studentFees.paymentAllocations'])
-                ->get()
-                ->groupBy('guardian_phone');
-
-            $fallbackItems = [];
-            foreach ($phoneStudents as $phone => $sts) {
-                if (empty($phone)) {
-                    continue;
-                }
-                $first = $sts->first();
-                $fallbackItems[] = $this->formatVirtualFamilySummary($phone, $first->guardian_first_name, $first->guardian_last_name, $sts);
-            }
-
-            if (! empty($fallbackItems)) {
-                return [
-                    'data' => $fallbackItems,
-                    'current_page' => 1,
-                    'last_page' => 1,
-                    'per_page' => $perPage,
-                    'total' => count($fallbackItems),
-                ];
-            }
-        }
+        $total = $sortedFamilies->count();
+        $offset = ($page - 1) * $perPage;
+        $items = $sortedFamilies->slice($offset, $perPage)->values()->all();
 
         return [
             'data' => $items,
-            'current_page' => $paginator->currentPage(),
-            'last_page' => $paginator->lastPage(),
-            'per_page' => $paginator->perPage(),
-            'total' => $paginator->total(),
+            'current_page' => $page,
+            'last_page' => (int) ceil($total / max(1, $perPage)),
+            'per_page' => $perPage,
+            'total' => $total,
         ];
     }
 
     /**
-     * جلب تفاصيل عائلة محددة عبر ID رقمي أو معرف هاتف ونصي بشكل آمن ومرن.
+     * جلب تفاصيل العائلة وأبنائها وشبكة الأشهر والنوادي والمتخلدات باستخدام CollectionService::preview.
      */
-    public function getFamilyDetails(string|int $familyId): array
+    public function getFamilyDetails(string|int $familyKey): array
     {
-        $guardian = null;
-        $details = null;
+        $activeYear = AcademicYear::where('is_active', true)->first()
+            ?? AcademicYear::latest('start_date')->firstOrFail();
 
-        // 1. إذا كان المعرف رقمياً (مثل 123)
-        if (is_numeric($familyId)) {
-            $guardian = Guardian::with([
-                'students.enrollments.section.level',
-                'students.enrollments.academicYear',
-                'students.enrollments.studentFees.feeType',
-                'students.enrollments.studentFees.paymentAllocations',
-            ])->find((int) $familyId);
-
-            if ($guardian) {
-                $details = $this->formatFamilyFullDetails($guardian);
-            }
+        $guardianModel = null;
+        if (is_numeric($familyKey)) {
+            $guardianModel = Guardian::with('students')->find((int) $familyKey);
         }
 
-        // 2. إذا كان المعرف نصياً يعتمد على الهاتف (مثل phone_95420350 أو 95420350)
-        if (! $details) {
-            $phone = str_replace('phone_', '', (string) $familyId);
-            $phoneDigits = preg_replace('/\D/', '', $phone);
+        $students = $this->resolveFamilyStudents($familyKey, $activeYear, $guardianModel);
 
-            if (! empty($phoneDigits)) {
-                $guardian = Guardian::with([
-                    'students.enrollments.section.level',
-                    'students.enrollments.academicYear',
-                    'students.enrollments.studentFees.feeType',
-                    'students.enrollments.studentFees.paymentAllocations',
-                ])->where('phone', 'like', "%{$phoneDigits}%")->first();
+        if ($students->isEmpty()) {
+            throw new ModelNotFoundException('العائلة غير موجودة');
+        }
 
-                if ($guardian) {
-                    $details = $this->formatFamilyFullDetails($guardian);
+        $firstStudent = $students->first();
+        $phone = $guardianModel?->phone
+            ?: (self::normalizePhone($firstStudent->guardian_phone)
+                ?: self::normalizePhone($firstStudent->mother_phone)
+                ?: ($firstStudent->guardian_phone ?: '—'));
+
+        $guardianName = $guardianModel
+            ? trim($guardianModel->first_name . ' ' . $guardianModel->last_name)
+            : trim(($firstStudent->guardian_first_name ?? '') . ' ' . ($firstStudent->guardian_last_name ?? ''));
+
+        if (empty($guardianName)) {
+            $guardianName = trim((string) ($firstStudent->mother_name ?? ''));
+        }
+        if (empty($guardianName)) {
+            $guardianName = 'ولي أمر (هاتف ' . $phone . ')';
+        }
+
+        $academicMonths = $this->collectionService->getAcademicYearMonths($activeYear);
+        $tuitionFeeType = self::findTuitionFeeType();
+        $tuitionFeeTypeId = $tuitionFeeType->id;
+
+        $studentsDetails = [];
+        $familyTotalDue = 0.0;
+        $familyTotalPaid = 0.0;
+        $familyRemainingDebt = 0.0;
+
+        foreach ($students as $student) {
+            $enrollment = $student->enrollments->firstWhere('academic_year_id', $activeYear->id)
+                ?? $student->enrollments->first();
+
+            if (! $enrollment) {
+                continue;
+            }
+
+            // 1. حساب شبكة الأشهر الدراسية الـ 10
+            $paidMonths = $this->collectionService->getPaidMonths($enrollment->id);
+            $monthLedger = $this->collectionService->monthLedger($enrollment->id);
+
+            // جلب الخطة الشهرية للمستوى
+            $levelId = $enrollment->level_id ?? $enrollment->section?->level_id;
+            $feePlan = FeePlan::where('academic_year_id', $activeYear->id)
+                ->where('level_id', $levelId)
+                ->first();
+            $baseMonthlyAmount = (float) ($feePlan?->amount ?? 150.0);
+
+            $monthsGrid = [];
+            foreach ($academicMonths as $m) {
+                $monthNum = (int) substr($m, 5, 2);
+                $monthNameAr = self::MONTH_NAMES_AR[substr($m, 5, 2)] ?? $m;
+                $isPaid = in_array($m, $paidMonths, true);
+
+                if ($isPaid) {
+                    $paymentInfo = $monthLedger[$m] ?? null;
+                    $paidAmt = (float) ($paymentInfo['amount'] ?? $baseMonthlyAmount);
+                    $monthsGrid[] = [
+                        'month' => $m,
+                        'month_number' => $monthNum,
+                        'name_ar' => $monthNameAr,
+                        'status' => 'paid',
+                        'gross_amount' => $baseMonthlyAmount,
+                        'discount_amount' => 0.0,
+                        'net_amount' => $paidAmt,
+                        'paid_amount' => $paidAmt,
+                        'payment_info' => $paymentInfo,
+                    ];
+                    $familyTotalPaid += $paidAmt;
+                    $familyTotalDue += $paidAmt;
                 } else {
-                    $students = Student::where('guardian_phone', 'like', "%{$phoneDigits}%")
-                        ->with([
-                            'enrollments.section.level',
-                            'enrollments.academicYear',
-                            'enrollments.studentFees.feeType',
-                            'enrollments.studentFees.paymentAllocations',
-                        ])->get();
+                    // استخدام CollectionService::preview لحساب التخفيضات والإعفاءات بدقة
+                    $preview = $this->collectionService->preview($enrollment->id, [$m], $tuitionFeeTypeId);
+                    $netDue = (float) ($preview['remaining_amount'] ?? $baseMonthlyAmount);
+                    $discountAmt = max(0.0, round($baseMonthlyAmount - $netDue, 2));
+                    $isWaived = (bool) ($preview['is_fully_waived'] ?? false);
 
-                    if ($students->isNotEmpty()) {
-                        $details = $this->formatVirtualFamilyFullDetails($phone, $students);
+                    $monthsGrid[] = [
+                        'month' => $m,
+                        'month_number' => $monthNum,
+                        'name_ar' => $monthNameAr,
+                        'status' => $isWaived ? 'waived' : ($netDue <= 0 ? 'waived' : 'unpaid'),
+                        'gross_amount' => $baseMonthlyAmount,
+                        'discount_amount' => $discountAmt,
+                        'net_amount' => $netDue,
+                        'paid_amount' => 0.0,
+                        'payment_info' => null,
+                    ];
+
+                    $familyTotalDue += $netDue;
+                    // القاعدة الذهبية: شهر مستقبلي لا يدخل في رقم الدين.
+                    if ($m <= now()->format('Y-m')) {
+                        $familyRemainingDebt += $netDue;
                     }
                 }
             }
-        }
 
-        if (! $details) {
-            throw new ModelNotFoundException('العائلة غير موجودة');
+            // 2. حساب نوادي التلميذ (سبتمبر -> ماي فقط، جوان مستثنى)
+            $clubsList = [];
+            $this->clubService->ensureFeesForEnrollment($enrollment, $academicMonths, (int) auth()->id());
+
+            $clubMonthlyFees = ClubMonthlyFee::with(['club', 'studentFee'])
+                ->where('enrollment_id', $enrollment->id)
+                ->whereNull('cancelled_at')
+                ->get()
+                ->groupBy('club_id');
+
+            foreach ($clubMonthlyFees as $cId => $feesGroup) {
+                $clubObj = $feesGroup->first()->club;
+                $clubMonthsGrid = [];
+
+                foreach ($academicMonths as $m) {
+                    $mNum = (int) substr($m, 5, 2);
+                    // النوادي: سبتمبر إلى ماي فقط (9 أشهر)
+                    if (! in_array($mNum, self::CLUB_MONTHS, true)) {
+                        continue;
+                    }
+
+                    $feeRec = $feesGroup->firstWhere('month', $m);
+                    $cMonthName = self::MONTH_NAMES_AR[substr($m, 5, 2)] ?? $m;
+
+                    if ($feeRec) {
+                        $cDue = (float) $feeRec->amount_due;
+                        $cPaid = (float) $feeRec->amount_paid;
+                        $cRemaining = max(0.0, round($cDue - $cPaid, 2));
+                        $cStatus = $cRemaining <= 0 ? 'paid' : ($cPaid > 0 ? 'partial' : 'unpaid');
+
+                        $clubMonthsGrid[] = [
+                            'club_monthly_fee_id' => $feeRec->id,
+                            'month' => $m,
+                            'name_ar' => $cMonthName,
+                            'amount_due' => $cDue,
+                            'amount_paid' => $cPaid,
+                            'remaining_amount' => $cRemaining,
+                            'status' => $cStatus,
+                        ];
+
+                        $familyTotalDue += $cDue;
+                        $familyTotalPaid += $cPaid;
+                        // القاعدة الذهبية: شهر مستقبلي لا يدخل في رقم الدين.
+                        if ($m <= now()->format('Y-m')) {
+                            $familyRemainingDebt += $cRemaining;
+                        }
+                    }
+                }
+
+                $clubsList[] = [
+                    'club_id' => $clubObj?->id ?? $cId,
+                    'club_name' => $clubObj?->name ?? 'نادي',
+                    'monthly_fee' => (float) ($clubObj?->monthly_fee ?? 0),
+                    'months' => $clubMonthsGrid,
+                ];
+            }
+
+            // 3. حساب المتخلدات والديون السابقة
+            // القاعدة الذهبية: شهر مستقبلي (due_date > اليوم) ليس متخلداً؛
+            // وdue_date فارغ لا يُعتبر متخلداً.
+            $priorArrears = [];
+            $unpaidFees = [];
+            $oldFees = StudentFee::where('enrollment_id', $enrollment->id)
+                ->where('status', '!=', 'paid')
+                ->whereNull('club_monthly_fee_id')
+                ->where(function ($q) use ($tuitionFeeTypeId) {
+                    $q->whereNull('fee_type_id')
+                        ->orWhere('fee_type_id', '!=', $tuitionFeeTypeId);
+                })
+                ->whereDate('due_date', '<=', now())
+                ->whereNotExists(function ($q) {
+                    // استثناء أي رسم له دفعة ملغاة — الإلغاء لا يحوّل الرسم إلى متخلد
+                    $q->select(DB::raw(1))
+                        ->from('payment_allocations')
+                        ->join('payments', 'payments.id', '=', 'payment_allocations.payment_id')
+                        ->whereColumn('payment_allocations.student_fee_id', 'student_fees.id')
+                        ->whereNotNull('payments.cancelled_at');
+                })
+                ->get();
+
+            foreach ($oldFees as $oldFee) {
+                $rem = $oldFee->outstanding();
+                if ($rem > 0) {
+                    $item = [
+                        'id' => $oldFee->id,
+                        'student_fee_id' => $oldFee->id,
+                        'fee_type_id' => $oldFee->fee_type_id ?? 0,
+                        'description' => $oldFee->description ?: 'متخلد سابق',
+                        'amount_due' => (float) $oldFee->amount_due,
+                        'amount_paid' => (float) $oldFee->amount_paid,
+                        'gross_amount' => (float) $oldFee->amount_due,
+                        'paid_amount' => (float) $oldFee->amount_paid,
+                        'remaining_amount' => round($rem, 2),
+                        'status' => $oldFee->status,
+                    ];
+                    $priorArrears[] = $item;
+                    $unpaidFees[] = $item;
+                    // القاعدة الذهبية: هذه متخلدات حقيقية (استحقاقها مضى ولم تُدفع)
+                    // فتدخل في إجمالي المتبقي بالذمة للعائلة.
+                    $familyRemainingDebt += $rem;
+                }
+            }
+
+            $studentsDetails[] = [
+                'id' => $student->id,
+                'student_id' => $student->id,
+                'enrollment_id' => $enrollment->id,
+                'student_code' => $student->student_code,
+                'first_name' => $student->first_name,
+                'last_name' => $student->last_name,
+                'name' => trim($student->first_name . ' ' . $student->last_name),
+                'full_name' => trim($student->first_name . ' ' . $student->last_name),
+                'level_name' => $enrollment->level?->name ?? $enrollment->section?->level?->name ?? '—',
+                'section_name' => $enrollment->section?->name ?? '—',
+                'base_monthly_fee' => $baseMonthlyAmount,
+                'remaining_debt' => round(array_sum(array_column($priorArrears, 'remaining_amount')), 2),
+                'total_paid' => (float) $student->payments->sum('amount'),
+                'months_grid' => $monthsGrid,
+                'clubs' => $clubsList,
+                'arrears' => $priorArrears,
+                'unpaid_fees' => $unpaidFees,
+            ];
         }
 
         $availableClubs = Club::where('is_active', true)
@@ -146,451 +599,267 @@ class FamilyService
             ->orderBy('name_ar')
             ->get();
 
-        return array_merge($details, [
+        $resolvedId = $guardianModel?->id ?? (is_numeric($familyKey) ? (int) $familyKey : $familyKey);
+
+        $familyData = [
+            'id' => $resolvedId,
+            'guardian_name' => $guardianName,
+            'phone' => $phone,
+            'address' => $guardianModel?->address ?? null,
+            'mother_name' => $firstStudent->mother_name ?: null,
+            'mother_phone' => self::normalizePhone($firstStudent->mother_phone) ?: ($firstStudent->mother_phone ?: null),
+            'students_count' => count($studentsDetails),
+            'total_due' => round($familyTotalDue, 2),
+            'total_paid' => round($familyTotalPaid, 2),
+            'remaining_debt' => round($familyRemainingDebt, 2),
+            'family_total_due' => round($familyTotalDue, 2),
+            'family_total_paid' => round($familyTotalPaid, 2),
+            'family_remaining_debt' => round($familyRemainingDebt, 2),
+            'students' => $studentsDetails,
             'available_clubs' => $availableClubs,
             'available_fee_types' => $availableFeeTypes,
+        ];
+
+        return array_merge($familyData, [
+            'family' => $familyData,
         ]);
     }
 
     /**
-     * تنفيذ التحصيل الجماعي للعائلة في DB transaction واحدة وإصدار payment واحد برقم واحد.
+     * استخلاص جماعي للعائلة: كل عملية تمر حصراً عبر CollectionService::collect()
+     * لتسجيل Payment والتأثير في الخزينة عبر LedgerService::recordPayment().
      */
     public function collectFamilyPayment(array $data, int $userId): array
     {
+        Log::info('FamilyService::collectFamilyPayment started', [
+            'family_id' => $data['family_id'] ?? null,
+            'user_id' => $userId,
+            'payload' => $data,
+        ]);
+
         return DB::transaction(function () use ($data, $userId) {
-            $familyId = $data['family_id'];
-            $guardian = null;
+            $allocationsByStudent = $data['students_allocations'] ?? [];
+            $flatAllocations = $data['allocations'] ?? [];
 
-            if (is_numeric($familyId)) {
-                $guardian = Guardian::find((int) $familyId);
-            }
-
-            if (! $guardian) {
-                $phoneDigits = preg_replace('/\D/', '', (string) $familyId);
-                if (! empty($phoneDigits)) {
-                    $guardian = Guardian::where('phone', 'like', "%{$phoneDigits}%")->first();
-                }
-            }
-
-            $guardianName = $guardian
-                ? "{$guardian->first_name} {$guardian->last_name}"
-                : 'ولي أمر (هاتف '.str_replace('phone_', '', (string) $familyId).')';
-            $guardianIdLabel = $guardian?->id ?? $familyId;
-
-            $allocationsInput = $data['allocations'] ?? [];
             $paymentDate = $data['payment_date'] ?? now()->toDateString();
             $method = $data['method'] ?? 'cash';
             $reference = $data['reference'] ?? null;
             $notes = $data['notes'] ?? null;
 
-            if (empty($allocationsInput)) {
-                throw new InvalidArgumentException('يجب اختيار بند واحد على الأقل للتحصيل الجماعي');
+            // تحويل الصيغة المسطحة (allocations) إن وُجدت إلى students_allocations
+            if (empty($allocationsByStudent) && ! empty($flatAllocations)) {
+                $grouped = [];
+                foreach ($flatAllocations as $alloc) {
+                    $stId = (int) ($alloc['student_id'] ?? 0);
+                    $feeId = (int) ($alloc['student_fee_id'] ?? 0);
+                    $amt = (float) ($alloc['amount'] ?? 0);
+
+                    if (! isset($grouped[$stId])) {
+                        $studentObj = Student::with('enrollments')->find($stId);
+                        $enId = (int) ($alloc['new_item']['enrollment_id'] ?? ($studentObj?->enrollments?->first()?->id ?? 0));
+                        $grouped[$stId] = [
+                            'student_id' => $stId,
+                            'enrollment_id' => $enId,
+                            'months' => [],
+                            'items' => [],
+                            'club_items' => [],
+                            'prior_allocations' => [],
+                        ];
+                    }
+
+                    if ($feeId > 0 && $amt > 0) {
+                        $fee = StudentFee::find($feeId);
+                        if ($fee && ($fee->outstanding() <= 0 || $fee->status === 'paid')) {
+                            throw new InvalidArgumentException('البند المحدد تم استخلاصه بالكامل مسبقاً');
+                        }
+                        $targetEnrollment = Enrollment::find($grouped[$stId]['enrollment_id']);
+                        if ($fee && $targetEnrollment && (int) $fee->enrollment?->academic_year_id !== (int) $targetEnrollment->academic_year_id) {
+                            $grouped[$stId]['prior_allocations'][] = [
+                                'student_fee_id' => $feeId,
+                                'amount' => $amt,
+                            ];
+                        } else {
+                            $fTypeId = $fee?->fee_type_id ?? self::findTuitionFeeType()->id;
+                            $grouped[$stId]['items'][] = [
+                                'fee_type_id' => $fTypeId,
+                                'description' => $fee?->description ?? 'معلوم مستحق',
+                                'amount' => $amt,
+                            ];
+                        }
+                    } elseif (! empty($alloc['new_item'])) {
+                        $newItem = $alloc['new_item'];
+                        $fTypeId = ! empty($newItem['fee_type_id']) ? (int) $newItem['fee_type_id'] : self::findTuitionFeeType()->id;
+                        $grouped[$stId]['items'][] = [
+                            'fee_type_id' => $fTypeId,
+                            'description' => $newItem['description'] ?? 'معلوم إضافي',
+                            'amount' => (float) ($newItem['amount_due'] ?? $amt),
+                        ];
+                    }
+                }
+                $allocationsByStudent = array_values($grouped);
             }
 
-            $totalAmount = 0;
-            $processedAllocations = [];
-            $affectedStudents = [];
+            if (empty($allocationsByStudent)) {
+                throw new InvalidArgumentException('يجب تحديد مستحقات للاستخلاص عن تلميذ واحد على الأقل');
+            }
 
-            foreach ($allocationsInput as $alloc) {
-                $feeId = (int) ($alloc['student_fee_id'] ?? 0);
-                $amountToPay = (float) $alloc['amount'];
+            $tuitionFeeType = self::findTuitionFeeType();
+            $tuitionFeeTypeId = $tuitionFeeType->id;
 
-                if ($amountToPay <= 0) {
+            $familyReceipts = [];
+            $familyTotalCollected = 0.0;
+            $familyItemsSummary = [];
+            $siblingReceiptsList = [];
+
+            foreach ($allocationsByStudent as $studentAlloc) {
+                $studentId = (int) ($studentAlloc['student_id'] ?? 0);
+                $enrollmentId = (int) ($studentAlloc['enrollment_id'] ?? 0);
+                $months = (array) ($studentAlloc['months'] ?? []);
+                $clubItems = (array) ($studentAlloc['club_items'] ?? []);
+                $priorAllocations = (array) ($studentAlloc['prior_allocations'] ?? []);
+                $customItems = (array) ($studentAlloc['items'] ?? []);
+
+                if (empty($months) && empty($clubItems) && empty($priorAllocations) && empty($customItems)) {
                     continue;
                 }
 
-                $studentFee = null;
+                $enrollment = Enrollment::with('student', 'section.level', 'academicYear')->findOrFail($enrollmentId);
 
-                // إذا كان بنداً جديداً تم إنشاؤه في شاشة الاستخلاص (ترسيم جديد أو نادي جديد)
-                if ($feeId === 0 && ! empty($alloc['new_item'])) {
-                    $newItem = $alloc['new_item'];
-                    $stId = (int) $newItem['student_id'];
-                    $enrollmentId = (int) $newItem['enrollment_id'];
-                    $itemType = $newItem['type'] ?? 'custom';
+                $items = $customItems;
+                if (! empty($months)) {
+                    $preview = $this->collectionService->preview($enrollment->id, $months, $tuitionFeeTypeId);
+                    $tuitionAmount = (float) $preview['remaining_amount'];
 
-                    if ($itemType === 'registration') {
-                        $feeTypeId = (int) ($newItem['fee_type_id'] ?? 0);
-                        $grossAmount = (float) ($newItem['amount_due'] ?? $newItem['amount'] ?? 0);
-                        $desc = $newItem['description'] ?? 'معلوم ترسيم';
-
-                        $existingFee = StudentFee::where('enrollment_id', $enrollmentId)
-                            ->where(function ($q) use ($feeTypeId) {
-                                if ($feeTypeId > 0) {
-                                    $q->where('fee_type_id', $feeTypeId);
-                                } else {
-                                    $q->where('description', 'like', '%ترسيم%');
-                                }
-                            })->first();
-
-                        if ($existingFee) {
-                            if ($existingFee->outstanding() <= 0 || $existingFee->status === 'paid') {
-                                throw new InvalidArgumentException('معلوم الترسيم لهذا التلميذ مدفوع مسبقاً ولا يمكن تكرار استخلاصه');
-                            }
-                            $studentFee = $existingFee;
-                        } else {
-                            $studentFee = StudentFee::create([
-                                'enrollment_id' => $enrollmentId,
-                                'fee_type_id' => $feeTypeId ?: null,
-                                'description' => $desc,
-                                'amount_due' => $grossAmount,
-                                'due_date' => $paymentDate,
-                                'status' => 'pending',
-                            ]);
-                        }
-                    } elseif ($itemType === 'club') {
-                        $clubId = (int) ($newItem['club_id'] ?? 0);
-                        $feeTypeId = (int) ($newItem['fee_type_id'] ?? 0);
-                        $grossAmount = (float) ($newItem['amount_due'] ?? $newItem['amount'] ?? 0);
-                        $desc = $newItem['description'] ?? 'معلوم نادي';
-
-                        if ($clubId > 0) {
-                            $activeYearId = AcademicYear::where('is_active', true)->value('id') ?? 1;
-                            try {
-                                app(ClubService::class)->subscribeStudent($stId, $clubId, $activeYearId, null, null, $enrollmentId);
-                            } catch (\Exception $e) {
-                                // قد يكون مسجلاً مسبقاً، نواصل العمل
-                            }
-                        }
-
-                        $existingFee = StudentFee::where('enrollment_id', $enrollmentId)
-                            ->where('description', $desc)
-                            ->first();
-
-                        if ($existingFee) {
-                            if ($existingFee->outstanding() <= 0 || $existingFee->status === 'paid') {
-                                throw new InvalidArgumentException("معلوم النادي ({$desc}) مدفوع مسبقاً ولا يمكن تكرار استخلاصه");
-                            }
-                            $studentFee = $existingFee;
-                        } else {
-                            $studentFee = StudentFee::create([
-                                'enrollment_id' => $enrollmentId,
-                                'fee_type_id' => $feeTypeId ?: null,
-                                'description' => $desc,
-                                'amount_due' => $grossAmount,
-                                'due_date' => $paymentDate,
-                                'status' => 'pending',
-                            ]);
-                        }
-                    }
-                } else {
-                    $studentFee = StudentFee::where('id', $feeId)->lockForUpdate()->first();
+                    $items[] = [
+                        'fee_type_id' => $tuitionFeeTypeId,
+                        'description' => 'معلوم دراسي شهر ' . implode(' / ', array_map(fn ($m) => self::MONTH_NAMES_AR[substr($m, 5)] ?? $m, $months)),
+                        'amount' => $tuitionAmount,
+                    ];
                 }
 
-                if (! $studentFee) {
-                    throw new InvalidArgumentException('الرسم المستحق غير موجود');
-                }
-
-                $remaining = $studentFee->outstanding();
-                if ($remaining <= 0 || $studentFee->status === 'paid') {
-                    throw new InvalidArgumentException("البند ({$studentFee->description}) محصل بالكامل مسبقاً ولا يمكن تكرار استخلاصه");
-                }
-
-                $actualPay = min($amountToPay, $remaining);
-                $stId = $studentFee->student_id ?? $studentFee->enrollment?->student_id;
-
-                $processedAllocations[] = [
-                    'studentFee' => $studentFee,
-                    'amount' => $actualPay,
-                    'student_id' => $stId,
+                $collectPayload = [
+                    'student_id' => $studentId,
+                    'enrollment_id' => $enrollmentId,
+                    'months' => $months,
+                    'items' => $items,
+                    'club_items' => $clubItems,
+                    'prior_allocations' => $priorAllocations,
+                    'payment_date' => $paymentDate,
+                    'method' => $method,
+                    'reference' => $reference,
+                    'notes' => $notes,
+                    'idempotency_key' => ! empty($data['idempotency_key']) ? $data['idempotency_key'] . '_st_' . $studentId : null,
                 ];
 
-                $totalAmount += $actualPay;
-                if ($stId) {
-                    $affectedStudents[$stId] = true;
-                }
-            }
-
-            if ($totalAmount <= 0) {
-                throw new InvalidArgumentException('إجمالي المبلغ المدفوع يجب أن يكون أكبر من صفر');
-            }
-
-            $primaryStudentId = array_key_first($affectedStudents) ?? $processedAllocations[0]['student_id'] ?? null;
-
-            // 1. إنشاء سجل Payment موحد واحد برقم واحد payment_id
-            $payment = Payment::create([
-                'student_id' => $primaryStudentId,
-                'enrollment_id' => null,
-                'amount' => $totalAmount,
-                'payment_date' => $paymentDate,
-                'method' => $method,
-                'reference' => $reference,
-                'notes' => $notes ? "تحصيل جماعي للعائلة #{$guardianIdLabel} - {$notes}" : "تحصيل جماعي لعائلة {$guardianName}",
-                'created_by' => $userId,
-                'meta' => [
-                    'family_id' => $guardianIdLabel,
-                    'guardian_name' => $guardianName,
-                    'is_collective' => true,
-                ],
-            ]);
-
-            $receiptItems = [];
-
-            // 2. ربط كل مبلغ بالبند والتلميذ في payment_allocations وتحديث حالة البند
-            foreach ($processedAllocations as $item) {
-                /** @var StudentFee $fee */
-                $fee = $item['studentFee'];
-                $pay = $item['amount'];
-
-                PaymentAllocation::create([
-                    'payment_id' => $payment->id,
-                    'student_fee_id' => $fee->id,
-                    'amount_allocated' => $pay,
+                Log::info('FamilyService dispatching child payment to CollectionService::collect', [
+                    'student_id' => $studentId,
+                    'payload' => $collectPayload,
                 ]);
 
-                $fee->refresh();
-                $newRemaining = $fee->outstanding();
-                $newPaid = $fee->allocatedAmount();
+                // كل عملية استخلاص تمر حصراً ومباشرة عبر CollectionService::collect()
+                $receipt = $this->collectionService->collect($collectPayload, $userId);
 
-                $newStatus = ($newRemaining <= 0) ? 'paid' : ($newPaid > 0 ? 'partial' : 'unpaid');
-                $fee->update(['status' => $newStatus]);
+                $familyReceipts[] = $receipt;
+                $familyTotalCollected += (float) ($receipt['total'] ?? 0);
 
-                $studentId = $fee->student_id ?? $fee->enrollment?->student_id;
-                $student = $studentId ? Student::find($studentId) : null;
-                $stName = $student ? "{$student->first_name} {$student->last_name}" : 'تلميذ';
-
-                $receiptItems[] = [
-                    'description' => "[{$stName}] ".($fee->description ?? 'رسم مستحق'),
-                    'amount' => $pay,
+                $stName = $enrollment->student->first_name . ' ' . $enrollment->student->last_name;
+                $siblingReceiptsList[] = [
+                    'student_id' => $studentId,
                     'student_name' => $stName,
+                    'student_code' => $enrollment->student->student_code,
+                    'level_section' => ($enrollment->section?->level?->name ?? '') . ' — ' . ($enrollment->section?->name ?? ''),
+                    'payment_id' => $receipt['payment_id'] ?? null,
+                    'receipt_number' => $receipt['receipt_number'] ?? null,
+                    'months' => $months,
+                    'amount' => (float) ($receipt['total'] ?? 0),
+                    'items' => $receipt['items'] ?? [],
                 ];
+
+                foreach ($receipt['items'] ?? [] as $it) {
+                    $familyItemsSummary[] = [
+                        'student_name' => $stName,
+                        'description' => $it['description'] ?? '',
+                        'amount' => (float) ($it['amount'] ?? 0),
+                    ];
+                }
             }
 
-            // 3. قيد بالدفتر النقدي المركزي عبر recordPayment: يوزّع المبلغ تلقائياً
-            // على بنود المداخيل حسب الرسوم، ويفصل قبض ديون السنوات السابقة
-            // (prior_year_debt) عن مدخول السنة الحالية — نفس منطق الاستخلاص المفرد.
-            $this->ledgerService->recordPayment($payment);
+            if (empty($siblingReceiptsList)) {
+                throw new InvalidArgumentException('لم يتم استخلاص أي مبلغ عن أي تلميذ');
+            }
 
-            $familyDetailsAfter = $this->getFamilyDetails($familyId);
+            $firstReceipt = $familyReceipts[0];
+            $familyReceiptNumber = 'FAM-' . ($firstReceipt['receipt_number'] ?? date('YmdHis'));
 
-            return [
-                'payment_id' => $payment->id,
+            $unifiedFamilyReceipt = [
+                'is_family_receipt' => true,
+                'family_receipt_number' => $familyReceiptNumber,
+                'receipt_number' => $familyReceiptNumber,
+                'payment_id' => $firstReceipt['payment_id'] ?? null,
                 'payment_date' => $paymentDate,
                 'method' => $method,
                 'reference' => $reference,
-                'total' => $totalAmount,
-                'amount' => $totalAmount,
-                'guardian_name' => $guardianName,
-                'student_name' => "عائلة {$guardianName}",
-                'items' => $receiptItems,
-                'remaining_amount' => $familyDetailsAfter['family_remaining_debt'],
-                'user_name' => auth()->user()?->first_name.' '.auth()->user()?->last_name,
+                'notes' => $notes,
+                'total' => round($familyTotalCollected, 2),
+                'guardian_name' => $data['guardian_name'] ?? ($firstReceipt['guardian']['first_name'] ?? 'ولي أمر'),
+                'guardian_phone' => $data['guardian_phone'] ?? ($firstReceipt['guardian']['phone'] ?? ''),
+                'siblings' => $siblingReceiptsList,
+                'items' => $familyItemsSummary,
+                'created_by' => $firstReceipt['created_by'] ?? null,
             ];
+
+            Log::info('FamilyService::collectFamilyPayment completed successfully', [
+                'receipt_number' => $familyReceiptNumber,
+                'total' => $familyTotalCollected,
+                'siblings_count' => count($siblingReceiptsList),
+            ]);
+
+            return $unifiedFamilyReceipt;
         });
     }
 
-    protected function formatFamilySummary(Guardian $g): array
+    /**
+     * إيجاد تلاميذ العائلة بناء على المعرف (رقم هاتف منقح أو معرف تلميذ أو Guardian).
+     */
+    protected function resolveFamilyStudents(string|int $familyKey, AcademicYear $activeYear, ?Guardian $guardianModel = null)
     {
-        $students = $g->students;
-        $totalDue = 0;
-        $totalPaid = 0;
-        $totalRemaining = 0;
+        if ($guardianModel && $guardianModel->students->isNotEmpty()) {
+            return $guardianModel->students()
+                ->with([
+                    'enrollments' => fn ($eq) => $eq->where('academic_year_id', $activeYear->id)->with(['section.level']),
+                    'payments' => fn ($pq) => $pq->whereNull('cancelled_at'),
+                ])
+                ->get();
+        }
 
-        $formattedStudents = $students->map(function (Student $st) use (&$totalDue, &$totalPaid, &$totalRemaining) {
-            $fees = $st->enrollments->flatMap->studentFees;
-            $stDue = $fees->sum(fn ($f) => (float) $f->amount_due);
-            $stPaid = $fees->sum(fn ($f) => $f->allocatedAmount());
-            $stRemaining = $fees->sum(fn ($f) => $f->outstanding());
+        $phoneKey = str_replace('phone_', '', (string) $familyKey);
+        $phoneDigits = self::normalizePhone($phoneKey);
 
-            $totalDue += $stDue;
-            $totalPaid += $stPaid;
-            $totalRemaining += $stRemaining;
+        if ($phoneDigits) {
+            $all = Student::query()
+                ->with([
+                    'enrollments' => fn ($eq) => $eq->where('academic_year_id', $activeYear->id)->with(['section.level']),
+                    'payments' => fn ($pq) => $pq->whereNull('cancelled_at'),
+                ])
+                ->get();
 
-            $activeEnrollment = $st->enrollments->sortByDesc('id')->first();
-            $section = $activeEnrollment?->section;
-            $level = $section?->level;
+            return $all->filter(function (Student $st) use ($phoneDigits) {
+                return self::normalizePhone($st->guardian_phone) === $phoneDigits
+                    || self::normalizePhone($st->mother_phone) === $phoneDigits;
+            })->values();
+        }
 
-            return [
-                'id' => $st->id,
-                'name' => "{$st->first_name} {$st->last_name}",
-                'student_code' => $st->student_code,
-                'section_name' => $section ? ($level ? "{$level->name} - {$section->name}" : $section->name) : 'غير مسجل',
-                'remaining_debt' => $stRemaining,
-            ];
-        });
+        if (str_starts_with((string) $familyKey, 'student_') || is_numeric($familyKey)) {
+            $stId = (int) str_replace('student_', '', (string) $familyKey);
 
-        return [
-            'id' => $g->id,
-            'guardian_name' => "{$g->first_name} {$g->last_name}",
-            'phone' => $g->phone,
-            'address' => $g->address,
-            'students_count' => $students->count(),
-            'students' => $formattedStudents,
-            'family_total_due' => $totalDue,
-            'family_total_paid' => $totalPaid,
-            'family_remaining_debt' => $totalRemaining,
-        ];
-    }
+            return Student::whereKey($stId)
+                ->with([
+                    'enrollments' => fn ($eq) => $eq->where('academic_year_id', $activeYear->id)->with(['section.level']),
+                    'payments' => fn ($pq) => $pq->whereNull('cancelled_at'),
+                ])
+                ->get();
+        }
 
-    protected function formatVirtualFamilySummary(string $phone, ?string $fn, ?string $ln, $students): array
-    {
-        $gName = trim("{$fn} {$ln}") ?: 'ولي أمر';
-        $totalDue = 0;
-        $totalPaid = 0;
-        $totalRemaining = 0;
-
-        $formattedStudents = $students->map(function (Student $st) use (&$totalDue, &$totalPaid, &$totalRemaining) {
-            $fees = $st->enrollments->flatMap->studentFees;
-            $stDue = $fees->sum(fn ($f) => (float) $f->amount_due);
-            $stPaid = $fees->sum(fn ($f) => $f->allocatedAmount());
-            $stRemaining = $fees->sum(fn ($f) => $f->outstanding());
-
-            $totalDue += $stDue;
-            $totalPaid += $stPaid;
-            $totalRemaining += $stRemaining;
-
-            $activeEnrollment = $st->enrollments->sortByDesc('id')->first();
-            $section = $activeEnrollment?->section;
-            $level = $section?->level;
-
-            return [
-                'id' => $st->id,
-                'name' => "{$st->first_name} {$st->last_name}",
-                'student_code' => $st->student_code,
-                'section_name' => $section ? ($level ? "{$level->name} - {$section->name}" : $section->name) : 'غير مسجل',
-                'remaining_debt' => $stRemaining,
-            ];
-        });
-
-        return [
-            'id' => 'phone_'.preg_replace('/\D/', '', $phone),
-            'guardian_name' => $gName,
-            'phone' => $phone,
-            'address' => '—',
-            'students_count' => $students->count(),
-            'students' => $formattedStudents,
-            'family_total_due' => $totalDue,
-            'family_total_paid' => $totalPaid,
-            'family_remaining_debt' => $totalRemaining,
-        ];
-    }
-
-    protected function formatFamilyFullDetails(Guardian $g): array
-    {
-        $students = $g->students;
-        $familyRemaining = 0;
-        $familyPaid = 0;
-        $familyDue = 0;
-
-        $studentsData = $students->map(function (Student $st) use (&$familyRemaining, &$familyPaid, &$familyDue) {
-            $fees = $st->enrollments->flatMap->studentFees;
-            $unpaidFees = $fees->filter(fn ($f) => $f->outstanding() > 0 && $f->status !== 'paid')->values();
-
-            $stRemaining = $fees->sum(fn ($f) => $f->outstanding());
-            $stPaid = $fees->sum(fn ($f) => $f->allocatedAmount());
-            $stDue = $fees->sum(fn ($f) => (float) $f->amount_due);
-
-            $familyRemaining += $stRemaining;
-            $familyPaid += $stPaid;
-            $familyDue += $stDue;
-
-            $activeEnrollment = $st->enrollments->sortByDesc('id')->first();
-            $section = $activeEnrollment?->section;
-            $level = $section?->level;
-            $academicYear = $activeEnrollment?->academicYear;
-
-            return [
-                'id' => $st->id,
-                'first_name' => $st->first_name,
-                'last_name' => $st->last_name,
-                'name' => "{$st->first_name} {$st->last_name}",
-                'student_code' => $st->student_code,
-                'section_name' => $section ? ($level ? "{$level->name} - {$section->name}" : $section->name) : 'غير مسجل',
-                'academic_year' => $academicYear?->name ?? '2026–2027',
-                'enrollment_id' => $activeEnrollment?->id,
-                'remaining_debt' => $stRemaining,
-                'total_paid' => $stPaid,
-                'unpaid_fees' => $unpaidFees->map(fn ($f) => [
-                    'id' => $f->id,
-                    'fee_type_id' => $f->fee_type_id,
-                    'description' => $f->description ?? $f->feeType?->name_ar ?? 'بند مستحق',
-                    'month_name' => $f->month_name,
-                    'gross_amount' => (float) $f->amount_due,
-                    'discount_amount' => (float) $f->waivedAmount(),
-                    'paid_amount' => (float) $f->allocatedAmount(),
-                    'remaining_amount' => (float) $f->outstanding(),
-                    'status' => $f->status,
-                ]),
-            ];
-        });
-
-        return [
-            'id' => $g->id,
-            'guardian_name' => "{$g->first_name} {$g->last_name}",
-            'phone' => $g->phone,
-            'email' => $g->email,
-            'address' => $g->address,
-            'mother_phone' => $g->mother_phone,
-            'students_count' => $students->count(),
-            'students' => $studentsData,
-            'family_total_due' => $familyDue,
-            'family_total_paid' => $familyPaid,
-            'family_remaining_debt' => $familyRemaining,
-        ];
-    }
-
-    protected function formatVirtualFamilyFullDetails(string $phone, $students): array
-    {
-        $first = $students->first();
-        $gName = trim(($first->guardian_first_name ?? '').' '.($first->guardian_last_name ?? '')) ?: 'ولي أمر';
-
-        $familyRemaining = 0;
-        $familyPaid = 0;
-        $familyDue = 0;
-
-        $studentsData = $students->map(function (Student $st) use (&$familyRemaining, &$familyPaid, &$familyDue) {
-            $fees = $st->enrollments->flatMap->studentFees;
-            $unpaidFees = $fees->filter(fn ($f) => $f->outstanding() > 0 && $f->status !== 'paid')->values();
-
-            $stRemaining = $fees->sum(fn ($f) => $f->outstanding());
-            $stPaid = $fees->sum(fn ($f) => $f->allocatedAmount());
-            $stDue = $fees->sum(fn ($f) => (float) $f->amount_due);
-
-            $familyRemaining += $stRemaining;
-            $familyPaid += $stPaid;
-            $familyDue += $stDue;
-
-            $activeEnrollment = $st->enrollments->sortByDesc('id')->first();
-            $section = $activeEnrollment?->section;
-            $level = $section?->level;
-            $academicYear = $activeEnrollment?->academicYear;
-
-            return [
-                'id' => $st->id,
-                'first_name' => $st->first_name,
-                'last_name' => $st->last_name,
-                'name' => "{$st->first_name} {$st->last_name}",
-                'student_code' => $st->student_code,
-                'section_name' => $section ? ($level ? "{$level->name} - {$section->name}" : $section->name) : 'غير مسجل',
-                'academic_year' => $academicYear?->name ?? '2026–2027',
-                'enrollment_id' => $activeEnrollment?->id,
-                'remaining_debt' => $stRemaining,
-                'total_paid' => $stPaid,
-                'unpaid_fees' => $unpaidFees->map(fn ($f) => [
-                    'id' => $f->id,
-                    'fee_type_id' => $f->fee_type_id,
-                    'description' => $f->description ?? $f->feeType?->name_ar ?? 'بند مستحق',
-                    'month_name' => $f->month_name,
-                    'gross_amount' => (float) $f->amount_due,
-                    'discount_amount' => (float) $f->waivedAmount(),
-                    'paid_amount' => (float) $f->allocatedAmount(),
-                    'remaining_amount' => (float) $f->outstanding(),
-                    'status' => $f->status,
-                ]),
-            ];
-        });
-
-        return [
-            'id' => 'phone_'.preg_replace('/\D/', '', $phone),
-            'guardian_name' => $gName,
-            'phone' => $phone,
-            'email' => null,
-            'address' => '—',
-            'mother_phone' => $first->mother_phone ?? null,
-            'students_count' => $students->count(),
-            'students' => $studentsData,
-            'family_total_due' => $familyDue,
-            'family_total_paid' => $familyPaid,
-            'family_remaining_debt' => $familyRemaining,
-        ];
+        return collect();
     }
 }
