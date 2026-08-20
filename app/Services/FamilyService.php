@@ -128,6 +128,14 @@ class FamilyService
             ->get()
             ->groupBy('enrollment_id');
 
+        // جلب معرفات الرسوم التي لها دفعات ملغاة — تُستثنى من المتخلدات
+        $feesWithCancelledPayments = \App\Models\PaymentAllocation::query()
+            ->join('payments', 'payments.id', '=', 'payment_allocations.payment_id')
+            ->whereNotNull('payments.cancelled_at')
+            ->whereNotNull('payment_allocations.student_fee_id')
+            ->pluck('payment_allocations.student_fee_id')
+            ->toArray();
+
         // جلب جميع التلاميذ مع تسجيلاتهم وتخفيضاتهم ورسومهم
         $studentsQuery = Student::query()
             ->with([
@@ -266,18 +274,22 @@ class FamilyService
                 // 4. الرسوم المباشرة والمتخلدات السابقة الأخرى (إن وجدت)
                 foreach ($currentEnrollment->studentFees as $sf) {
                     if ($sf->club_monthly_fee_id !== null) {
-                        continue; // محسوبة مسبقاً في النوادي
+                        continue;
                     }
                     if ($sf->feeType && str_contains(FeeType::normalize($sf->feeType->name_ar), 'تمدرس')) {
-                        continue; // محسوبة مسبقاً في الأشهر الدراسية
+                        continue;
+                    }
+                    // استثناء الرسوم التي لها دفعات ملغاة — الإلغاء لا يحوّل الرسم إلى متخلد
+                    if (in_array($sf->id, $feesWithCancelledPayments, true)) {
+                        $studentDue += (float) $sf->amount_due;
+                        $studentPaid += (float) $sf->amount_paid;
+                        continue;
                     }
                     $sfDue = (float) $sf->amount_due;
                     $sfPaid = (float) $sf->amount_paid;
                     $sfRem = max(0.0, round($sfDue - $sfPaid, 2));
-
                     $studentDue += $sfDue;
                     $studentPaid += $sfPaid;
-                    // القاعدة الذهبية: مستقبل بلا استحقاق بعد ليس متخلداً.
                     if ($sf->due_date && $sf->due_date->lte(now())) {
                         $remainingDebt += $sfRem;
                     }
