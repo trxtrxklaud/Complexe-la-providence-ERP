@@ -5,6 +5,7 @@ import {
   CheckCircle2, PlusCircle, Calendar, Award, Shield
 } from 'lucide-react';
 import { fetchFamilyDetails, type FamilyFullDetails } from '../../api/families';
+import { paymentsApi } from '../../api/payments';
 import { FamilyCollectionModal } from '../../components/Families/FamilyCollectionModal';
 import { ReceiptModal, type ReceiptData } from '../Payments/ReceiptModal';
 
@@ -76,6 +77,24 @@ export function FamilyDetailPage() {
   const totalDue = Number(family.total_due ?? family.family_total_due ?? 0);
   const totalPaid = Number(family.total_paid ?? family.family_total_paid ?? 0);
   const hasRemainingDebt = remainingDebt > 0;
+
+  async function handleCancelPayment(): Promise<void> {
+    if (!activeReceipt?.payment_id) return;
+    const reason = window.prompt('سبب إلغاء المقبوض (إلزامي):');
+    if (reason === null) return;
+    if (reason.trim().length < 3) {
+      alert('يرجى كتابة سبب الإلغاء (3 أحرف على الأقل)');
+      return;
+    }
+    try {
+      await paymentsApi.cancel(Number(activeReceipt.payment_id), reason.trim());
+      setActiveReceipt(null);
+      await loadDetails();
+      alert('تم إلغاء المقبوض بنجاح وتحديث الحساب.');
+    } catch (e: unknown) {
+      alert((e as Error).message || 'تعذر إلغاء المقبوض');
+    }
+  }
 
   return (
     <div dir="rtl" className="p-6 max-w-6xl mx-auto space-y-6">
@@ -287,6 +306,7 @@ export function FamilyDetailPage() {
         <ReceiptModal
           receipt={activeReceipt}
           onClose={() => setActiveReceipt(null)}
+          onDelete={handleCancelPayment}
         />
       )}
     </div>
