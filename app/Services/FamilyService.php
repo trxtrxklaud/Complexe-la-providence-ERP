@@ -778,6 +778,15 @@ class FamilyService
                 $familyTotalCollected += (float) ($receipt['total'] ?? 0);
 
                 $stName = $enrollment->student->first_name . ' ' . $enrollment->student->last_name;
+                // دمج items + club_items في قائمة واحدة للعرض في الوصل
+                $allReceiptItems = array_merge(
+                    $receipt['items'] ?? [],
+                    array_map(fn ($ci) => [
+                        'description' => ($ci['club_name'] ?? 'نادي') . ' — ' . ($ci['month_label'] ?? $ci['month'] ?? ''),
+                        'amount' => $ci['amount'] ?? $ci['amount_due'] ?? 0,
+                    ], $receipt['club_items'] ?? [])
+                );
+
                 $siblingReceiptsList[] = [
                     'student_id' => $studentId,
                     'student_name' => $stName,
@@ -787,7 +796,7 @@ class FamilyService
                     'receipt_number' => $receipt['receipt_number'] ?? null,
                     'months' => $months,
                     'amount' => (float) ($receipt['total'] ?? 0),
-                    'items' => $receipt['items'] ?? [],
+                    'items' => $allReceiptItems,
                 ];
 
                 foreach ($receipt['items'] ?? [] as $it) {
