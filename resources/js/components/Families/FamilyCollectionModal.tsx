@@ -47,16 +47,38 @@ export function FamilyCollectionModal({ family, onClose, onSuccess }: Props) {
     const isSelected = current.includes(monthKey);
 
     if (isSelected) {
+      // عند إلغاء تحديد شهر، أزل هذا الشهر وكل ما بعده
       setSelectedMonthsByStudent((prev) => ({
         ...prev,
-        [student.id]: current.filter((m) => m !== monthKey),
+        [student.id]: current.filter((m) => m < monthKey),
       }));
-    } else {
-      setSelectedMonthsByStudent((prev) => ({
-        ...prev,
-        [student.id]: [...current, monthKey].sort(),
-      }));
+      return;
     }
+
+    // منع تجاوز الأشهر: يجب أن يكون الشهر السابق مدفوعاً أو مختاراً
+    const unpaidMonths = student.months_grid
+      .filter((m) => m.status !== 'paid' && m.status !== 'waived')
+      .map((m) => m.month)
+      .sort();
+
+    const firstUnpaid = unpaidMonths[0];
+    if (firstUnpaid && monthKey > firstUnpaid && !current.includes(firstUnpaid)) {
+      // الشهر الأول غير المدفوع لم يُختر بعد — لا يمكن تجاوزه
+      alert(`يجب استخلاص ${student.months_grid.find(m => m.month === firstUnpaid)?.name_ar ?? firstUnpaid} أولاً قبل اختيار شهر لاحق`);
+      return;
+    }
+
+    // تأكد أن كل الأشهر السابقة غير المدفوعة مختارة قبل هذا الشهر
+    const monthsBefore = unpaidMonths.filter((m) => m < monthKey && !current.includes(m));
+    if (monthsBefore.length > 0) {
+      alert(`يجب اختيار الأشهر السابقة أولاً قبل اختيار هذا الشهر`);
+      return;
+    }
+
+    setSelectedMonthsByStudent((prev) => ({
+      ...prev,
+      [student.id]: [...current, monthKey].sort(),
+    }));
   };
 
   // تبديل اختيار شهر نادي لتلميذ

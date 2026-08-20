@@ -372,7 +372,18 @@ function ReceiptHalf({ receipt, copyLabel, isGuardian, method, cashier, total }:
                   </td>
                   <td style={{ padding: '5px 8px', color: '#555' }}>{sib.level_section || '—'}</td>
                   <td style={{ padding: '5px 8px' }}>
-                    {sib.months && sib.months.length > 0 ? sib.months.join(' / ') : (sib.items?.map(it => it.description).join('، ') || 'معلوم دراسي')}
+                    <div className="space-y-0.5">
+                      {sib.months && sib.months.length > 0 && (
+                        <div>معلوم دراسي: <b>{sib.months.join(' / ')}</b></div>
+                      )}
+                      {sib.items && sib.items
+                        .filter(it => !sib.months?.some(m => (it.description ?? '').includes(m.slice(5))))
+                        .map((it, idx) => (
+                          <div key={idx} style={{ color: '#555' }}>{it.description}</div>
+                        ))
+                      }
+                      {!sib.months?.length && !sib.items?.length && <span>معلوم دراسي</span>}
+                    </div>
                   </td>
                   {!isGuardian && (
                     <td style={{ textAlign: 'left', padding: '5px 8px', fontWeight: 700, color: NAVY }} dir="ltr">
