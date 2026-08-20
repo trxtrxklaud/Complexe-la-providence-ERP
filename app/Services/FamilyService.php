@@ -273,10 +273,18 @@ class FamilyService
 
                 // 4. الرسوم المباشرة والمتخلدات السابقة الأخرى (إن وجدت)
                 foreach ($currentEnrollment->studentFees as $sf) {
+                    // استثناء رسوم النوادي — محسوبة مسبقاً في قسم النوادي
                     if ($sf->club_monthly_fee_id !== null) {
                         continue;
                     }
-                    if ($sf->feeType && str_contains(FeeType::normalize($sf->feeType->name_ar), 'تمدرس')) {
+                    // استثناء رسوم التمدرس — محسوبة مسبقاً في شبكة الأشهر
+                    if ($sf->fee_type_id !== null && $sf->feeType && str_contains(FeeType::normalize($sf->feeType->name_ar), 'تمدرس')) {
+                        continue;
+                    }
+                    // استثناء الرسوم المدفوعة بالكامل
+                    if ($sf->status === 'paid') {
+                        $studentDue += (float) $sf->amount_due;
+                        $studentPaid += (float) $sf->amount_due;
                         continue;
                     }
                     // استثناء الرسوم التي لها دفعات ملغاة — الإلغاء لا يحوّل الرسم إلى متخلد
