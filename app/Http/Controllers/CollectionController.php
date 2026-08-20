@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Http\Requests\CollectPaymentRequest;
 use App\Models\AcademicYear;
 use App\Models\Enrollment;
+use App\Models\ManualStudentDebt;
 use App\Models\Section;
 use App\Models\Student;
 use App\Services\CollectionService;
@@ -179,6 +180,9 @@ class CollectionController extends Controller
     /**
      * متخلّدات السنوات السابقة لتلميذ — الرصيد الافتتاحي الذي يُعرض للقابض
      * قبل القبض حتى يقرّر كيف يوزّع المبلغ بين الدَّين القديم ورسوم السنة.
+     *
+     * manual_debts: الديون القديمة المدخلة يدوياً (غير الملغاة وغير المدفوعة)
+     * — تحصيلها يمرّ بنفس المسار (prior_allocations.manual_student_debt_id).
      */
     public function openingBalances(Student $student, Request $request): JsonResponse
     {
@@ -188,11 +192,31 @@ class CollectionController extends Controller
 
         $yearId = $request->integer('academic_year_id') ?: null;
 
+        // السنة المعروضة: المحدَّدة إن وُجدت، وإلا فالسنة النشطة.
+        $manualYearId = $yearId ?? AcademicYear::where('is_active', true)->value('id');
+
+        $manualDebts = ManualStudentDebt::query()
+            ->where('student_id', $student->id)
+            ->whereNull('cancelled_at')
+            ->where('status', '!=', ManualStudentDebt::STATUS_PAID)
+            ->when($manualYearId, fn ($q, $v) => $q->where('academic_year_id', (int) $v))
+            ->get()
+            ->map(fn (ManualStudentDebt $debt) => [
+                'id' => $debt->id,
+                'original_year_label' => $debt->original_year_label,
+                'debt_type' => $debt->debt_type,
+                'description' => $debt->description,
+                'original_amount' => (float) $debt->original_amount,
+                'outstanding' => $debt->outstanding(),
+            ])
+            ->values();
+
         return response()->json([
             'student_id' => $student->id,
             'academic_year_id' => $yearId,
             'summary' => $this->openingBalances->summaryForStudent($student, $yearId),
             'items' => $this->openingBalances->priorYearFeesForStudent($student, $yearId),
+            'manual_debts' => $manualDebts,
         ]);
     }
 

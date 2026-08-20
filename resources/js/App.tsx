@@ -321,9 +321,10 @@ export default function App() {
                     } />
 
                     {/* ═══ الأرصدة الافتتاحية اليدوية ═══
-                        الإدخال والإلغاء manage_treasury؛ القائمة ترى من view_reports أيضاً */}
+                        الإدخال والقائمة والخروج كلها manage_treasury حصراً —
+                        الحارس يطابق routes/api.php حرفاً. */}
                     <Route path="/opening-balances" element={
-                        <ProtectedRoute anyOf={['manage_treasury', 'view_reports']}>
+                        <ProtectedRoute permission="manage_treasury">
                             <Layout><OpeningBalancesPage /></Layout>
                         </ProtectedRoute>
                     } />
