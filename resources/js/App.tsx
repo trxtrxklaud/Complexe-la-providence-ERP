@@ -38,6 +38,7 @@ const OldStudentReenroll = lazy(() => import('./pages/Students/OldStudentReenrol
 const StudentSearchPage = lazy(() => import('./pages/Students/StudentSearchPage').then((module) => ({ default: module.StudentSearchPage })));
 const StudentDetailsPage = lazy(() => import('./pages/Students/StudentDetailsPage').then((module) => ({ default: module.StudentDetailsPage })));
 const StudentTransferPage = lazy(() => import('./pages/Students/StudentTransferPage').then((module) => ({ default: module.StudentTransferPage })));
+const BulkGenderPage = lazy(() => import('./pages/Students/BulkGenderPage').then((module) => ({ default: module.BulkGenderPage })));
 const FeeTypesPage = lazy(() => loadFeeTypesPage().then((module) => ({ default: module.FeeTypesPage })));
 const EmployeesPage = lazy(() => loadEmployeesPage().then((module) => ({ default: module.EmployeesPage })));
 const CollectionPage = lazy(() => loadCollectionPage().then((module) => ({ default: module.CollectionPage })));
@@ -155,6 +156,11 @@ export default function App() {
                     <Route path="/students/transfer" element={
                         <ProtectedRoute permission="manage_students">
                             <Layout><StudentTransferPage /></Layout>
+                        </ProtectedRoute>
+                    } />
+                    <Route path="/students/bulk-gender" element={
+                        <ProtectedRoute permission="manage_students">
+                            <Layout><BulkGenderPage /></Layout>
                         </ProtectedRoute>
                     } />
 
