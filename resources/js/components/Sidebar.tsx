@@ -2,6 +2,7 @@ import { NavLink, useNavigate, useLocation } from 'react-router-dom';
 import {
     LayoutDashboard, Users, LogOut, GraduationCap, Tags, Layers,
     ClipboardList, History, Wallet, Receipt, Landmark, TrendingUp, BadgePercent, Award, HeartHandshake,
+    Users2,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import {
@@ -88,7 +89,7 @@ export function Sidebar() {
                     <>
                         <NavLink
                             to="/students"
-                            className={({ isActive }) => linkClass(isActive || startsWith('/students'))}
+                            className={() => linkClass(startsWith('/students') && !startsWith('/students/bulk-gender'))}
                         >
                             <GraduationCap size={20} />
                             <span>التلاميذ</span>
@@ -99,6 +100,13 @@ export function Sidebar() {
                         >
                             <Users size={20} />
                             <span>العائلات</span>
+                        </NavLink>
+                        <NavLink
+                            to="/students/bulk-gender"
+                            className={({ isActive }) => linkClass(isActive || startsWith('/students/bulk-gender'))}
+                        >
+                            <Users2 size={20} />
+                            <span>تحديد الجنس</span>
                         </NavLink>
                     </>
                 )}
