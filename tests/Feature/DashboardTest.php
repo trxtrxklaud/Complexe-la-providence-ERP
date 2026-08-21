@@ -160,12 +160,12 @@ class DashboardTest extends TestCase
 
         $this->assertEquals(4, $data['total_students']);
         $this->assertEquals(4, $data['total_active_students']);
-        $this->assertEquals(1, $data['male_students_count']);
-        $this->assertEquals(1, $data['total_males']);
+        $this->assertEquals(2, $data['male_students_count']);
+        $this->assertEquals(2, $data['total_males']);
         $this->assertEquals(1, $data['female_students_count']);
         $this->assertEquals(1, $data['total_females']);
-        $this->assertEquals(2, $data['unknown_gender_count']);
-        $this->assertEquals(2, $data['total_unspecified_gender']);
+        $this->assertEquals(1, $data['unknown_gender_count']);
+        $this->assertEquals(1, $data['total_unspecified_gender']);
 
         // Reconciliation Assertion
         $this->assertEquals(

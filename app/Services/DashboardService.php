@@ -38,13 +38,17 @@ class DashboardService
             ->where('enrollments.academic_year_id', $activeYear->id)
             ->where('enrollments.status', 'active')
             ->whereNull('enrollments.deleted_at')
-            ->select('students.id', 'students.gender')
+            ->select('students.id', 'students.first_name', 'students.gender')
             ->get()
             ->unique('id');
 
         $malesCount = 0;
         $femalesCount = 0;
         $unknownCount = 0;
+
+        $studentService = app(StudentService::class);
+        $inferGenderFromName = new \ReflectionMethod(StudentService::class, 'inferGenderFromName');
+        $inferGenderFromName->setAccessible(true);
 
         foreach ($activeStudents as $student) {
             $g = strtolower(trim((string) $student->gender));
@@ -53,7 +57,14 @@ class DashboardService
             } elseif (in_array($g, ['female', 'f', 'أنثى'], true)) {
                 $femalesCount++;
             } else {
-                $unknownCount++;
+                $inferredGender = $inferGenderFromName->invoke($studentService, $student->first_name);
+                if ($inferredGender === 'male') {
+                    $malesCount++;
+                } elseif ($inferredGender === 'female') {
+                    $femalesCount++;
+                } else {
+                    $unknownCount++;
+                }
             }
         }
 
