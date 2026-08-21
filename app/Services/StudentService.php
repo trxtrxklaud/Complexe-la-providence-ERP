@@ -143,7 +143,7 @@ class StudentService
         }
 
         $allStudents = $query->get()
-            ->unique(fn (Student $student) => $this->normalizeStudentName($student))
+            ->unique('id')
             ->map(function (Student $student) {
                 $rawGender = strtolower(trim((string) $student->gender));
                 if (in_array($rawGender, ['male', 'm', 'ذكر'], true)) {
