@@ -3,8 +3,12 @@
 namespace Tests\Feature;
 
 use App\Models\AcademicYear;
+use App\Models\CashTransaction;
+use App\Models\Employee;
+use App\Models\EmployeeLiability;
 use App\Models\Enrollment;
 use App\Models\Level;
+use App\Models\ManualStudentDebt;
 use App\Models\Permission;
 use App\Models\Section;
 use App\Models\Student;
@@ -35,6 +39,7 @@ class DashboardTest extends TestCase
         $this->assertArrayNotHasKey('cash', $data);
         $this->assertArrayNotHasKey('treasury_balance', $data);
         $this->assertArrayNotHasKey('financial_summary', $data);
+        $this->assertArrayNotHasKey('prior_debt_summary', $data);
     }
 
     public function test_report_viewer_receives_financial_data(): void
@@ -60,6 +65,86 @@ class DashboardTest extends TestCase
         $this->assertArrayHasKey('cash', $data);
         $this->assertArrayHasKey('treasury_balance', $data);
         $this->assertArrayHasKey('financial_summary', $data);
+        $this->assertArrayHasKey('prior_debt_summary', $data);
+    }
+
+    public function test_prior_debt_summary_figures_match_ledger_and_manual_records(): void
+    {
+        Sanctum::actingAs($this->makeUserWithPermissions('treasurer', ['manage_treasury']));
+        $year = $this->makeAcademicYear();
+
+        // دَين تلميذ قديم: 10000 حُصّل منها 3000 (سطر في الدفتر النقدي).
+        $student = Student::create([
+            'student_code' => 'STU-PD-'.uniqid(),
+            'first_name' => 'أحمد',
+            'last_name' => 'بن صالح',
+            'gender' => 'male',
+            'status' => 'active',
+        ]);
+        ManualStudentDebt::create([
+            'student_id' => $student->id,
+            'academic_year_id' => $year->id,
+            'original_year_label' => '2024/2025',
+            'debt_type' => 'tuition',
+            'description' => 'متخلّدات سابقة',
+            'original_amount' => 10000,
+            'status' => ManualStudentDebt::STATUS_PENDING,
+        ]);
+        CashTransaction::create([
+            'source_type' => 'payment',
+            'source_id' => 99001,
+            'category' => CashTransaction::CATEGORY_PRIOR_YEAR_DEBT,
+            'direction' => CashTransaction::DIRECTION_IN,
+            'amount' => 3000,
+            'transaction_date' => now()->toDateString(),
+            'academic_year_id' => $year->id,
+        ]);
+
+        // استحقاق إطار قديم: 500 لم يُخلَّص منه شيء.
+        $employee = Employee::create([
+            'first_name' => 'سناء',
+            'last_name' => 'المرابط',
+            'staff_type' => 'monthly_teacher',
+            'is_active' => true,
+        ]);
+        EmployeeLiability::create([
+            'employee_id' => $employee->id,
+            'academic_year_id' => $year->id,
+            'original_year_label' => '2024/2025',
+            'liability_type' => 'debt',
+            'description' => 'أجور غير مدفوعة',
+            'original_amount' => 500,
+            'status' => EmployeeLiability::STATUS_PENDING,
+        ]);
+        // خلاص مستحقّ إطار آخر (مصدر بلا سجلّ مقابل): يدخل في المحصّل الكلّي
+        // دون أن يمسّ متبقّي الاستحقاق المُدخل أعلاه.
+        CashTransaction::create([
+            'source_type' => EmployeeLiability::class,
+            'source_id' => 999,
+            'category' => CashTransaction::CATEGORY_OLD_LIABILITY_PAYMENT,
+            'direction' => CashTransaction::DIRECTION_OUT,
+            'amount' => 200,
+            'transaction_date' => now()->toDateString(),
+            'academic_year_id' => $year->id,
+        ]);
+
+        $summary = $this->getJson('/api/dashboard')->assertOk()->json('data.prior_debt_summary');
+
+        // المحصّل من الدفتر النقدي (بندا المتخلّدات وخلاص المستحقّات القديمة معاً).
+        $this->assertEquals(3200, (float) $summary['total_collected']);
+        // المتبقّي = 10000 (تلميذ، لا توزيعات هنا) + 500 (إطار).
+        $this->assertEquals(10500, (float) $summary['total_remaining']);
+
+        $this->assertCount(1, $summary['student_details']);
+        $this->assertSame('أحمد بن صالح', $summary['student_details'][0]['student_name']);
+        $this->assertEquals(10000, (float) $summary['student_details'][0]['original_amount']);
+        $this->assertEquals(0, (float) $summary['student_details'][0]['paid_amount']);
+        $this->assertEquals(10000, (float) $summary['student_details'][0]['outstanding_amount']);
+
+        $this->assertCount(1, $summary['employee_details']);
+        $this->assertSame('سناء المرابط', $summary['employee_details'][0]['employee_name']);
+        $this->assertSame('debt', $summary['employee_details'][0]['liability_type']);
+        $this->assertEquals(500, (float) $summary['employee_details'][0]['outstanding_amount']);
     }
 
     public function test_admin_super_role_receives_financial_data(): void

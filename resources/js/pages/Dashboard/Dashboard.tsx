@@ -5,14 +5,17 @@ import {
   ArrowDownCircle,
   Award,
   GraduationCap,
+  History,
   Landmark,
   TrendingDown,
   TrendingUp,
   UserRound,
   Users,
+  X,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
-import { fetchDashboard, type DashboardData } from '../../api/dashboard';
+import { fetchDashboard, type DashboardData, type PriorDebtSummary } from '../../api/dashboard';
+import { LIABILITY_TYPE_LABELS } from '../../api/manualDebts';
 import { errorMessage } from '../../lib/format';
 import { PageDataSkeleton } from '../../components/DataSkeleton';
 
@@ -44,8 +47,88 @@ function Money({ value }: { value: number | null | undefined }) {
   );
 }
 
-function AnalogClock({ size = 150 }: { size?: number }) {
-  const [now, setNow] = useState(new Date());
+/** نافذة تفصيل تحصيل الديون السابقة: جدولان — ديون التلاميذ وديون الإطارات. */
+function PriorDebtDetailModal({
+  summary,
+  onClose,
+}: {
+  summary: PriorDebtSummary;
+  onClose: () => void;
+}) {
+  const students = summary.student_details.filter((row) => row.original_amount > 0);
+  const employees = summary.employee_details.filter((row) => row.original_amount > 0);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ backgroundColor: 'rgba(31,38,28,0.45)' }} dir="rtl">
+      <div className="bg-white rounded-2xl w-full max-w-3xl max-h-[85vh] overflow-y-auto p-6">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="font-bold text-lg" style={{ color: C.ink }}>تحصيل الديون السابقة — التفصيل</h3>
+          <button type="button" onClick={onClose} aria-label="إغلاق">
+            <X size={18} color={C.muted} />
+          </button>
+        </div>
+
+        {/* ديون التلاميذ */}
+        <h4 className="font-bold mb-2" style={{ color: C.forest }}>ديون التلاميذ</h4>
+        <div className="overflow-x-auto rounded-xl mb-6" style={{ border: '1px solid #EDF1E8' }}>
+          <table className="w-full text-sm">
+            <thead>
+              <tr style={{ backgroundColor: C.sage, color: C.deep }}>
+                <th className="text-right px-3 py-2.5 font-medium">الاسم</th>
+                <th className="text-right px-3 py-2.5 font-medium">المبلغ الأصلي</th>
+                <th className="text-right px-3 py-2.5 font-medium">المحصّل</th>
+                <th className="text-right px-3 py-2.5 font-medium">المتبقي</th>
+              </tr>
+            </thead>
+            <tbody>
+              {students.length === 0 ? (
+                <tr><td colSpan={4} className="px-3 py-6 text-center" style={{ color: C.muted }}>لا توجد سجلات</td></tr>
+              ) : students.map((row) => (
+                <tr key={row.id} style={{ borderTop: '1px solid #EDF1E8' }}>
+                  <td className="px-3 py-2.5" style={{ color: C.ink }}>{row.student_name}</td>
+                  <td className="px-3 py-2.5" style={{ color: C.ink }}><bdi dir="ltr">{dinar(row.original_amount)}</bdi></td>
+                  <td className="px-3 py-2.5" style={{ color: '#15803D' }}><bdi dir="ltr">{dinar(row.paid_amount)}</bdi></td>
+                  <td className="px-3 py-2.5 font-medium" style={{ color: '#B45309' }}><bdi dir="ltr">{dinar(row.outstanding_amount)}</bdi></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        {/* ديون الإطارات */}
+        <h4 className="font-bold mb-2" style={{ color: C.forest }}>ديون الإطارات</h4>
+        <div className="overflow-x-auto rounded-xl" style={{ border: '1px solid #EDF1E8' }}>
+          <table className="w-full text-sm">
+            <thead>
+              <tr style={{ backgroundColor: C.sage, color: C.deep }}>
+                <th className="text-right px-3 py-2.5 font-medium">الاسم</th>
+                <th className="text-right px-3 py-2.5 font-medium">النوع</th>
+                <th className="text-right px-3 py-2.5 font-medium">المبلغ الأصلي</th>
+                <th className="text-right px-3 py-2.5 font-medium">المحصّل</th>
+                <th className="text-right px-3 py-2.5 font-medium">المتبقي</th>
+              </tr>
+            </thead>
+            <tbody>
+              {employees.length === 0 ? (
+                <tr><td colSpan={5} className="px-3 py-6 text-center" style={{ color: C.muted }}>لا توجد سجلات</td></tr>
+              ) : employees.map((row) => (
+                <tr key={row.id} style={{ borderTop: '1px solid #EDF1E8' }}>
+                  <td className="px-3 py-2.5" style={{ color: C.ink }}>{row.employee_name}</td>
+                  <td className="px-3 py-2.5" style={{ color: C.muted }}>{LIABILITY_TYPE_LABELS[row.liability_type] ?? row.liability_type}</td>
+                  <td className="px-3 py-2.5" style={{ color: C.ink }}><bdi dir="ltr">{dinar(row.original_amount)}</bdi></td>
+                  <td className="px-3 py-2.5" style={{ color: '#15803D' }}><bdi dir="ltr">{dinar(row.paid_amount)}</bdi></td>
+                  <td className="px-3 py-2.5 font-medium" style={{ color: '#B45309' }}><bdi dir="ltr">{dinar(row.outstanding_amount)}</bdi></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AnalogClock({ size = 150 }: { size?: number }) {  const [now, setNow] = useState(new Date());
 
   useEffect(() => {
     const id = setInterval(() => setNow(new Date()), 1000);
@@ -145,6 +228,7 @@ export default function Dashboard() {
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [priorDebtDetailOpen, setPriorDebtDetailOpen] = useState(false);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -290,6 +374,39 @@ export default function Dashboard() {
             )}
           </div>
 
+          {/* تحصيل الديون السابقة — تظهر لمن يملك رؤية الماليّة فقط:
+              الخادم يحجب prior_debt_summary عمّن لا يملك manage_treasury/view_reports. */}
+          {data.prior_debt_summary && (
+            <div className="rounded-[22px] p-5 mb-5" style={{ backgroundColor: C.sage }}>
+              <div className="flex items-start justify-between gap-4 flex-wrap">
+                <div>
+                  <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white/70" style={{ color: C.forest }}>
+                    <History size={20} />
+                  </div>
+                  <p className="mt-3 font-bold" style={{ color: C.ink }}>تحصيل الديون السابقة</p>
+                  <div className="mt-2 flex flex-wrap items-center gap-x-6 gap-y-1 text-sm">
+                    <span style={{ color: '#15803D' }}>
+                      إجمالي المحصّل:{' '}
+                      <bdi dir="ltr" className="font-extrabold">{dinar(data.prior_debt_summary.total_collected)}</bdi>
+                    </span>
+                    <span style={{ color: '#B45309' }}>
+                      المتبقي:{' '}
+                      <bdi dir="ltr" className="font-extrabold">{dinar(data.prior_debt_summary.total_remaining)}</bdi>
+                    </span>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setPriorDebtDetailOpen(true)}
+                  className="px-4 py-2 rounded-xl text-white text-sm font-medium"
+                  style={{ backgroundColor: C.forest }}
+                >
+                  عرض التفصيل
+                </button>
+              </div>
+            </div>
+          )}
+
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
             <div className="lg:col-span-2 bg-white rounded-[22px] p-6 border border-[#EDF1E8]">
               <h2 className="font-bold text-lg mb-4" style={{ color: C.ink }}>
@@ -327,6 +444,13 @@ export default function Dashboard() {
               <p className="mt-3 text-white font-semibold text-sm">مدرسة العناية</p>
             </div>
           </div>
+
+          {data.prior_debt_summary && priorDebtDetailOpen && (
+            <PriorDebtDetailModal
+              summary={data.prior_debt_summary}
+              onClose={() => setPriorDebtDetailOpen(false)}
+            />
+          )}
         </>
       )}
     </div>

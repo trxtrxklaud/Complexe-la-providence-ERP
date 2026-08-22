@@ -13,11 +13,30 @@ export const DEBT_TYPE_LABELS: Record<string, string> = {
 };
 
 export const LIABILITY_TYPE_LABELS: Record<string, string> = {
+  debt: 'دين',
+  advance: 'سلفة غير مسددة',
+  // قيم قديمة تظهر على سجلات سابقة فقط — لا تُعرض كخيارات في نموذج الإدخال.
   salary: 'أجور',
-  advance: 'سلف',
   bonus: 'منح',
   other: 'أخرى',
 };
+
+/**
+ * أنواع الاستحقاقات المسموحة حسب تصنيف الإطار — مطابقة لثوابت
+ * EmployeeLiabilityController على الخادم:
+ * عاملة (worker): دين فقط؛ معلم (بساعة/بالشهر) ومنشط نوادي: دين + سلفة غير مسددة؛
+ * وأي تصنيف آخر يقع على الدَّين العام.
+ */
+export const LIABILITY_TYPES_BY_STAFF_TYPE: Record<string, string[]> = {
+  worker: ['debt'],
+  hourly_teacher: ['debt', 'advance'],
+  monthly_teacher: ['debt', 'advance'],
+  club_animator: ['debt', 'advance'],
+};
+
+export function liabilityTypesForStaff(staffType?: string | null): string[] {
+  return LIABILITY_TYPES_BY_STAFF_TYPE[staffType ?? ''] ?? ['debt'];
+}
 
 export const DEBT_STATUS_LABELS: Record<string, string> = {
   pending: 'قائم',

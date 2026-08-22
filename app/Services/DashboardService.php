@@ -4,7 +4,9 @@ namespace App\Services;
 
 use App\Models\AcademicYear;
 use App\Models\CashTransaction;
+use App\Models\EmployeeLiability;
 use App\Models\Enrollment;
+use App\Models\ManualStudentDebt;
 use App\Models\Payment;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -185,9 +187,78 @@ class DashboardService
             // الجرد النقدي المحيّن: اليوم، الشهر الجاري، ومن بداية السجلّ.
             $data['cash'] = $cash;
             $data['treasury_balance'] = $cash['all_time']['balance'];
+
+            // تحصيل الديون السابقة: قبض متخلّدات التلاميذ وخلاص مستحقّات
+            // الإطارات من الدفتر النقدي، وما بقي عليها من أرصدة.
+            $data['prior_debt_summary'] = $this->priorDebtSummary((int) $activeYear->id);
         }
 
         return $data;
+    }
+
+    /**
+     * بطاقة «تحصيل الديون السابقة» — للخزينة وعرض التقارير فقط.
+     *
+     * المحصّل يُقرأ من الدفتر النقدي المركزي حصراً (prior_year_debt +
+     * old_liability_payment) فلا ينفصل رقم اللوحة عن كشوف الخزينة. أمّا
+     * المتبقّي فيُشتقّ من سجلات الأرصدة اليدوية نفسها (توزيعات الدفع
+     * الفعلية / الرواتب المرتبطة) لا من أي عمود مخزَّن.
+     *
+     * @return array<string,mixed>
+     */
+    private function priorDebtSummary(int $activeYearId): array
+    {
+        $totalCollected = (float) CashTransaction::query()
+            ->whereNull('cancelled_at')
+            ->whereIn('category', [
+                CashTransaction::CATEGORY_PRIOR_YEAR_DEBT,
+                CashTransaction::CATEGORY_OLD_LIABILITY_PAYMENT,
+            ])
+            ->where('academic_year_id', $activeYearId)
+            ->sum('amount');
+
+        $manualDebts = ManualStudentDebt::query()
+            ->with('student:id,first_name,last_name')
+            ->whereNull('cancelled_at')
+            ->where('original_amount', '>', 0)
+            ->orderByDesc('id')
+            ->get();
+
+        $studentDetails = $manualDebts->map(fn (ManualStudentDebt $debt): array => [
+            'id' => $debt->id,
+            'student_name' => trim(($debt->student?->first_name ?? '').' '.($debt->student?->last_name ?? '')) ?: '—',
+            'original_amount' => round((float) $debt->original_amount, 2),
+            'paid_amount' => $debt->collected(),
+            'outstanding_amount' => $debt->outstanding(),
+        ])->values();
+
+        $employeeLiabilities = EmployeeLiability::query()
+            ->with('employee:id,first_name,last_name')
+            ->whereNull('cancelled_at')
+            ->where('original_amount', '>', 0)
+            ->orderByDesc('id')
+            ->get();
+
+        $employeeDetails = $employeeLiabilities->map(fn (EmployeeLiability $liability): array => [
+            'id' => $liability->id,
+            'employee_name' => trim(($liability->employee?->first_name ?? '').' '.($liability->employee?->last_name ?? '')) ?: '—',
+            'liability_type' => $liability->liability_type,
+            'original_amount' => round((float) $liability->original_amount, 2),
+            'paid_amount' => $liability->paid(),
+            'outstanding_amount' => $liability->outstanding(),
+        ])->values();
+
+        return [
+            'total_collected' => round($totalCollected, 2),
+            // المتبقّي على كل السجلات السارية بلا ترشيح سنة — كما هو محدَّد للمواصفة.
+            'total_remaining' => round(
+                (float) $manualDebts->sum(fn (ManualStudentDebt $d) => $d->outstanding())
+                + (float) $employeeLiabilities->sum(fn (EmployeeLiability $l) => $l->outstanding()),
+                2
+            ),
+            'student_details' => $studentDetails,
+            'employee_details' => $employeeDetails,
+        ];
     }
 
     /**
@@ -266,6 +337,12 @@ class DashboardService
             // حتّى بلا سنة نشطة، حركة الصندوق تبقى ظاهرة لمن يملك رؤيتها.
             $data['cash'] = $cash;
             $data['treasury_balance'] = $cash['all_time']['balance'];
+            $data['prior_debt_summary'] = [
+                'total_collected' => 0,
+                'total_remaining' => 0,
+                'student_details' => [],
+                'employee_details' => [],
+            ];
         }
 
         return $data;

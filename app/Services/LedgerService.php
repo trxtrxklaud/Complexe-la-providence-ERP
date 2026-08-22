@@ -338,28 +338,40 @@ class LedgerService
      */
     public function recordLiabilityPayment(Salary $salary, EmployeeLiability $liability): void
     {
-        if ($salary->cancelled_at !== null) {
-            $this->cancelFor($salary, $salary->cancelled_by, $salary->cancellation_reason);
+        $paidAmount = round(
+            (float) $liability->salaries()->whereNull('cancelled_at')->sum('amount')
+            + (float) $liability->advances()->whereNull('cancelled_at')->sum('amount'),
+            2
+        );
+
+        if ($paidAmount <= 0) {
+            $this->cancelFor($liability, $salary->cancelled_by, $salary->cancellation_reason);
 
             return;
         }
 
-        $salary->loadMissing('employee');
+        $liability->loadMissing('employee');
+        $latestActiveSalary = $liability->salaries()
+            ->whereNull('cancelled_at')
+            ->orderByDesc('paid_at')
+            ->orderByDesc('id')
+            ->first();
 
-        $date = $salary->paid_at?->toDateString()
-            ?? $salary->period_to?->toDateString()
+        $date = $latestActiveSalary?->paid_at?->toDateString()
+            ?? $latestActiveSalary?->period_to?->toDateString()
+            ?? $salary->paid_at?->toDateString()
             ?? now()->toDateString();
 
         $this->post(
-            source: $salary,
+            source: $liability,
             category: CashTransaction::CATEGORY_OLD_LIABILITY_PAYMENT,
             direction: CashTransaction::DIRECTION_OUT,
-            amount: (float) $salary->amount,
+            amount: $paidAmount,
             date: $date,
-            academicYearId: $salary->academic_year_id,
-            description: 'خلاص مستحقّ سابق: '.($salary->employee?->full_name ?? ('إطار #'.$salary->employee_id))
+            academicYearId: $latestActiveSalary?->academic_year_id ?? $salary->academic_year_id,
+            description: 'خلاص مستحقّ سابق: '.($liability->employee?->full_name ?? ('إطار #'.$liability->employee_id))
                 .' — '.$liability->description,
-            createdBy: $salary->created_by,
+            createdBy: $latestActiveSalary?->created_by ?? $salary->created_by,
         );
     }
 

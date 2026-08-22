@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Ban, BookOpenCheck, Briefcase, Plus, Save, Wallet } from 'lucide-react';
+import { Ban, BookOpenCheck, Briefcase, Plus, Printer, Save, Wallet } from 'lucide-react';
 import { PageShell } from '../../components/PageShell';
 import { CancelReasonModal } from '../../components/CancelReasonModal';
 import { fetchYears, type AcademicYear } from '../../api/roster';
@@ -15,6 +15,7 @@ import {
   createManualDebt,
   fetchEmployeeLiabilities,
   fetchManualDebts,
+  liabilityTypesForStaff,
   payEmployeeLiability,
   type EmployeeLiability,
   type ManualDebt,
@@ -35,6 +36,20 @@ const C = {
 
 type Tab = 'debts' | 'liabilities';
 
+/** تسمية نوع الاستحقاق من الخريطة المشتركة المطابقة للخادم. */
+function liabilityTypeLabel(type: string): string {
+  return LIABILITY_TYPE_LABELS[type] ?? type;
+}
+
+function escapeHtml(value: unknown): string {
+  return String(value ?? '')
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#039;');
+}
+
 function personLabel(p: { first_name: string; last_name: string; job_title?: string | null } | null | undefined): string {
   if (!p) return '—';
   const name = [p.first_name, p.last_name].filter(Boolean).join(' ');
@@ -50,7 +65,7 @@ export function OpeningBalancesPage() {
   const [debtStatusFilter, setDebtStatusFilter] = useState('');
   const [loadingDebts, setLoadingDebts] = useState(false);
 
-  // ===== قائمة مستحقات الإطارات =====
+  // ===== قائمة ديون الإطارات =====
   const [liabilities, setLiabilities] = useState<EmployeeLiability[]>([]);
   const [liabilityStatusFilter, setLiabilityStatusFilter] = useState('');
   const [loadingLiabilities, setLoadingLiabilities] = useState(false);
@@ -77,15 +92,19 @@ export function OpeningBalancesPage() {
   const [studentSearchBusy, setStudentSearchBusy] = useState(false);
   const studentTimer = useRef<number | undefined>(undefined);
 
-  // ===== نموذج إدخال مستحقّ =====
+  // ===== نموذج إدخال دَين إطار =====
   const [liabilityYearId, setLiabilityYearId] = useState<number | ''>('');
-  const [liabilityType, setLiabilityType] = useState('salary');
+  const [liabilityType, setLiabilityType] = useState('debt');
   const [liabilityYearLabel, setLiabilityYearLabel] = useState('');
   const [liabilityDescription, setLiabilityDescription] = useState('');
   const [liabilityAmount, setLiabilityAmount] = useState('');
   const [liabilityNotes, setLiabilityNotes] = useState('');
   const [employeeId, setEmployeeId] = useState<number | ''>('');
   const [employees, setEmployees] = useState<Employee[]>([]);
+
+  const selectedEmployee = employees.find((employee) => employee.id === employeeId);
+  // نوع الاستحقاق يتبع تصنيف الإطار المختار — نفس خريطة الخادم (manualDebts.ts).
+  const availableLiabilityTypes = liabilityTypesForStaff(selectedEmployee?.staff_type);
 
   // ===== نموذج الخلاص =====
   const [payAmount, setPayAmount] = useState('');
@@ -160,6 +179,12 @@ export function OpeningBalancesPage() {
   useEffect(() => {
     void reloadLiabilities();
   }, [liabilityStatusFilter]);
+
+  useEffect(() => {
+    if (!availableLiabilityTypes.includes(liabilityType)) {
+      setLiabilityType(availableLiabilityTypes[0] ?? '');
+    }
+  }, [employeeId, employees, liabilityType]);
 
   // بحث التلاميذ عند الكتابة (debounce).
   useEffect(() => {
@@ -239,6 +264,10 @@ export function OpeningBalancesPage() {
       setError('اختر الإطار');
       return;
     }
+    if (!availableLiabilityTypes.includes(liabilityType)) {
+      setError('نوع الالتزام غير متاح لهذا الإطار');
+      return;
+    }
     const value = Number(liabilityAmount);
     if (!Number.isFinite(value) || value <= 0) {
       setError('المبلغ يجب أن يكون أكبر من صفر');
@@ -269,12 +298,105 @@ export function OpeningBalancesPage() {
       setLiabilityDescription('');
       setLiabilityAmount('');
       setLiabilityNotes('');
-      flash('تمّ إدخال المستحقّ — يُخلَّص من زرّ «خلاص» ليمرّ بالخزينة');
+      flash('تمّ إدخال دَين الإطار — يُخلَّص من زرّ «خلاص» ليمرّ بالخزينة');
       await reloadLiabilities();
     } catch (err) {
       setError(errorMessage(err));
     } finally {
       setSavingLiability(false);
+    }
+  };
+
+  const printEmployeeLiabilities = async () => {
+    const printWindow = window.open('', '_blank', 'width=1000,height=800');
+    if (!printWindow) {
+      setError('تعذّر فتح نافذة الطباعة. تحقّق من السماح بالنوافذ المنبثقة.');
+      return;
+    }
+
+    printWindow.document.write('<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><title>طباعة تقرير الإطارات</title></head><body><p>جارٍ إعداد التقرير…</p></body></html>');
+    printWindow.document.close();
+
+    try {
+      const allLiabilities: EmployeeLiability[] = [];
+      let pageNumber = 1;
+      let lastPage = 1;
+
+      do {
+        const page = await fetchEmployeeLiabilities({ per_page: 100, page: pageNumber });
+        allLiabilities.push(...page.data);
+        lastPage = page.last_page;
+        pageNumber += 1;
+      } while (pageNumber <= lastPage);
+
+      const grouped = new Map<number, { name: string; rows: EmployeeLiability[] }>();
+      allLiabilities.forEach((liability) => {
+        const current = grouped.get(liability.employee_id);
+        if (current) {
+          current.rows.push(liability);
+          return;
+        }
+        grouped.set(liability.employee_id, {
+          name: liability.employee ? personLabel(liability.employee) : `إطار رقم ${liability.employee_id}`,
+          rows: [liability],
+        });
+      });
+
+      const sections = [...grouped.values()]
+        .sort((a, b) => a.name.localeCompare(b.name, 'ar'))
+        .map((group) => `
+          <section>
+            <h2>${escapeHtml(group.name)}</h2>
+            <table>
+              <thead><tr><th>النوع</th><th>المبلغ</th><th>السنة الأصلية</th><th>الوصف</th></tr></thead>
+              <tbody>
+                ${group.rows.map((liability) => `
+                  <tr>
+                    <td>${escapeHtml(liabilityTypeLabel(liability.liability_type))}</td>
+                    <td class="amount">${escapeHtml(money(liability.original_amount))} د.ت</td>
+                    <td>${escapeHtml(liability.original_year_label)}</td>
+                    <td>${escapeHtml(liability.description)}</td>
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
+          </section>
+        `).join('');
+
+      const reportBody = sections || '<p class="empty">لا توجد ديون إطارات مدخلة.</p>';
+      printWindow.document.open();
+      printWindow.document.write(`<!doctype html>
+        <html lang="ar" dir="rtl">
+          <head>
+            <meta charset="utf-8">
+            <title>تقرير ديون الإطارات</title>
+            <style>
+              @page { size: A4; margin: 14mm; }
+              * { box-sizing: border-box; }
+              body { margin: 0; color: #1F261C; font-family: Tahoma, Arial, sans-serif; font-size: 13px; }
+              h1 { margin: 0 0 6px; color: #2E3B2A; font-size: 22px; }
+              .meta { margin: 0 0 22px; color: #7C8677; }
+              section { margin-bottom: 22px; break-inside: avoid; }
+              h2 { margin: 0; padding: 9px 12px; background: #E3EBDB; color: #2E3B2A; font-size: 15px; }
+              table { width: 100%; border-collapse: collapse; }
+              th, td { border: 1px solid #DDE4D8; padding: 8px 10px; text-align: right; vertical-align: top; }
+              th { background: #F6F8F4; color: #3B4A36; font-weight: 700; }
+              .amount { direction: ltr; text-align: right; white-space: nowrap; }
+              .empty { padding: 30px; text-align: center; color: #7C8677; }
+            </style>
+          </head>
+          <body>
+            <h1>تقرير ديون الإطارات</h1>
+            <p class="meta">تاريخ الطباعة: ${escapeHtml(new Date().toLocaleDateString('ar-TN'))}</p>
+            ${reportBody}
+          </body>
+        </html>`);
+      printWindow.document.close();
+      printWindow.focus();
+      window.setTimeout(() => printWindow.print(), 150);
+    } catch (err) {
+      printWindow.close();
+      setError(errorMessage(err));
     }
   };
 
@@ -301,7 +423,7 @@ export function OpeningBalancesPage() {
     try {
       await cancelEmployeeLiability(cancelLiabilityTarget.id, reason);
       setCancelLiabilityTarget(null);
-      flash('تمّ إلغاء المستحقّ');
+      flash('تمّ إلغاء دَين الإطار');
       await reloadLiabilities();
     } catch (err) {
       setError(errorMessage(err));
@@ -335,7 +457,7 @@ export function OpeningBalancesPage() {
         notes: payNotes.trim() || null,
       });
       setPayTarget(null);
-      flash('تمّ خلاص المستحقّ — خرج من الخزينة في بند «خلاص مستحقّات قديمة»');
+      flash('تمّ خلاص دَين الإطار — خرج من الخزينة في بند «خلاص ديون إطارات قديمة»');
       await reloadLiabilities();
     } catch (err) {
       setError(errorMessage(err));
@@ -358,7 +480,7 @@ export function OpeningBalancesPage() {
     <div className="px-6 pb-10 max-w-6xl mx-auto" dir="rtl">
       <PageShell
         title="الأرصدة الافتتاحية"
-        subtitle="الديون القديمة للتلاميذ ومستحقات الإطارات — بيانات خارجية تُدخل يدوياً بلا أثر في الخزينة"
+        subtitle="الديون القديمة للتلاميذ وديون الإطارات — بيانات خارجية تُدخل يدوياً بلا أثر في الخزينة"
         icon={Wallet}
       >
         <div>
@@ -373,7 +495,7 @@ export function OpeningBalancesPage() {
           <div className="no-print flex gap-2 mb-6">
             {([
               { key: 'debts', label: 'ديون التلاميذ', icon: BookOpenCheck },
-              { key: 'liabilities', label: 'مستحقات الإطارات', icon: Briefcase },
+              { key: 'liabilities', label: 'ديون الإطارات', icon: Briefcase },
             ] as const).map((item) => (
               <button
                 key={item.key}
@@ -534,16 +656,31 @@ export function OpeningBalancesPage() {
             </>
           ) : (
             <>
-              {/* نموذج إدخال مستحقّ */}
+              {/* نموذج إدخال دَين إطار */}
               <div className="no-print bg-white rounded-2xl p-5 mb-6" style={{ border: '1px solid ' + C.line }}>
                 <div className="flex items-center gap-2 mb-4">
                   <Plus size={18} color={C.deep} />
-                  <h3 className="font-bold" style={{ color: C.deep }}>إدخال مستحقّ قديم</h3>
+                  <h3 className="font-bold" style={{ color: C.deep }}>إدخال دَين إطار قديم</h3>
                 </div>
                 <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
                   <div>
                     <label className="block text-xs mb-1.5" style={{ color: C.muted }}>الإطار *</label>
-                    <select value={employeeId} onChange={(e) => setEmployeeId(e.target.value ? Number(e.target.value) : '')} className={fieldCls} style={fieldStyle}>
+                    <select
+                      value={employeeId}
+                      onChange={(e) => {
+                        const id = e.target.value ? Number(e.target.value) : '';
+                        setEmployeeId(id);
+                        // نوع الاستحقاق يتبع تصنيف الإطار المختار: عاملة دَيناً
+                        // فقط، ومعلم/منشط دَيناً أو سلفة غير مسددة.
+                        const emp = employees.find((x) => x.id === id) ?? null;
+                        const allowed = liabilityTypesForStaff(emp?.staff_type);
+                        if (!allowed.includes(liabilityType)) {
+                          setLiabilityType(allowed[0] ?? '');
+                        }
+                      }}
+                      className={fieldCls}
+                      style={fieldStyle}
+                    >
                       <option value="">اختر الإطار…</option>
                       {employees.map((emp) => (
                         <option key={emp.id} value={emp.id}>{emp.first_name} {emp.last_name}{emp.job_title ? ' — ' + emp.job_title : ''}</option>
@@ -557,14 +694,22 @@ export function OpeningBalancesPage() {
                     </select>
                   </div>
                   <div>
-                    <label className="block text-xs mb-1.5" style={{ color: C.muted }}>نوع المستحقّ *</label>
-                    <select value={liabilityType} onChange={(e) => setLiabilityType(e.target.value)} className={fieldCls} style={fieldStyle}>
-                      {Object.entries(LIABILITY_TYPE_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+                    <label className="block text-xs mb-1.5" style={{ color: C.muted }}>نوع الالتزام *</label>
+                    <select value={liabilityType} onChange={(e) => setLiabilityType(e.target.value)} disabled={!selectedEmployee} className={fieldCls + ' disabled:opacity-60'} style={fieldStyle}>
+                      {!selectedEmployee ? <option value="">اختر الإطار أولاً</option> : null}
+                      {selectedEmployee
+                        ? availableLiabilityTypes.map((value) => (
+                            <option key={value} value={value}>{liabilityTypeLabel(value)}</option>
+                          ))
+                        : null}
                     </select>
                   </div>
                   <div>
                     <label className="block text-xs mb-1.5" style={{ color: C.muted }}>السنة الأصلية *</label>
-                    <input value={liabilityYearLabel} onChange={(e) => setLiabilityYearLabel(e.target.value)} className={fieldCls} style={fieldStyle} placeholder="مثال: 2025/2026" />
+                    <select value={liabilityYearLabel} onChange={(e) => setLiabilityYearLabel(e.target.value)} className={fieldCls} style={fieldStyle}>
+                      <option value="">اختر السنة الأصلية…</option>
+                      {years.map((year) => <option key={year.id} value={year.name}>{year.name}</option>)}
+                    </select>
                   </div>
                   <div className="lg:col-span-2">
                     <label className="block text-xs mb-1.5" style={{ color: C.muted }}>الوصف *</label>
@@ -581,23 +726,29 @@ export function OpeningBalancesPage() {
                 </div>
                 <button type="button" onClick={() => void submitLiability()} disabled={savingLiability} className={btnCls + ' mt-5'} style={{ backgroundColor: C.forest }}>
                   <Save size={18} />
-                  <span>{savingLiability ? 'جارٍ الإدخال…' : 'إدخال المستحقّ'}</span>
+                  <span>{savingLiability ? 'جارٍ الإدخال…' : 'إدخال دَين الإطار'}</span>
                 </button>
               </div>
 
-              {/* جدول المستحقات */}
+              {/* جدول ديون الإطارات */}
               <div className="bg-white rounded-2xl overflow-hidden" style={{ border: '1px solid ' + C.line }}>
-                <div className="px-5 py-4 flex items-center justify-between" style={{ backgroundColor: C.sage }}>
-                  <h3 className="font-bold" style={{ color: C.deep }}>المستحقات المدخلة</h3>
-                  <select value={liabilityStatusFilter} onChange={(e) => setLiabilityStatusFilter(e.target.value)} className="text-xs rounded-xl px-3 py-1.5" style={fieldStyle}>
-                    <option value="">كل الحالات</option>
-                    {Object.entries(DEBT_STATUS_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
-                  </select>
+                <div className="px-5 py-4 flex flex-wrap items-center justify-between gap-3" style={{ backgroundColor: C.sage }}>
+                  <h3 className="font-bold" style={{ color: C.deep }}>ديون الإطارات المدخلة</h3>
+                  <div className="no-print flex flex-wrap items-center gap-2">
+                    <button type="button" onClick={() => void printEmployeeLiabilities()} className="flex items-center gap-2 rounded-xl px-3 py-1.5 text-xs font-medium text-white" style={{ backgroundColor: C.deep }}>
+                      <Printer size={15} />
+                      <span>طباعة تقرير الإطارات</span>
+                    </button>
+                    <select value={liabilityStatusFilter} onChange={(e) => setLiabilityStatusFilter(e.target.value)} className="text-xs rounded-xl px-3 py-1.5" style={fieldStyle}>
+                      <option value="">كل الحالات</option>
+                      {Object.entries(DEBT_STATUS_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+                    </select>
+                  </div>
                 </div>
                 {loadingLiabilities ? (
                   <ListSkeleton rows={4} />
                 ) : liabilities.length === 0 ? (
-                  <p className="px-5 py-8 text-sm text-center" style={{ color: C.muted }}>لا مستحقات مدخلة بعد.</p>
+                  <p className="px-5 py-8 text-sm text-center" style={{ color: C.muted }}>لا ديون إطارات مدخلة بعد.</p>
                 ) : (
                   <div className="overflow-x-auto">
                     <table className="w-full text-sm">
@@ -621,7 +772,7 @@ export function OpeningBalancesPage() {
                           return (
                             <tr key={liability.id} style={{ borderBottom: '1px solid ' + C.line, opacity: cancelled ? 0.55 : 1 }}>
                               <td className="px-3 py-2.5 font-medium" style={{ color: C.ink }}>{personLabel(liability.employee)}</td>
-                              <td className="px-3 py-2.5" style={{ color: C.muted }}>{LIABILITY_TYPE_LABELS[liability.liability_type] ?? liability.liability_type}</td>
+                              <td className="px-3 py-2.5" style={{ color: C.muted }}>{liabilityTypeLabel(liability.liability_type)}</td>
                               <td className="px-3 py-2.5" style={{ color: C.ink }}>
                                 {liability.description}
                                 {cancelled && liability.cancellation_reason ? (
@@ -640,12 +791,12 @@ export function OpeningBalancesPage() {
                               <td className="no-print px-3 py-2.5">
                                 <div className="flex items-center gap-1.5">
                                   {!cancelled && outstanding > 0 ? (
-                                    <button type="button" onClick={() => openPay(liability)} title="خلاص المستحقّ" className="px-2.5 py-1.5 rounded-lg text-xs font-medium text-white" style={{ backgroundColor: C.forest }}>
+                                    <button type="button" onClick={() => openPay(liability)} title="خلاص دَين الإطار" className="px-2.5 py-1.5 rounded-lg text-xs font-medium text-white" style={{ backgroundColor: C.forest }}>
                                       خلاص
                                     </button>
                                   ) : null}
                                   {!cancelled && Number(liability.paid_amount ?? 0) === 0 ? (
-                                    <button type="button" onClick={() => setCancelLiabilityTarget(liability)} title="إلغاء المستحقّ" className="p-1.5 rounded-lg bg-gray-50">
+                                    <button type="button" onClick={() => setCancelLiabilityTarget(liability)} title="إلغاء دَين الإطار" className="p-1.5 rounded-lg bg-gray-50">
                                       <Ban size={14} color={C.error} />
                                     </button>
                                   ) : null}
@@ -676,8 +827,8 @@ export function OpeningBalancesPage() {
 
       {cancelLiabilityTarget ? (
         <CancelReasonModal
-          title="إلغاء مستحقّ قديم"
-          description={'سيُلغى المستحقّ بمبلغ ' + money(cancelLiabilityTarget.original_amount) + ' الخاص بـ ' + personLabel(cancelLiabilityTarget.employee) + '.'}
+          title="إلغاء دَين إطار قديم"
+          description={'سيُلغى دَين الإطار بمبلغ ' + money(cancelLiabilityTarget.original_amount) + ' الخاص بـ ' + personLabel(cancelLiabilityTarget.employee) + '.'}
           busy={cancelBusy}
           onConfirm={(reason) => void confirmCancelLiability(reason)}
           onClose={() => setCancelLiabilityTarget(null)}
@@ -690,7 +841,7 @@ export function OpeningBalancesPage() {
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-2">
                 <Wallet size={18} color={C.forest} />
-                <h3 className="font-bold" style={{ color: C.ink }}>خلاص مستحقّ قديم</h3>
+                <h3 className="font-bold" style={{ color: C.ink }}>خلاص دَين إطار قديم</h3>
               </div>
               <button onClick={() => setPayTarget(null)} type="button" className="text-sm" style={{ color: C.muted }}>إغلاق</button>
             </div>
@@ -721,7 +872,7 @@ export function OpeningBalancesPage() {
                 <input value={payNotes} onChange={(e) => setPayNotes(e.target.value)} className={fieldCls} style={fieldStyle} />
               </div>
             </div>
-            <p className="text-xs mt-3" style={{ color: C.muted }}>يخرج المبلغ من الخزينة في بند «خلاص مستحقّات قديمة» — لا يُحتسب أجراً للسنة الحالية.</p>
+            <p className="text-xs mt-3" style={{ color: C.muted }}>يخرج المبلغ من الخزينة في بند «خلاص ديون إطارات قديمة» — لا يُحتسب أجراً للسنة الحالية.</p>
             <div className="flex gap-3 mt-4">
               <button
                 type="button"

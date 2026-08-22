@@ -9,7 +9,7 @@ class Employee extends Model
 {
     /** تصنيفات الإطارات الستة. */
     public const STAFF_TYPES = [
-        'admin' => 'إداري',
+        'supervisor' => 'قيم / قيمة',
         'worker' => 'عامل',
         'manager' => 'مدير / مديرة',
         'club_animator' => 'منشط / منشطة نوادي',
@@ -61,7 +61,7 @@ class Employee extends Model
 
     public function getFullNameAttribute(): string
     {
-        return trim($this->first_name . ' ' . $this->last_name);
+        return trim($this->first_name.' '.$this->last_name);
     }
 
     protected static function booted(): void

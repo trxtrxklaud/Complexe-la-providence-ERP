@@ -5,13 +5,13 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\MorphMany;
 
 /**
  * استحقاق قديم لإطار (مستحقات الإطارات) مُدخل يدوياً.
  *
- * المتبقّي يُشتقّ دائماً من الرواتب والسلف الفعلية المرتبطة بهذا الاستحقاق
- * (employee_liability_id على salaries / employee_advances) — لا يُخزَّن أي
- * رصيد مخبّأ. خلاصه يمرّ بالدفتر النقدي كبند مستقل (old_liability_payment).
+ * المتبقّي يُشتقّ دائماً من سطر الدفتر النقدي المرتبط بهذا الاستحقاق،
+ * ويُعاد احتساب السطر من الرواتب والسلف المرتبطة عند الدفع أو الإلغاء.
  */
 class EmployeeLiability extends Model
 {
@@ -23,7 +23,12 @@ class EmployeeLiability extends Model
 
     public const STATUS_CANCELLED = 'cancelled';
 
-    public const LIABILITY_TYPES = ['salary', 'advance', 'bonus', 'other'];
+    /**
+     * أنواع الاستحقاقات السارية: دَين أو سلفة غير مسددة. القاعدة التفصيلية
+     * حسب تصنيف الإطار في StoreEmployeeLiabilityRequest؛ القيم القديمة
+     * (salary/bonus/other) تظهر على سجلات سابقة فقط ولا تُقبل في إدخال جديد.
+     */
+    public const LIABILITY_TYPES = ['debt', 'advance'];
 
     protected $fillable = [
         'employee_id',
@@ -78,27 +83,27 @@ class EmployeeLiability extends Model
         return $this->hasMany(EmployeeAdvance::class, 'employee_liability_id');
     }
 
+    public function cashTransactions(): MorphMany
+    {
+        return $this->morphMany(CashTransaction::class, 'source');
+    }
+
     public function isCancelled(): bool
     {
         return $this->cancelled_at !== null;
     }
 
-    /** مجموع ما دُفع فعلاً (رواتب وسلف غير ملغاة) مرتبطاً بهذا الاستحقاق. */
+    /** المبلغ المدفوع فعلاً كما هو مثبت في الدفتر النقدي المركزي. */
     public function paid(): float
     {
         if ($this->isCancelled()) {
             return 0.0;
         }
 
-        $salaries = (float) $this->salaries()
+        return round((float) $this->cashTransactions()
+            ->where('category', CashTransaction::CATEGORY_OLD_LIABILITY_PAYMENT)
             ->whereNull('cancelled_at')
-            ->sum('amount');
-
-        $advances = (float) $this->advances()
-            ->whereNull('cancelled_at')
-            ->sum('amount');
-
-        return round($salaries + $advances, 2);
+            ->sum('amount'), 2);
     }
 
     /** المتبقّي — يُشتقّ من المدفوعات الفعلية المرتبطة لا من عمود مخزّن. */

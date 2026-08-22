@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\EmployeeAdvance;
 use App\Models\EmployeeAdvanceRepayment;
+use App\Models\EmployeeLiability;
 use App\Models\Salary;
 use App\Services\LedgerService;
 use Illuminate\Http\JsonResponse;
@@ -385,7 +386,25 @@ class SalaryController extends Controller
                 $repayment->advance?->recalculateSettlement();
             }
 
+            // تنظيف أي إسقاط قديم كان يستخدم الراتب نفسه كمصدر للحركة.
             $this->ledger->cancelFor($salary, $userId, $data['reason']);
+
+            if ($salary->employee_liability_id) {
+                $liability = EmployeeLiability::find($salary->employee_liability_id);
+
+                if ($liability) {
+                    $this->ledger->recordLiabilityPayment($salary->fresh(), $liability);
+                    $paid = $liability->fresh()->paid();
+
+                    $liability->update([
+                        'status' => $paid <= 0
+                            ? EmployeeLiability::STATUS_PENDING
+                            : ($paid >= (float) $liability->original_amount
+                                ? EmployeeLiability::STATUS_PAID
+                                : EmployeeLiability::STATUS_PARTIAL),
+                    ]);
+                }
+            }
         });
 
         return response()->json(

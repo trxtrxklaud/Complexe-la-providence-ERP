@@ -2,7 +2,7 @@ import { API_BASE, getHeaders } from './http';
 
 /** تصنيفات الإطارات الستة. */
 export type StaffType =
-  | 'admin'
+  | 'supervisor'
   | 'worker'
   | 'manager'
   | 'club_animator'
@@ -10,7 +10,7 @@ export type StaffType =
   | 'monthly_teacher';
 
 export const STAFF_TYPE_LABELS: Record<StaffType, string> = {
-  admin: 'إداري',
+  supervisor: 'قيم / قيمة',
   worker: 'عامل',
   manager: 'مدير / مديرة',
   club_animator: 'منشط / منشطة نوادي',
@@ -20,7 +20,7 @@ export const STAFF_TYPE_LABELS: Record<StaffType, string> = {
 
 /** ألوان شارات التصنيف في قائمة الإطارات. */
 export const STAFF_TYPE_COLORS: Record<StaffType, string> = {
-  admin: '#2563EB',
+  supervisor: '#2563EB',
   worker: '#D97706',
   manager: '#7C3AED',
   club_animator: '#059669',

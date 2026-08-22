@@ -64,6 +64,7 @@ class CashTransaction extends Model
     /** بنود قبض ديون السنوات السابقة: نقد داخل، لا مدخول. */
     public const PRIOR_YEAR_DEBT_CATEGORIES = [
         self::CATEGORY_PRIOR_YEAR_DEBT,
+        self::CATEGORY_OLD_LIABILITY_PAYMENT,
     ];
 
     /**
@@ -79,7 +80,6 @@ class CashTransaction extends Model
         self::CATEGORY_SALARY,
         self::CATEGORY_EMPLOYEE_ADVANCE,
         self::CATEGORY_EXPENSE,
-        self::CATEGORY_OLD_LIABILITY_PAYMENT,
     ];
 
     /** التسميات العربية المعتمدة في التقارير. */

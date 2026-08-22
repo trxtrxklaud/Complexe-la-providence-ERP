@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Requests\StoreEmployeeLiabilityRequest;
 use App\Models\AcademicYear;
 use App\Models\EmployeeLiability;
 use App\Models\Salary;
@@ -52,17 +53,9 @@ class EmployeeLiabilityController extends Controller
     /**
      * إدخال استحقاق قديم يدوياً — بدون أي أثر نقدي.
      */
-    public function store(Request $request): JsonResponse
+    public function store(StoreEmployeeLiabilityRequest $request): JsonResponse
     {
-        $data = $request->validate([
-            'employee_id' => ['required', 'integer', 'exists:employees,id'],
-            'academic_year_id' => ['nullable', 'integer', 'exists:academic_years,id'],
-            'original_year_label' => ['required', 'string', 'max:20'],
-            'liability_type' => ['required', 'string', 'in:'.implode(',', EmployeeLiability::LIABILITY_TYPES)],
-            'description' => ['required', 'string', 'max:255'],
-            'original_amount' => ['required', 'numeric', 'min:0.01', 'max:1000000'],
-            'notes' => ['nullable', 'string', 'max:2000'],
-        ]);
+        $data = $request->validated();
 
         $yearId = $data['academic_year_id'] ?? AcademicYear::where('is_active', true)->value('id');
 
@@ -73,6 +66,8 @@ class EmployeeLiabilityController extends Controller
         $data['academic_year_id'] = (int) $yearId;
         $data['created_by'] = $request->user()?->id;
         $data['status'] = EmployeeLiability::STATUS_PENDING;
+
+        // نوع الاستحقاق مقابل تصنيف الإطار تحقّق منه StoreEmployeeLiabilityRequest.
 
         $liability = EmployeeLiability::create($data);
 
