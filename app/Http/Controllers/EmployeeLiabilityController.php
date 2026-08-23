@@ -170,6 +170,125 @@ class EmployeeLiabilityController extends Controller
     }
 
     /**
+     * حفظ التزامات قديمة لعدة إطارات دفعة واحدة (سطر لكل إطار له مبلغ > 0).
+     *
+     * قواعد:
+     *  - سنة المنشأ لا تطابق السنة النشطة.
+     *  - liability_type يطابق staff_type (عاملة دين فقط، البقية دين/سلفة).
+     *  - إطار له التزام قائم يُحدَّث (لا ازدواج)، ويُمنع إن حُصّل منه جزء.
+     *  - التسجيل لا ينشئ cash_transaction ولا يستخدم old_liability_payment.
+     */
+    public function bulkStore(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'academic_year_id' => ['nullable', 'integer', 'exists:academic_years,id'],
+            'original_year_label' => ['required', 'string', 'max:20'],
+            'items' => ['required', 'array', 'min:1', 'max:300'],
+            'items.*.employee_id' => ['required', 'integer', 'distinct', 'exists:employees,id'],
+            'items.*.liability_type' => ['required', 'string', 'in:'.implode(',', EmployeeLiability::LIABILITY_TYPES)],
+            'items.*.amount' => ['required', 'numeric', 'min:0', 'max:1000000'],
+            'items.*.notes' => ['nullable', 'string', 'max:2000'],
+        ]);
+
+        $yearId = $data['academic_year_id'] ?? AcademicYear::where('is_active', true)->value('id');
+        if (! $yearId) {
+            return response()->json(['message' => 'لا توجد سنة دراسية نشطة؛ حدِّد السنة الدراسية'], 422);
+        }
+        $targetYear = AcademicYear::findOrFail($yearId);
+        if (trim($data['original_year_label']) === $targetYear->name) {
+            return response()->json([
+                'message' => 'سنة المنشأ ('.$data['original_year_label'].') لا يمكن أن تساوي السنة الدراسية الحالية',
+            ], 422);
+        }
+
+        $userId = $request->user()?->id;
+        $description = 'التزام قديم — إدخال جماعي ('.$data['original_year_label'].')';
+
+        // خريطة staff_type → الأنواع المسموحة (مطابقة لـ StoreEmployeeLiabilityRequest)
+        $allowedFor = fn (?string $type): array => match ($type) {
+            'worker' => ['debt'],
+            'hourly_teacher', 'monthly_teacher', 'club_animator' => ['debt', 'advance'],
+            default => ['debt'],
+        };
+
+        try {
+            $result = DB::transaction(function () use ($data, $targetYear, $userId, $description, $allowedFor) {
+                $created = 0;
+                $updated = 0;
+
+                $employees = \App\Models\Employee::whereIn('id', array_map(fn ($i) => (int) $i['employee_id'], $data['items']))
+                    ->get(['id', 'staff_type'])
+                    ->keyBy('id');
+
+                foreach ($data['items'] as $item) {
+                    $amount = round((float) $item['amount'], 2);
+                    if ($amount <= 0) {
+                        continue;
+                    }
+                    $empId = (int) $item['employee_id'];
+                    $emp = $employees->get($empId);
+                    if (! $emp) {
+                        throw new RuntimeException('الإطار رقم '.$empId.' غير موجود');
+                    }
+                    $allowed = $allowedFor($emp->staff_type);
+                    if (! in_array($item['liability_type'], $allowed, true)) {
+                        throw new RuntimeException('نوع الالتزام غير مسموح للإطار رقم '.$empId.' (نوعه '.$emp->staff_type.')');
+                    }
+
+                    $itemData = [
+                        'employee_id' => $empId,
+                        'academic_year_id' => (int) $targetYear->id,
+                        'original_year_label' => $data['original_year_label'],
+                        'liability_type' => $item['liability_type'],
+                        'description' => $description,
+                        'original_amount' => $amount,
+                        'notes' => $item['notes'] ?? null,
+                    ];
+
+                    /** @var EmployeeLiability|null $existing */
+                    $existing = EmployeeLiability::where('employee_id', $empId)
+                        ->where('academic_year_id', $targetYear->id)
+                        ->whereNull('cancelled_at')
+                        ->lockForUpdate()
+                        ->first();
+
+                    if ($existing) {
+                        if ($existing->paid() > 0) {
+                            throw new RuntimeException(
+                                'التزام الإطار رقم '.$empId.' حُصّل منه '.number_format($existing->paid(), 2, '.', '').'؛ عدّله من قائمة الالتزامات لا بالإدخال الجماعي'
+                            );
+                        }
+                        $existing->update([
+                            'original_year_label' => $itemData['original_year_label'],
+                            'liability_type' => $itemData['liability_type'],
+                            'original_amount' => $amount,
+                            'notes' => $itemData['notes'],
+                        ]);
+                        $updated++;
+                        continue;
+                    }
+
+                    EmployeeLiability::create([
+                        ...$itemData,
+                        'status' => EmployeeLiability::STATUS_PENDING,
+                        'created_by' => $userId,
+                    ]);
+                    $created++;
+                }
+                return ['created' => $created, 'updated' => $updated];
+            });
+        } catch (RuntimeException $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
+
+        return response()->json([
+            'message' => 'تم حفظ التزامات الإطارات: '.$result['created'].' جديداً، '.$result['updated'].' محدَّثاً',
+            'created' => $result['created'],
+            'updated' => $result['updated'],
+        ], 201);
+    }
+
+    /**
      * إلغاء استحقاق مُدخل خطأً — لا حذف نهائي. يُمنع بعد أي خلاص:
      * إلغاء الاستحقاق بلا إلغاء الراتب الذي خلّصه يبخّر المال.
      */

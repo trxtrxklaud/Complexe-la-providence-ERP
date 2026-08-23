@@ -426,4 +426,32 @@ class OpeningBalancePaymentAllocationTest extends TestCase
             ->assertJsonPath('prior_year.0.amount', 200)
             ->assertJsonPath('credit', 300);
     }
+
+    public function test_collection_with_opening_balance_id_stores_explicit_fk(): void
+    {
+        [$student, $old, $new, $oldEnrollment, $newEnrollment] = $this->makeTwoYearSetup();
+        $user = $this->makeUser();
+        Sanctum::actingAs($user->fresh(['role']));
+
+        $oldFee = $this->oldDebtFee($oldEnrollment);
+        $this->opening->closeYear($old, $new, $user->id);
+        $ob = OpeningBalance::firstOrFail();
+
+        $this->collection->collect([
+            'student_id' => $student->id,
+            'enrollment_id' => $newEnrollment->id,
+            'payment_date' => '2026-09-15',
+            'method' => 'cash',
+            'prior_allocations' => [['opening_balance_id' => $ob->id, 'amount' => 150]],
+        ], $user->id);
+
+        $allocation = \App\Models\PaymentAllocation::firstOrFail();
+        $this->assertSame($ob->id, $allocation->opening_balance_id);
+        $this->assertNull($allocation->manual_student_debt_id);
+        $this->assertSame($oldFee->id, $allocation->student_fee_id);
+        $this->assertSame(150.0, (float) $allocation->amount_allocated);
+
+        $this->assertSame(150.0, $ob->collected());
+        $this->assertSame(50.0, $ob->outstanding());
+    }
 }

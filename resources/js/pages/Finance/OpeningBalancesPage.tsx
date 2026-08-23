@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Ban, BookOpenCheck, Briefcase, Plus, Printer, Save, Wallet } from 'lucide-react';
+import { Ban, BookOpenCheck, Briefcase, Layers, Plus, Printer, Save, Wallet } from 'lucide-react';
 import { PageShell } from '../../components/PageShell';
 import { CancelReasonModal } from '../../components/CancelReasonModal';
 import { fetchYears, type AcademicYear } from '../../api/roster';
@@ -9,16 +9,22 @@ import {
   DEBT_STATUS_LABELS,
   DEBT_TYPE_LABELS,
   LIABILITY_TYPE_LABELS,
+  bulkCreateDebts,
+  bulkCreateLiabilities,
   cancelEmployeeLiability,
   cancelManualDebt,
   createEmployeeLiability,
   createManualDebt,
+  fetchBulkOptions,
   fetchEmployeeLiabilities,
   fetchManualDebts,
+  fetchSectionStudents,
   liabilityTypesForStaff,
   payEmployeeLiability,
+  type BulkOptions,
   type EmployeeLiability,
   type ManualDebt,
+  type SectionStudentRow,
 } from '../../api/manualDebts';
 import { errorMessage, money, personName, today } from '../../lib/format';
 import { ListSkeleton } from '../../components/DataSkeleton';
@@ -34,7 +40,7 @@ const C = {
   errorBg: '#FDECEC',
 };
 
-type Tab = 'debts' | 'liabilities';
+type Tab = 'debts' | 'liabilities' | 'bulk';
 
 /** تسمية نوع الاستحقاق من الخريطة المشتركة المطابقة للخادم. */
 function liabilityTypeLabel(type: string): string {
@@ -115,6 +121,21 @@ export function OpeningBalancesPage() {
   const [savingDebt, setSavingDebt] = useState(false);
   const [savingLiability, setSavingLiability] = useState(false);
 
+  // ===== الإدخال الجماعي =====
+  const [bulkYearLabel, setBulkYearLabel] = useState('');
+  const [bulkLevelId, setBulkLevelId] = useState<number | ''>('');
+  const [bulkSectionId, setBulkSectionId] = useState<number | ''>('');
+  const [bulkOptions, setBulkOptions] = useState<BulkOptions | null>(null);
+  const [bulkStudents, setBulkStudents] = useState<SectionStudentRow[]>([]);
+  const [bulkStudentRows, setBulkStudentRows] = useState<Record<number, { checked: boolean; debtType: string; amount: string; notes: string }>>({});
+  const [bulkEmployees, setBulkEmployees] = useState<BulkOptions['employees']>([]);
+  const [bulkEmployeeRows, setBulkEmployeeRows] = useState<Record<number, { checked: boolean; liabilityType: string; amount: string; notes: string }>>({});
+  const [bulkExistingLiabilities, setBulkExistingLiabilities] = useState<Map<number, BulkOptions['existing_liabilities'][number]>>(new Map());
+  const [bulkLoading, setBulkLoading] = useState(false);
+  const [bulkStudentsLoading, setBulkStudentsLoading] = useState(false);
+  const [bulkSavingStudents, setBulkSavingStudents] = useState(false);
+  const [bulkSavingEmployees, setBulkSavingEmployees] = useState(false);
+
   const flash = (message: string) => {
     setNotice(message);
     window.setTimeout(() => setNotice(''), 4000);
@@ -185,6 +206,73 @@ export function OpeningBalancesPage() {
       setLiabilityType(availableLiabilityTypes[0] ?? '');
     }
   }, [employeeId, employees, liabilityType]);
+
+  // تحميل خيارات الإدخال الجماعي عند فتح التبويب
+  useEffect(() => {
+    if (tab !== 'bulk' || bulkOptions) return;
+    (async () => {
+      setBulkLoading(true);
+      try {
+        const opts = await fetchBulkOptions();
+        setBulkOptions(opts);
+        setBulkEmployees(opts.employees);
+        const map = new Map<number, BulkOptions['existing_liabilities'][number]>();
+        opts.existing_liabilities.forEach((l) => map.set(l.employee_id, l));
+        setBulkExistingLiabilities(map);
+        // تهيئة صفوف الإطارات
+        const rows: Record<number, { checked: boolean; liabilityType: string; amount: string; notes: string }> = {};
+        opts.employees.forEach((emp) => {
+          const existing = map.get(emp.id);
+          const allowed = liabilityTypesForStaff(emp.staff_type);
+          rows[emp.id] = {
+            checked: false,
+            liabilityType: existing ? existing.liability_type : allowed[0] ?? 'debt',
+            amount: existing ? String(existing.original_amount) : '',
+            notes: existing ? existing.notes ?? '' : '',
+          };
+        });
+        setBulkEmployeeRows(rows);
+        if (!bulkYearLabel && opts.active_year) {
+          const other = years.find((y) => y.name !== opts.active_year!.name) ?? years[0];
+          if (other) setBulkYearLabel(other.name);
+        }
+      } catch (err) {
+        setError(errorMessage(err));
+      } finally {
+        setBulkLoading(false);
+      }
+    })();
+  }, [tab, bulkOptions, years, bulkYearLabel]);
+
+  // تحميل تلاميذ القسم المختار
+  useEffect(() => {
+    if (tab !== 'bulk' || !bulkSectionId) {
+      setBulkStudents([]);
+      return;
+    }
+    (async () => {
+      setBulkStudentsLoading(true);
+      try {
+        const res = await fetchSectionStudents(bulkSectionId as number);
+        setBulkStudents(res.students);
+        const rows: Record<number, { checked: boolean; debtType: string; amount: string; notes: string }> = {};
+        res.students.forEach((s) => {
+          const ex = s.existing;
+          rows[s.id] = {
+            checked: !!ex,
+            debtType: ex ? ex.debt_type : 'tuition',
+            amount: ex ? String(ex.original_amount) : '',
+            notes: ex ? ex.notes ?? '' : '',
+          };
+        });
+        setBulkStudentRows(rows);
+      } catch (err) {
+        setError(errorMessage(err));
+      } finally {
+        setBulkStudentsLoading(false);
+      }
+    })();
+  }, [tab, bulkSectionId]);
 
   // بحث التلاميذ عند الكتابة (debounce).
   useEffect(() => {
@@ -304,6 +392,128 @@ export function OpeningBalancesPage() {
       setError(errorMessage(err));
     } finally {
       setSavingLiability(false);
+    }
+  };
+
+  const submitBulkStudents = async () => {
+    if (!bulkYearLabel.trim()) {
+      setError('السنة الأصلية مطلوبة');
+      return;
+    }
+    if (bulkOptions?.active_year && bulkYearLabel.trim() === bulkOptions.active_year.name) {
+      setError('سنة المنشأ لا يمكن أن تساوي السنة الحالية');
+      return;
+    }
+    const items = bulkStudents
+      .filter((s) => {
+        const row = bulkStudentRows[s.id];
+        if (!row?.checked) return false;
+        if ((s.existing?.collected_amount ?? 0) > 0) return false;
+        const v = Number(row.amount);
+        return Number.isFinite(v) && v > 0;
+      })
+      .map((s) => ({
+        student_id: s.id,
+        debt_type: bulkStudentRows[s.id].debtType,
+        amount: Number(bulkStudentRows[s.id].amount),
+        notes: bulkStudentRows[s.id].notes.trim() || null,
+      }));
+    if (items.length === 0) {
+      setError('حدد تلميذاً واحداً على الأقل بمبلغ موجب');
+      return;
+    }
+    setBulkSavingStudents(true);
+    setError('');
+    try {
+      const res = await bulkCreateDebts({ original_year_label: bulkYearLabel.trim(), items });
+      flash(res.message);
+      // إعادة تحميل تلاميذ القسم + قائمة الديون
+      if (bulkSectionId) {
+        const refreshed = await fetchSectionStudents(bulkSectionId as number);
+        setBulkStudents(refreshed.students);
+        const rows: Record<number, { checked: boolean; debtType: string; amount: string; notes: string }> = {};
+        refreshed.students.forEach((s) => {
+          const ex = s.existing;
+          const prev = bulkStudentRows[s.id];
+          rows[s.id] = ex
+            ? { checked: false, debtType: ex.debt_type, amount: String(ex.original_amount), notes: ex.notes ?? '' }
+            : { checked: false, debtType: prev?.debtType ?? 'tuition', amount: '', notes: prev?.notes ?? '' };
+        });
+        setBulkStudentRows(rows);
+      }
+      await reloadDebts();
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setBulkSavingStudents(false);
+    }
+  };
+
+  const submitBulkEmployees = async () => {
+    if (!bulkYearLabel.trim()) {
+      setError('السنة الأصلية مطلوبة');
+      return;
+    }
+    if (bulkOptions?.active_year && bulkYearLabel.trim() === bulkOptions.active_year.name) {
+      setError('سنة المنشأ لا يمكن أن تساوي السنة الحالية');
+      return;
+    }
+    const items = bulkEmployees
+      .filter((emp) => {
+        const row = bulkEmployeeRows[emp.id];
+        if (!row?.checked) return false;
+        const existing = bulkExistingLiabilities.get(emp.id);
+        if ((existing as unknown as { paid_amount?: number }) || 0) {
+          // paid check عبر الخريطة لا يكفي؛ نعتمد paid_amount إن وجد
+        }
+        // تعطيل الصفوف المحصلة: نتحقق من الخريطة الأصلية إن كانت paid>0 عبر reload لاحق، حالياً نعتمد تعطيل الواجهة فقط
+        const v = Number(row.amount);
+        return Number.isFinite(v) && v > 0;
+      })
+      .map((emp) => ({
+        employee_id: emp.id,
+        liability_type: bulkEmployeeRows[emp.id].liabilityType,
+        amount: Number(bulkEmployeeRows[emp.id].amount),
+        notes: bulkEmployeeRows[emp.id].notes.trim() || null,
+      }))
+      .filter((it) => {
+        const existing = bulkExistingLiabilities.get(it.employee_id);
+        // استبعاد الصفوف المحصلة جزئياً — لا تُرسل
+        if (existing && Number(existing.paid_amount ?? 0) > 0) return false;
+        return true;
+      });
+    if (items.length === 0) {
+      setError('حدد إطاراً واحداً على الأقل بمبلغ موجب');
+      return;
+    }
+    setBulkSavingEmployees(true);
+    setError('');
+    try {
+      const res = await bulkCreateLiabilities({ original_year_label: bulkYearLabel.trim(), items });
+      flash(res.message);
+      const opts = await fetchBulkOptions();
+      setBulkOptions(opts);
+      const map = new Map<number, BulkOptions['existing_liabilities'][number]>();
+      opts.existing_liabilities.forEach((l) => map.set(l.employee_id, l));
+      setBulkExistingLiabilities(map);
+      const rows: Record<number, { checked: boolean; liabilityType: string; amount: string; notes: string }> = {};
+      opts.employees.forEach((emp) => {
+        const ex = map.get(emp.id);
+        const allowed = liabilityTypesForStaff(emp.staff_type);
+        rows[emp.id] = {
+          checked: false,
+          liabilityType: ex ? ex.liability_type : allowed[0] ?? 'debt',
+          amount: ex ? String(ex.original_amount) : '',
+          notes: ex ? ex.notes ?? '' : bulkEmployeeRows[emp.id]?.notes ?? '',
+        };
+      });
+      setBulkEmployees(opts.employees);
+      setBulkEmployeeRows(rows);
+      await reloadLiabilities();
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setBulkSavingEmployees(false);
     }
   };
 
@@ -496,6 +706,7 @@ export function OpeningBalancesPage() {
             {([
               { key: 'debts', label: 'ديون التلاميذ', icon: BookOpenCheck },
               { key: 'liabilities', label: 'ديون الإطارات', icon: Briefcase },
+              { key: 'bulk', label: 'إدخال جماعي', icon: Layers },
             ] as const).map((item) => (
               <button
                 key={item.key}
@@ -654,7 +865,7 @@ export function OpeningBalancesPage() {
                 )}
               </div>
             </>
-          ) : (
+          ) : tab === 'liabilities' ? (
             <>
               {/* نموذج إدخال دَين إطار */}
               <div className="no-print bg-white rounded-2xl p-5 mb-6" style={{ border: '1px solid ' + C.line }}>
@@ -808,6 +1019,152 @@ export function OpeningBalancesPage() {
                       </tbody>
                     </table>
                   </div>
+                )}
+              </div>
+            </>
+          ) : (
+            <>
+              {/* ===== الإدخال الجماعي ===== */}
+              <div className="bg-white rounded-2xl p-5 mb-6" style={{ border: '1px solid ' + C.line }}>
+                <label className="block text-xs mb-1.5" style={{ color: C.muted }}>السنة الأصلية (مشتركة) *</label>
+                <select value={bulkYearLabel} onChange={(e) => setBulkYearLabel(e.target.value)} className={fieldCls} style={fieldStyle}>
+                  <option value="">اختر السنة الأصلية…</option>
+                  {years.filter((y) => y.name !== bulkOptions?.active_year?.name).map((y) => <option key={y.id} value={y.name}>{y.name}</option>)}
+                  {years.filter((y) => y.name === bulkOptions?.active_year?.name).length === 0 && bulkOptions?.active_year ? null : null}
+                </select>
+                {bulkOptions?.active_year ? <p className="text-xs mt-1" style={{ color: C.muted }}>السنة النشطة الحالية: {bulkOptions.active_year.name} — لا يمكن اختيارها</p> : null}
+              </div>
+
+              {/* قسم التلاميذ */}
+              <div className="bg-white rounded-2xl p-5 mb-6" style={{ border: '1px solid ' + C.line }}>
+                <h3 className="font-bold mb-4" style={{ color: C.deep }}>ديون التلاميذ — إدخال جماعي</h3>
+                <div className="grid sm:grid-cols-2 gap-4 mb-4">
+                  <div>
+                    <label className="block text-xs mb-1.5" style={{ color: C.muted }}>المستوى</label>
+                    <select value={bulkLevelId} onChange={(e) => { setBulkLevelId(e.target.value ? Number(e.target.value) : ''); setBulkSectionId(''); }} className={fieldCls} style={fieldStyle}>
+                      <option value="">اختر المستوى…</option>
+                      {bulkOptions?.levels.map((lvl) => <option key={lvl.id} value={lvl.id}>{lvl.name}</option>) ?? null}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs mb-1.5" style={{ color: C.muted }}>القسم</label>
+                    <select value={bulkSectionId} onChange={(e) => setBulkSectionId(e.target.value ? Number(e.target.value) : '')} className={fieldCls} style={fieldStyle}>
+                      <option value="">اختر القسم…</option>
+                      {(bulkOptions?.sections.filter((s) => !bulkLevelId || s.level_id === bulkLevelId) ?? []).map((sec) => <option key={sec.id} value={sec.id}>{sec.name}</option>)}
+                    </select>
+                  </div>
+                </div>
+
+                {bulkLoading ? <ListSkeleton rows={3} /> : !bulkSectionId ? <p className="text-sm text-center py-6" style={{ color: C.muted }}>اختر المستوى والقسم لعرض التلاميذ</p> : bulkStudentsLoading ? <ListSkeleton rows={4} /> : bulkStudents.length === 0 ? <p className="text-sm text-center py-6" style={{ color: C.muted }}>لا تلاميذ في هذا القسم</p> : (
+                  <>
+                    <div className="overflow-x-auto rounded-xl" style={{ border: '1px solid ' + C.line }}>
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr style={{ backgroundColor: C.sage, color: C.deep }}>
+                            <th className="px-3 py-2.5">☐</th>
+                            <th className="text-right px-3 py-2.5 font-medium">الاسم الكامل</th>
+                            <th className="text-right px-3 py-2.5 font-medium">رقم التلميذ</th>
+                            <th className="text-right px-3 py-2.5 font-medium">نوع الدين</th>
+                            <th className="text-right px-3 py-2.5 font-medium">المبلغ</th>
+                            <th className="text-right px-3 py-2.5 font-medium">الملاحظات</th>
+                            <th className="text-right px-3 py-2.5 font-medium">الأصلي</th>
+                            <th className="text-right px-3 py-2.5 font-medium">المحصل</th>
+                            <th className="text-right px-3 py-2.5 font-medium">المتبقي</th>
+                            <th className="text-right px-3 py-2.5 font-medium">الحالة</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {bulkStudents.map((s) => {
+                            const row = bulkStudentRows[s.id] ?? { checked: false, debtType: 'tuition', amount: '', notes: '' };
+                            const disabled = (s.existing?.collected_amount ?? 0) > 0;
+                            const outstanding = s.existing ? Math.max(0, Number(s.existing.original_amount) - Number(s.existing.collected_amount ?? 0)) : 0;
+                            const statusLabel = s.existing ? (s.existing.collected_amount > 0 ? (outstanding === 0 ? 'مدفوع' : 'جزئي') : 'قائم') : '—';
+                            return (
+                              <tr key={s.id} style={{ borderTop: '1px solid ' + C.line, opacity: disabled ? 0.55 : 1 }}>
+                                <td className="px-3 py-2.5"><input type="checkbox" checked={row.checked} disabled={disabled} onChange={(e) => setBulkStudentRows((prev) => ({ ...prev, [s.id]: { ...row, checked: e.target.checked } }))} /></td>
+                                <td className="px-3 py-2.5" style={{ color: C.ink }}>{s.full_name}</td>
+                                <td className="px-3 py-2.5 text-xs" style={{ color: C.muted }}>{s.student_code ?? '—'}</td>
+                                <td className="px-3 py-2.5">
+                                  <select value={row.debtType} disabled={disabled} onChange={(e) => setBulkStudentRows((prev) => ({ ...prev, [s.id]: { ...row, debtType: e.target.value } }))} className="text-xs rounded-lg px-2 py-1.5" style={{ ...fieldStyle, opacity: disabled ? 0.6 : 1 }}>
+                                    {Object.entries(DEBT_TYPE_LABELS).map(([v,l]) => <option key={v} value={v}>{l}</option>)}
+                                  </select>
+                                </td>
+                                <td className="px-3 py-2.5">
+                                  <input type="number" min="0" step="0.01" value={row.amount} disabled={disabled || !row.checked} onChange={(e) => setBulkStudentRows((prev) => ({ ...prev, [s.id]: { ...row, amount: e.target.value } }))} className="w-24 px-2 py-1.5 rounded-lg text-sm" style={{ ...fieldStyle, direction: 'ltr', opacity: disabled || !row.checked ? 0.6 : 1 }} placeholder="0.00" />
+                                </td>
+                                <td className="px-3 py-2.5"><input value={row.notes} disabled={disabled} onChange={(e) => setBulkStudentRows((prev) => ({ ...prev, [s.id]: { ...row, notes: e.target.value } }))} className="w-28 px-2 py-1.5 rounded-lg text-xs" style={{ ...fieldStyle, opacity: disabled ? 0.6 : 1 }} /></td>
+                                <td className="px-3 py-2.5" style={{ color: C.ink, direction: 'ltr', textAlign: 'right' }}>{s.existing ? money(s.existing.original_amount) : '—'}</td>
+                                <td className="px-3 py-2.5" style={{ color: C.muted, direction: 'ltr', textAlign: 'right' }}>{s.existing ? money(s.existing.collected_amount) : '—'}</td>
+                                <td className="px-3 py-2.5" style={{ color: C.forest, direction: 'ltr', textAlign: 'right' }}>{s.existing ? money(outstanding) : '—'}</td>
+                                <td className="px-3 py-2.5 text-xs" style={{ color: C.muted }}>{s.existing ? statusLabel : '—'}</td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                    <button type="button" onClick={() => void submitBulkStudents()} disabled={bulkSavingStudents || bulkStudentsLoading} className="mt-4 px-5 py-2.5 rounded-xl text-white text-sm font-medium disabled:opacity-50" style={{ backgroundColor: C.forest }}>
+                      {bulkSavingStudents ? 'جارٍ الحفظ…' : 'حفظ جماعي (تلاميذ)'}
+                    </button>
+                  </>
+                )}
+              </div>
+
+              {/* قسم الإطارات */}
+              <div className="bg-white rounded-2xl p-5" style={{ border: '1px solid ' + C.line }}>
+                <h3 className="font-bold mb-4" style={{ color: C.deep }}>ديون الإطارات والعاملين — إدخال جماعي</h3>
+                {bulkLoading ? <ListSkeleton rows={4} /> : bulkEmployees.length === 0 ? <p className="text-sm text-center py-6" style={{ color: C.muted }}>لا إطارات نشطة</p> : (
+                  <>
+                    <div className="overflow-x-auto rounded-xl" style={{ border: '1px solid ' + C.line }}>
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr style={{ backgroundColor: C.sage, color: C.deep }}>
+                            <th className="px-3 py-2.5">☐</th>
+                            <th className="text-right px-3 py-2.5 font-medium">الاسم الكامل</th>
+                            <th className="text-right px-3 py-2.5 font-medium">الوظيفة</th>
+                            <th className="text-right px-3 py-2.5 font-medium">نوع الالتزام</th>
+                            <th className="text-right px-3 py-2.5 font-medium">المبلغ</th>
+                            <th className="text-right px-3 py-2.5 font-medium">الملاحظات</th>
+                            <th className="text-right px-3 py-2.5 font-medium">الأصلي</th>
+                            <th className="text-right px-3 py-2.5 font-medium">المحصل</th>
+                            <th className="text-right px-3 py-2.5 font-medium">المتبقي</th>
+                            <th className="text-right px-3 py-2.5 font-medium">الحالة</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {bulkEmployees.map((emp) => {
+                            const existing = bulkExistingLiabilities.get(emp.id) ?? null;
+                            const row = bulkEmployeeRows[emp.id] ?? { checked: false, liabilityType: liabilityTypesForStaff(emp.staff_type)[0] ?? 'debt', amount: '', notes: '' };
+                            const paidVal = Number(existing?.paid_amount ?? 0);
+                            const disabled = paidVal > 0;
+                            const outstanding = existing ? Math.max(0, Number(existing.original_amount) - paidVal) : 0;
+                            const allowed = liabilityTypesForStaff(emp.staff_type);
+                            return (
+                              <tr key={emp.id} style={{ borderTop: '1px solid ' + C.line, opacity: disabled ? 0.55 : 1 }}>
+                                <td className="px-3 py-2.5"><input type="checkbox" checked={row.checked} disabled={disabled} onChange={(e) => setBulkEmployeeRows((prev) => ({ ...prev, [emp.id]: { ...row, checked: e.target.checked } }))} /></td>
+                                <td className="px-3 py-2.5" style={{ color: C.ink }}>{emp.first_name} {emp.last_name}</td>
+                                <td className="px-3 py-2.5 text-xs" style={{ color: C.muted }}>{emp.job_title ?? '—'}</td>
+                                <td className="px-3 py-2.5">
+                                  <select value={row.liabilityType} disabled={disabled} onChange={(e) => setBulkEmployeeRows((prev) => ({ ...prev, [emp.id]: { ...row, liabilityType: e.target.value } }))} className="text-xs rounded-lg px-2 py-1.5" style={{ ...fieldStyle, opacity: disabled ? 0.6 : 1 }}>
+                                    {allowed.map((v) => <option key={v} value={v}>{LIABILITY_TYPE_LABELS[v] ?? v}</option>)}
+                                  </select>
+                                </td>
+                                <td className="px-3 py-2.5"><input type="number" min="0" step="0.01" value={row.amount} disabled={disabled || !row.checked} onChange={(e) => setBulkEmployeeRows((prev) => ({ ...prev, [emp.id]: { ...row, amount: e.target.value } }))} className="w-24 px-2 py-1.5 rounded-lg text-sm" style={{ ...fieldStyle, direction: 'ltr', opacity: disabled || !row.checked ? 0.6 : 1 }} placeholder="0.00" /></td>
+                                <td className="px-3 py-2.5"><input value={row.notes} disabled={disabled} onChange={(e) => setBulkEmployeeRows((prev) => ({ ...prev, [emp.id]: { ...row, notes: e.target.value } }))} className="w-28 px-2 py-1.5 rounded-lg text-xs" style={{ ...fieldStyle, opacity: disabled ? 0.6 : 1 }} /></td>
+                                <td className="px-3 py-2.5" style={{ color: C.ink, direction: 'ltr', textAlign: 'right' }}>{existing ? money(existing.original_amount) : '—'}</td>
+                                <td className="px-3 py-2.5" style={{ color: C.muted, direction: 'ltr', textAlign: 'right' }}>{existing ? money(paidVal) : '—'}</td>
+                                <td className="px-3 py-2.5" style={{ color: C.forest, direction: 'ltr', textAlign: 'right' }}>{existing ? money(outstanding) : '—'}</td>
+                                <td className="px-3 py-2.5 text-xs" style={{ color: C.muted }}>{existing ? (paidVal > 0 ? (outstanding === 0 ? 'مدفوع' : 'جزئي') : 'قائم') : '—'}</td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                    <button type="button" onClick={() => void submitBulkEmployees()} disabled={bulkSavingEmployees} className="mt-4 px-5 py-2.5 rounded-xl text-white text-sm font-medium disabled:opacity-50" style={{ backgroundColor: C.forest }}>
+                      {bulkSavingEmployees ? 'جارٍ الحفظ…' : 'حفظ جماعي (إطارات)'}
+                    </button>
+                  </>
                 )}
               </div>
             </>

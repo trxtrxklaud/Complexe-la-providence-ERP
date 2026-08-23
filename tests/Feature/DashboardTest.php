@@ -116,13 +116,13 @@ class DashboardTest extends TestCase
             'original_amount' => 500,
             'status' => EmployeeLiability::STATUS_PENDING,
         ]);
-        // خلاص مستحقّ إطار آخر (مصدر بلا سجلّ مقابل): يدخل في المحصّل الكلّي
+        // تحصيل دين إطار آخر (مصدر بلا سجلّ مقابل): يدخل في المحصّل الكلّي
         // دون أن يمسّ متبقّي الاستحقاق المُدخل أعلاه.
         CashTransaction::create([
             'source_type' => EmployeeLiability::class,
             'source_id' => 999,
-            'category' => CashTransaction::CATEGORY_OLD_LIABILITY_PAYMENT,
-            'direction' => CashTransaction::DIRECTION_OUT,
+            'category' => CashTransaction::CATEGORY_OLD_LIABILITY_COLLECTION,
+            'direction' => CashTransaction::DIRECTION_IN,
             'amount' => 200,
             'transaction_date' => now()->toDateString(),
             'academic_year_id' => $year->id,
@@ -378,6 +378,128 @@ class DashboardTest extends TestCase
             ->assertOk();
 
         $this->assertEquals(200, $this->dashboardPriorYearOutstanding());
+    }
+
+    /**
+     * الحالة الأولى: دخل سنة (1000) + تحصيل دين قديم (300) + مصاريف (400) + خلاص مستحق قديم (100).
+     */
+    public function test_cash_figures_calculation_with_current_income_old_debt_expenses_and_old_liability_payments(): void
+    {
+        Sanctum::actingAs($this->makeUserWithPermissions('admin', ['manage_treasury']));
+        $year = $this->makeAcademicYear();
+
+        // 1. دخل السنة الحالية = 1000
+        CashTransaction::create([
+            'source_type' => 'payment',
+            'source_id' => 101,
+            'category' => CashTransaction::CATEGORY_MONTHLY_FEE,
+            'direction' => CashTransaction::DIRECTION_IN,
+            'amount' => 1000,
+            'transaction_date' => now()->toDateString(),
+            'academic_year_id' => $year->id,
+        ]);
+
+        // 2. تحصيل دين قديم = 300
+        CashTransaction::create([
+            'source_type' => 'payment',
+            'source_id' => 102,
+            'category' => CashTransaction::CATEGORY_PRIOR_YEAR_DEBT,
+            'direction' => CashTransaction::DIRECTION_IN,
+            'amount' => 300,
+            'transaction_date' => now()->toDateString(),
+            'academic_year_id' => $year->id,
+        ]);
+
+        // 3. مصاريف السنة الحالية = 400
+        CashTransaction::create([
+            'source_type' => 'expense',
+            'source_id' => 103,
+            'category' => CashTransaction::CATEGORY_EXPENSE,
+            'direction' => CashTransaction::DIRECTION_OUT,
+            'amount' => 400,
+            'transaction_date' => now()->toDateString(),
+            'academic_year_id' => $year->id,
+        ]);
+
+        // 4. خلاص مستحق قديم = 100
+        CashTransaction::create([
+            'source_type' => EmployeeLiability::class,
+            'source_id' => 104,
+            'category' => CashTransaction::CATEGORY_OLD_LIABILITY_PAYMENT,
+            'direction' => CashTransaction::DIRECTION_OUT,
+            'amount' => 100,
+            'transaction_date' => now()->toDateString(),
+            'academic_year_id' => $year->id,
+        ]);
+
+        $cash = $this->getJson('/api/dashboard')->assertOk()->json('data.cash.all_time');
+
+        $this->assertEquals(1000, (float) $cash['current_year_income']);
+        $this->assertEquals(300, (float) $cash['old_debt_collections']);
+        $this->assertEquals(1300, (float) $cash['cash_in']);
+        $this->assertEquals(400, (float) $cash['expenses']);
+        $this->assertEquals(100, (float) $cash['old_liability_payments']);
+        $this->assertEquals(600, (float) $cash['net_income']);
+        $this->assertEquals(800, (float) $cash['balance']);
+    }
+
+    /**
+     * الحالة الثانية: حركة old_liability_payment بقيمة 100 تخرج من الصندوق ولا تُعد تدفقاً داخلاً.
+     */
+    public function test_old_liability_payment_is_cash_out_not_cash_in(): void
+    {
+        Sanctum::actingAs($this->makeUserWithPermissions('admin', ['manage_treasury']));
+        $year = $this->makeAcademicYear();
+
+        CashTransaction::create([
+            'source_type' => EmployeeLiability::class,
+            'source_id' => 201,
+            'category' => CashTransaction::CATEGORY_OLD_LIABILITY_PAYMENT,
+            'direction' => CashTransaction::DIRECTION_OUT,
+            'amount' => 100,
+            'transaction_date' => now()->toDateString(),
+            'academic_year_id' => $year->id,
+        ]);
+
+        $data = $this->getJson('/api/dashboard')->assertOk()->json('data');
+        $cash = $data['cash']['all_time'];
+        $prior = $data['prior_debt_summary'];
+
+        $this->assertEquals(0, (float) $cash['cash_in']);
+        $this->assertEquals(0, (float) $cash['old_debt_collections']);
+        $this->assertEquals(0, (float) $prior['total_collected']);
+        $this->assertEquals(100, (float) $cash['old_liability_payments']);
+        $this->assertEquals(-100, (float) $cash['balance']);
+        $this->assertEquals(0, (float) $cash['net_income']);
+    }
+
+    /**
+     * الحالة الثالثة: حركة old_liability_collection بقيمة 300 تدخل الصندوق وتزيد الرصيد دون أن تغير net_income.
+     */
+    public function test_old_liability_collection_is_cash_in_not_net_income(): void
+    {
+        Sanctum::actingAs($this->makeUserWithPermissions('admin', ['manage_treasury']));
+        $year = $this->makeAcademicYear();
+
+        CashTransaction::create([
+            'source_type' => EmployeeLiability::class,
+            'source_id' => 301,
+            'category' => CashTransaction::CATEGORY_OLD_LIABILITY_COLLECTION,
+            'direction' => CashTransaction::DIRECTION_IN,
+            'amount' => 300,
+            'transaction_date' => now()->toDateString(),
+            'academic_year_id' => $year->id,
+        ]);
+
+        $data = $this->getJson('/api/dashboard')->assertOk()->json('data');
+        $cash = $data['cash']['all_time'];
+        $prior = $data['prior_debt_summary'];
+
+        $this->assertEquals(300, (float) $cash['cash_in']);
+        $this->assertEquals(300, (float) $cash['old_debt_collections']);
+        $this->assertEquals(300, (float) $prior['total_collected']);
+        $this->assertEquals(0, (float) $cash['net_income']);
+        $this->assertEquals(300, (float) $cash['balance']);
     }
 
     private function dashboardPendingAmount(): int

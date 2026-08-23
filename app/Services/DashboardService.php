@@ -200,9 +200,9 @@ class DashboardService
      * بطاقة «تحصيل الديون السابقة» — للخزينة وعرض التقارير فقط.
      *
      * المحصّل يُقرأ من الدفتر النقدي المركزي حصراً (prior_year_debt +
-     * old_liability_payment) فلا ينفصل رقم اللوحة عن كشوف الخزينة. أمّا
+     * old_liability_collection) فلا ينفصل رقم اللوحة عن كشوف الخزينة. أمّا
      * المتبقّي فيُشتقّ من سجلات الأرصدة اليدوية نفسها (توزيعات الدفع
-     * الفعلية / الرواتب المرتبطة) لا من أي عمود مخزَّن.
+     * الفعلية / التحصيلات المرتبطة) لا من أي عمود مخزَّن.
      *
      * @return array<string,mixed>
      */
@@ -210,10 +210,8 @@ class DashboardService
     {
         $totalCollected = (float) CashTransaction::query()
             ->whereNull('cancelled_at')
-            ->whereIn('category', [
-                CashTransaction::CATEGORY_PRIOR_YEAR_DEBT,
-                CashTransaction::CATEGORY_OLD_LIABILITY_PAYMENT,
-            ])
+            ->where('direction', CashTransaction::DIRECTION_IN)
+            ->whereIn('category', CashTransaction::OLD_DEBT_COLLECTION_CATEGORIES)
             ->where('academic_year_id', $activeYearId)
             ->sum('amount');
 
@@ -224,13 +222,26 @@ class DashboardService
             ->orderByDesc('id')
             ->get();
 
-        $studentDetails = $manualDebts->map(fn (ManualStudentDebt $debt): array => [
-            'id' => $debt->id,
-            'student_name' => trim(($debt->student?->first_name ?? '').' '.($debt->student?->last_name ?? '')) ?: '—',
-            'original_amount' => round((float) $debt->original_amount, 2),
-            'paid_amount' => $debt->collected(),
-            'outstanding_amount' => $debt->outstanding(),
-        ])->values();
+        $studentDetails = $manualDebts->map(function (ManualStudentDebt $debt): array {
+            $outstanding = $debt->outstanding();
+            $paid = $debt->collected();
+            $original = round((float) $debt->original_amount, 2);
+            return [
+                'id' => $debt->id,
+                'type' => 'student',
+                'debt_type' => $debt->debt_type,
+                'student_name' => trim(($debt->student?->first_name ?? '').' '.($debt->student?->last_name ?? '')) ?: '—',
+                'original_year_label' => $debt->original_year_label,
+                'created_at' => $debt->created_at?->toIso8601String(),
+                'original_amount' => $original,
+                'original' => $original,
+                'paid_amount' => $paid,
+                'paid' => $paid,
+                'outstanding_amount' => $outstanding,
+                'outstanding' => $outstanding,
+                'remaining' => $outstanding,
+            ];
+        })->values();
 
         $employeeLiabilities = EmployeeLiability::query()
             ->with('employee:id,first_name,last_name')
@@ -239,14 +250,26 @@ class DashboardService
             ->orderByDesc('id')
             ->get();
 
-        $employeeDetails = $employeeLiabilities->map(fn (EmployeeLiability $liability): array => [
-            'id' => $liability->id,
-            'employee_name' => trim(($liability->employee?->first_name ?? '').' '.($liability->employee?->last_name ?? '')) ?: '—',
-            'liability_type' => $liability->liability_type,
-            'original_amount' => round((float) $liability->original_amount, 2),
-            'paid_amount' => $liability->paid(),
-            'outstanding_amount' => $liability->outstanding(),
-        ])->values();
+        $employeeDetails = $employeeLiabilities->map(function (EmployeeLiability $liability): array {
+            $outstanding = $liability->outstanding();
+            $paid = $liability->paid();
+            $original = round((float) $liability->original_amount, 2);
+            return [
+                'id' => $liability->id,
+                'type' => 'employee',
+                'liability_type' => $liability->liability_type,
+                'employee_name' => trim(($liability->employee?->first_name ?? '').' '.($liability->employee?->last_name ?? '')) ?: '—',
+                'original_year_label' => $liability->original_year_label,
+                'created_at' => $liability->created_at?->toIso8601String(),
+                'original_amount' => $original,
+                'original' => $original,
+                'paid_amount' => $paid,
+                'paid' => $paid,
+                'outstanding_amount' => $outstanding,
+                'outstanding' => $outstanding,
+                'remaining' => $outstanding,
+            ];
+        })->values();
 
         return [
             'total_collected' => round($totalCollected, 2),
@@ -278,30 +301,46 @@ class DashboardService
             ->whereDate('transaction_date', '<=', $to);
 
         $income = (float) (clone $base)
+            ->where('direction', CashTransaction::DIRECTION_IN)
             ->whereIn('category', CashTransaction::INCOME_CATEGORIES)
             ->sum('amount');
 
-        $priorYearDebt = (float) (clone $base)
-            ->whereIn('category', CashTransaction::PRIOR_YEAR_DEBT_CATEGORIES)
+        $oldDebtCollections = (float) (clone $base)
+            ->where('direction', CashTransaction::DIRECTION_IN)
+            ->whereIn('category', CashTransaction::OLD_DEBT_COLLECTION_CATEGORIES)
             ->sum('amount');
 
         $expenses = (float) (clone $base)
+            ->where('direction', CashTransaction::DIRECTION_OUT)
             ->whereIn('category', CashTransaction::EXPENSE_CATEGORIES)
+            ->sum('amount');
+
+        $oldLiabilityPayments = (float) (clone $base)
+            ->where('direction', CashTransaction::DIRECTION_OUT)
+            ->whereIn('category', CashTransaction::OLD_LIABILITY_PAYMENT_CATEGORIES)
             ->sum('amount');
 
         $withdrawals = (float) (clone $base)
             ->where('category', CashTransaction::CATEGORY_WITHDRAWAL)
             ->sum('amount');
 
+        $cashIn = round($income + $oldDebtCollections, 2);
+        $cashOut = round($expenses + $oldLiabilityPayments, 2);
+        $netIncome = round($income - $expenses, 2);
+        $balance = round($cashIn - $cashOut - $withdrawals, 2);
+
         return [
             'income' => round($income, 2),
-            // تحصيل ديون السنوات السابقة: نقد دخل الصندوق، لكنه ليس مدخولاً —
-            // يزيد الرصيد ولا يدخل في الدخل الصافي.
-            'prior_year_debt' => round($priorYearDebt, 2),
+            'current_year_income' => round($income, 2),
+            'old_debt_collections' => round($oldDebtCollections, 2),
+            'cash_in' => $cashIn,
+            // حقل قديم للتوافق — يعادل old_debt_collections الآن
+            'prior_year_debt' => round($oldDebtCollections, 2),
             'expenses' => round($expenses, 2),
-            'net_income' => round($income - $expenses, 2),
+            'old_liability_payments' => round($oldLiabilityPayments, 2),
+            'net_income' => $netIncome,
             'withdrawals' => round($withdrawals, 2),
-            'balance' => round($income + $priorYearDebt - $expenses - $withdrawals, 2),
+            'balance' => $balance,
         ];
     }
 

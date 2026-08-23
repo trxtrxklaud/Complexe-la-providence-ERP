@@ -286,3 +286,99 @@ export function fetchEmployeeLiabilitiesReport(filters: { academic_year_id?: num
     fallbackMessage: 'تعذّر تحميل كشف مستحقات الإطارات',
   });
 }
+
+// ===== الإدخال الجماعي =====
+
+export type BulkOptions = {
+  active_year: { id: number; name: string; start_date: string } | null;
+  levels: Array<{ id: number; name: string }>;
+  sections: Array<{ id: number; name: string; level_id: number }>;
+  employees: Array<{ id: number; first_name: string; last_name: string; job_title: string | null; staff_type: string | null }>;
+  existing_liabilities: Array<{
+    id: number;
+    employee_id: number;
+    liability_type: string;
+    original_amount: number | string;
+    paid_amount: number;
+    outstanding_amount: number;
+    notes: string | null;
+    status: string;
+    original_year_label: string;
+    created_at: string | null;
+  }>;
+};
+
+export type SectionStudentsResponse = {
+  academic_year_id: number;
+  students: Array<{
+    id: number;
+    full_name: string;
+    student_code: string | null;
+    existing: {
+      id: number;
+      debt_type: string;
+      original_amount: number;
+      notes: string | null;
+      collected_amount: number;
+    } | null;
+  }>;
+};
+
+export type SectionStudentRow = SectionStudentsResponse['students'][number];
+
+export type BulkDebtItem = {
+  student_id: number;
+  debt_type: string;
+  amount: number;
+  notes?: string | null;
+};
+
+export type BulkLiabilityItem = {
+  employee_id: number;
+  liability_type: string;
+  amount: number;
+  notes?: string | null;
+};
+
+export type BulkResult = {
+  message: string;
+  created: number;
+  updated: number;
+};
+
+export function fetchBulkOptions(): Promise<BulkOptions> {
+  return apiFetch<BulkOptions>('/manual-debts/bulk-options', {
+    fallbackMessage: 'تعذّر تحميل خيارات الإدخال الجماعي',
+  });
+}
+
+export function fetchSectionStudents(sectionId: number, academicYearId?: number | null): Promise<SectionStudentsResponse> {
+  return apiFetch<SectionStudentsResponse>('/manual-debts/section-students', {
+    params: { section_id: sectionId, academic_year_id: academicYearId ?? undefined } as QueryParams,
+    fallbackMessage: 'تعذّر تحميل تلاميذ القسم',
+  });
+}
+
+export function bulkCreateDebts(payload: {
+  academic_year_id?: number | null;
+  original_year_label: string;
+  items: BulkDebtItem[];
+}): Promise<BulkResult> {
+  return apiFetch<BulkResult>('/manual-debts/bulk', {
+    method: 'POST',
+    body: payload,
+    fallbackMessage: 'تعذّر حفظ الديون الجماعية',
+  });
+}
+
+export function bulkCreateLiabilities(payload: {
+  academic_year_id?: number | null;
+  original_year_label: string;
+  items: BulkLiabilityItem[];
+}): Promise<BulkResult> {
+  return apiFetch<BulkResult>('/employee-liabilities/bulk', {
+    method: 'POST',
+    body: payload,
+    fallbackMessage: 'تعذّر حفظ التزامات الإطارات الجماعية',
+  });
+}

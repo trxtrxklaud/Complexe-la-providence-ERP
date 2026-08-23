@@ -99,6 +99,9 @@ Route::middleware(['auth:sanctum', 'active', 'throttle:120,1'])->group(function 
         // الديون القديمة للتلاميذ ومستحقات الإطارات. إدخالها لا يحرّك مالاً
         // — تحصيلها لاحقاً عبر مسار الاستخلاص (prior_year_debt) أو خلاص
         // المستحقّات (old_liability_payment) — فتتبع صلاحية الخزينة وحدها.
+        Route::get('/manual-debts/bulk-options', [ManualDebtController::class, 'bulkOptions']);
+        Route::get('/manual-debts/section-students', [ManualDebtController::class, 'sectionStudents']);
+        Route::post('/manual-debts/bulk', [ManualDebtController::class, 'bulkStore']);
         Route::get('/manual-debts', [ManualDebtController::class, 'index']);
         Route::post('/manual-debts', [ManualDebtController::class, 'store']);
         Route::get('/manual-debts/{debt}', [ManualDebtController::class, 'show']);
@@ -106,6 +109,7 @@ Route::middleware(['auth:sanctum', 'active', 'throttle:120,1'])->group(function 
 
         Route::get('/employee-liabilities', [EmployeeLiabilityController::class, 'index']);
         Route::post('/employee-liabilities', [EmployeeLiabilityController::class, 'store']);
+        Route::post('/employee-liabilities/bulk', [EmployeeLiabilityController::class, 'bulkStore']);
         Route::get('/employee-liabilities/{liability}', [EmployeeLiabilityController::class, 'show']);
         Route::post('/employee-liabilities/{liability}/pay', [EmployeeLiabilityController::class, 'pay']);
         Route::post('/employee-liabilities/{liability}/cancel', [EmployeeLiabilityController::class, 'cancel']);

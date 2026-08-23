@@ -107,34 +107,33 @@ export function ReceiptModal({ receipt, cashierName, onClose, onDelete }: Props)
       {/* Dedicated Print Stylesheet to hide page backdrop and isolate receipt */}
       <style>{`
         @media print {
-          body * {
-            visibility: hidden !important;
-          }
-          #receipt-print,
-          #receipt-print * {
-            visibility: visible !important;
-          }
+          body * { visibility: hidden !important; }
+          #receipt-print, #receipt-print * { visibility: visible !important; }
           #receipt-print {
             position: fixed !important;
-            top: 0 !important;
-            left: 0 !important;
-            right: 0 !important;
+            top: 0 !important; left: 0 !important;
+            width: 100% !important;
+            height: 100% !important;
             margin: 0 !important;
-            padding: 6mm !important;
+            padding: 8mm !important;
             box-sizing: border-box !important;
-            background: #ffffff !important;
+            background: #fff !important;
             box-shadow: none !important;
             border: none !important;
-            z-index: 999999 !important;
+            border-radius: 0 !important;
+            display: flex !important;
+            flex-direction: column !important;
           }
-          .no-print,
-          .no-print-parent {
-            background: transparent !important;
+          .receipt-half {
+            flex: 1 !important;
+            page-break-inside: avoid !important;
+            border-radius: 0 !important;
           }
-          a, a[href]::after { display: none !important; content: none !important; }
-          * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-          html { -webkit-print-color-adjust: exact; }
-          @page { margin: 0; size: A4 portrait; }
+          .receipt-half-single {
+            flex: 1 !important;
+            min-height: 90vh !important;
+          }
+          @page { size: A4 portrait; margin: 0; }
         }
       `}</style>
 
@@ -221,6 +220,13 @@ export function ReceiptModal({ receipt, cashierName, onClose, onDelete }: Props)
             fontFamily: "'Cairo', sans-serif",
             padding: '12px',
             position: 'relative',
+            width: '100%',
+            minHeight: '100%',
+            display: 'flex',
+            flexDirection: 'column',
+            fontSize: 14,
+            fontWeight: 600,
+            boxSizing: 'border-box',
           }}
         >
           <style>{`
@@ -239,11 +245,12 @@ export function ReceiptModal({ receipt, cashierName, onClose, onDelete }: Props)
               method={method}
               cashier={cashier}
               total={total}
+              isSingle={viewMode !== 'both'}
             />
           )}
 
           {viewMode === 'both' && (
-            <div style={{ textAlign: 'center', fontSize: 10, color: '#888', margin: '3mm 0' }}>
+            <div style={{ textAlign: 'center', fontSize: 13, fontWeight: 600, color: '#888', margin: '3mm 0' }}>
               ✂ - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
             </div>
           )}
@@ -256,6 +263,7 @@ export function ReceiptModal({ receipt, cashierName, onClose, onDelete }: Props)
               method={method}
               cashier={cashier}
               total={total}
+              isSingle={viewMode !== 'both'}
             />
           )}
         </div>
@@ -271,9 +279,10 @@ interface HalfProps {
   method: string;
   cashier: string;
   total: number | string | undefined;
+  isSingle?: boolean;
 }
 
-function ReceiptHalf({ receipt, copyLabel, isGuardian, method, cashier, total }: HalfProps) {
+function ReceiptHalf({ receipt, copyLabel, isGuardian, method, cashier, total, isSingle }: HalfProps) {
   const mText = monthsText(receipt);
   const items = receipt.items || [];
   const siblings = receipt.siblings || [];
@@ -285,8 +294,9 @@ function ReceiptHalf({ receipt, copyLabel, isGuardian, method, cashier, total }:
 
   return (
     <div
+      className={isSingle ? 'receipt-half receipt-half-single' : 'receipt-half'}
       style={{
-        minHeight: '120mm',
+        minHeight: isSingle ? 'calc(100vh - 16mm)' : 'calc(50vh - 10mm)',
         border: isCancelled ? '2px solid #DC2626' : `1px solid ${TEAL}`,
         padding: '10px 14px',
         boxSizing: 'border-box',
@@ -294,24 +304,31 @@ function ReceiptHalf({ receipt, copyLabel, isGuardian, method, cashier, total }:
         backgroundColor: isCancelled ? '#FFF8F8' : '#ffffff',
         borderRadius: '6px',
         position: 'relative',
+        display: 'flex',
+        flexDirection: 'column',
+        justifyContent: 'space-between',
+        fontSize: 14,
+        fontWeight: 600,
+        width: '100%',
+        pageBreakInside: 'avoid',
       }}
     >
       {/* Header with School Title, Phone Numbers, and Receipt Number */}
-      <div style={{ textAlign: 'center', fontWeight: 800, fontSize: 22, color: GOLD, letterSpacing: 1, lineHeight: 1.3 }}>
+      <div style={{ textAlign: 'center', fontWeight: 800, fontSize: 28, color: GOLD, letterSpacing: 1, lineHeight: 1.3 }}>
         Complexe La Providence
       </div>
-      <div style={{ textAlign: 'center', fontSize: 11, color: '#7d93a8', marginTop: 2, direction: 'ltr' }}>
+      <div style={{ textAlign: 'center', fontSize: 14, fontWeight: 600, color: '#7d93a8', marginTop: 2, direction: 'ltr' }}>
         Tel: 95420350 / 76624400
       </div>
 
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 6, marginBottom: 8, borderBottom: `2px solid ${TEAL}`, paddingBottom: 4 }}>
-        <div style={{ color: NAVY, fontWeight: 900, fontSize: 15 }}>
+        <div style={{ color: NAVY, fontWeight: 900, fontSize: 18 }}>
           {isFamily ? 'وصل استخلاص عائلي موحد' : 'وصل استخلاص'}{' '}
-          <span style={{ fontSize: 11, fontWeight: 500, color: '#7d93a8' }}>({copyLabel})</span>
+          <span style={{ fontSize: 14, fontWeight: 600, color: '#7d93a8' }}>({copyLabel})</span>
         </div>
-        <div style={{ fontSize: 13, fontWeight: 800, color: '#1F261C' }}>
+        <div style={{ fontSize: 14, fontWeight: 800, color: '#1F261C' }}>
           رقم الوصل:{' '}
-          <span style={{ color: '#DC2626', fontWeight: 900, fontSize: 15, letterSpacing: '0.5px' }}>
+          <span style={{ color: '#DC2626', fontWeight: 900, fontSize: 18, letterSpacing: '0.5px' }}>
             {receiptNumber} {isCancelled ? '(ملغى)' : ''}
           </span>
         </div>
@@ -326,14 +343,14 @@ function ReceiptHalf({ receipt, copyLabel, isGuardian, method, cashier, total }:
 
       {/* Family or Single Student Details Header */}
       {isFamily ? (
-        <div style={{ fontSize: 12, lineHeight: 1.6, borderBottom: `1px solid ${TEAL}`, paddingBottom: '6px' }}>
+        <div style={{ fontSize: 14, fontWeight: 600, lineHeight: 1.6, borderBottom: `1px solid ${TEAL}`, paddingBottom: '6px' }}>
           <div>الولي / العائلة: <b style={{ color: NAVY }}>{receipt.guardian_name || '—'}</b></div>
           {receipt.guardian_phone && <div>الهاتف: <span dir="ltr">{receipt.guardian_phone}</span></div>}
           <div>عدد الأبناء المستخلص لهم: <b style={{ color: NAVY }}>{siblings.length}</b></div>
           <div>تاريخ الاستخلاص: <b style={{ color: NAVY }}>{receipt.payment_date || '—'}</b></div>
         </div>
       ) : (
-        <div style={{ fontSize: 12, lineHeight: 1.6, borderBottom: `1px solid ${TEAL}`, paddingBottom: '6px' }}>
+        <div style={{ fontSize: 14, fontWeight: 600, lineHeight: 1.6, borderBottom: `1px solid ${TEAL}`, paddingBottom: '6px' }}>
           <div>
             التلميذ: <b style={{ color: NAVY }}>{receipt.student_name || '—'}</b>
             {receipt.student_code ? ` (${receipt.student_code})` : ''}
@@ -349,12 +366,12 @@ function ReceiptHalf({ receipt, copyLabel, isGuardian, method, cashier, total }:
       {/* Breakdown Section: Family Siblings Table vs Single Student List */}
       {isFamily ? (
         /* ===== تفاصيل الأبناء في الوصل العائلي ===== */
-        <div style={{ marginTop: 8, minHeight: '35mm' }}>
-          <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 4, color: NAVY }}>
+        <div style={{ marginTop: 8, minHeight: '35mm', fontSize: 14, fontWeight: 600 }}>
+          <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 4, color: NAVY }}>
             تفاصيل استخلاص الأبناء:
           </div>
 
-          <table style={{ width: '100%', fontSize: 11, borderCollapse: 'collapse', marginTop: 4 }}>
+          <table style={{ width: '100%', fontSize: 13, borderCollapse: 'collapse', marginTop: 4 }}>
             <thead>
               <tr style={{ background: TEAL, color: '#ffffff' }}>
                 <th style={{ textAlign: 'right', padding: '6px 8px', fontWeight: 700 }}>الابن(ة)</th>
@@ -368,7 +385,7 @@ function ReceiptHalf({ receipt, copyLabel, isGuardian, method, cashier, total }:
                 <tr key={i} style={{ borderBottom: '1px solid #e0f0ee' }}>
                   <td style={{ padding: '5px 8px', fontWeight: 700, color: NAVY }}>
                     {sib.student_name}
-                    {sib.student_code && <span style={{ fontSize: 10, color: '#7d93a8', fontWeight: 'normal' }}> ({sib.student_code})</span>}
+                    {sib.student_code && <span style={{ fontSize: 13, color: '#7d93a8', fontWeight: 600 }}> ({sib.student_code})</span>}
                   </td>
                   <td style={{ padding: '5px 8px', color: '#555' }}>{sib.level_section || '—'}</td>
                   <td style={{ padding: '5px 8px' }}>
@@ -414,11 +431,11 @@ function ReceiptHalf({ receipt, copyLabel, isGuardian, method, cashier, total }:
         /* ===== تفاصيل التلميذ الفردي ===== */
         isGuardian ? (
           /* وصل الولي الفردي: بدون مبالغ */
-          <div style={{ marginTop: 8, minHeight: '35mm' }}>
-            <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 4, color: NAVY }}>
+          <div style={{ marginTop: 8, minHeight: '35mm', fontSize: 14, fontWeight: 600 }}>
+            <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 4, color: NAVY }}>
               البنود والخدمات المستخلصة:
             </div>
-            <ul style={{ margin: 0, paddingRight: 18, fontSize: 12, lineHeight: 1.5 }}>
+            <ul style={{ margin: 0, paddingRight: 18, fontSize: 14, fontWeight: 600, lineHeight: 1.5 }}>
               {items.map((item, i) => (
                 <li key={i} style={{ color: '#222' }}>
                   {itemLabel(item)}
@@ -427,7 +444,7 @@ function ReceiptHalf({ receipt, copyLabel, isGuardian, method, cashier, total }:
             </ul>
 
             {remaining !== null && (
-              <div style={{ marginTop: 8, padding: '5px 8px', borderRadius: '4px', backgroundColor: remaining > 0 ? '#FDF2F2' : '#F4F7F3', border: `1px solid ${remaining > 0 ? '#FCA5A5' : '#C8E6C9'}`, fontSize: 11 }}>
+              <div style={{ marginTop: 8, padding: '5px 8px', borderRadius: '4px', backgroundColor: remaining > 0 ? '#FDF2F2' : '#F4F7F3', border: `1px solid ${remaining > 0 ? '#FCA5A5' : '#C8E6C9'}`, fontSize: 13, fontWeight: 600 }}>
                 <b>حالة المتخلد بالذمة:</b>{' '}
                 {remaining > 0 ? (
                   <span style={{ color: '#DC2626', fontWeight: 700 }}>يوجد مبلغ متبقي بالذمة</span>
@@ -439,8 +456,8 @@ function ReceiptHalf({ receipt, copyLabel, isGuardian, method, cashier, total }:
           </div>
         ) : (
           /* الوصل الإداري الفردي: التفاصيل المالية كاملة */
-          <div style={{ marginTop: 6, minHeight: '35mm' }}>
-            <table style={{ width: '100%', fontSize: 12, borderCollapse: 'collapse' }}>
+          <div style={{ marginTop: 6, minHeight: '35mm', fontSize: 14, fontWeight: 600 }}>
+            <table style={{ width: '100%', fontSize: 13, borderCollapse: 'collapse' }}>
               <thead>
                 <tr style={{ background: TEAL, color: '#ffffff' }}>
                   <th style={{ textAlign: 'right', padding: '6px 8px' }}>البند</th>
@@ -470,7 +487,7 @@ function ReceiptHalf({ receipt, copyLabel, isGuardian, method, cashier, total }:
             </table>
 
             {remaining !== null && (
-              <div style={{ marginTop: 6, fontSize: 11, color: remaining > 0 ? '#DC2626' : '#2E7D32', fontWeight: 700 }}>
+              <div style={{ marginTop: 6, fontSize: 13, color: remaining > 0 ? '#DC2626' : '#2E7D32', fontWeight: 700 }}>
                 المتخلد بالذمة المتبقي: {money(remaining)} د.ت
               </div>
             )}
@@ -479,16 +496,18 @@ function ReceiptHalf({ receipt, copyLabel, isGuardian, method, cashier, total }:
       )}
 
       {/* البيانات التشغيلية والتواقيع */}
-      <div style={{ fontSize: 11, marginTop: 8, borderTop: `1px solid ${TEAL}`, paddingTop: 6 }}>
-        الطريقة: <b>{method}</b> | رقم العملية: <b style={{ color: '#DC2626', fontWeight: 900 }}>{receiptNumber}</b>
-        {receipt.reference ? ` | المرجع: ${receipt.reference}` : ''}
-        <br />
-        المسؤول / المحصل: <b style={{ color: NAVY }}>{cashier}</b>
-      </div>
+      <div style={{ marginTop: 'auto', paddingTop: 6 }}>
+        <div style={{ fontSize: 14, fontWeight: 600, borderTop: `1px solid ${TEAL}`, paddingTop: 6 }}>
+          الطريقة: <b>{method}</b> | رقم العملية: <b style={{ color: '#DC2626', fontWeight: 900 }}>{receiptNumber}</b>
+          {receipt.reference ? ` | المرجع: ${receipt.reference}` : ''}
+          <br />
+          المسؤول / المحصل: <b style={{ color: NAVY }}>{cashier}</b>
+        </div>
 
-      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, marginTop: 10, color: '#444' }}>
-        <span>توقيع الولي: ______________</span>
-        <span>توقيع الإدارة: ______________</span>
+        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, fontWeight: 600, marginTop: 10, color: '#444' }}>
+          <span>توقيع الولي: ______________</span>
+          <span>توقيع الإدارة: ______________</span>
+        </div>
       </div>
     </div>
   );

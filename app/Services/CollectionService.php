@@ -111,7 +111,7 @@ class CollectionService
                 // التوزيع الصريح على ديون السنوات السابقة (إن أرسله القابض) —
                 // يُتحقَّق منه ويُقفَل قبل إنشاء الدفعة، فيبقي المتبقّي سليماً.
                 $priorPlanned = $this->processPriorAllocations($data, $enrollment);
-                $priorTotal = round((float) array_sum($priorPlanned), 2);
+                $priorTotal = round((float) array_sum(array_column($priorPlanned, 'amount')), 2);
 
                 $total = round($itemsTotal + $priorTotal, 2);
 
@@ -136,17 +136,31 @@ class CollectionService
                 // فيصنّفها الدفتر كقبض دَين سابق لا كمدخول جديد.
                 $allocationsBreakdown = [];
 
-                foreach ($priorPlanned as $feeId => $amount) {
+                foreach ($priorPlanned as $priorItem) {
+                    $feeId = $priorItem['student_fee_id'];
+                    $amount = $priorItem['amount'];
                     $oldFee = StudentFee::with('feeType:id,name_ar')->find($feeId);
 
                     PaymentAllocation::create([
                         'payment_id' => $payment->id,
                         'student_fee_id' => $feeId,
+                        'manual_student_debt_id' => $priorItem['manual_student_debt_id'],
+                        'opening_balance_id' => $priorItem['opening_balance_id'],
                         'amount_allocated' => $amount,
                     ]);
 
                     $this->paymentService->recalculateStudentFeeStatus($feeId);
                     $feeIds[] = $feeId;
+
+                    if ($priorItem['manual_student_debt_id']) {
+                        $debt = ManualStudentDebt::find($priorItem['manual_student_debt_id']);
+                        if ($debt) {
+                            $rem = $debt->outstanding();
+                            $debt->update([
+                                'status' => $rem <= 0 ? ManualStudentDebt::STATUS_PAID : ManualStudentDebt::STATUS_PARTIAL,
+                            ]);
+                        }
+                    }
 
                     $label = $oldFee?->description
                         ?? $oldFee?->feeType?->name_ar
@@ -163,6 +177,8 @@ class CollectionService
                     $allocationsBreakdown[] = [
                         'type' => 'prior_year',
                         'student_fee_id' => (int) $feeId,
+                        'manual_student_debt_id' => $priorItem['manual_student_debt_id'],
+                        'opening_balance_id' => $priorItem['opening_balance_id'],
                         'description' => $label,
                         'amount' => (float) $amount,
                     ];
@@ -363,13 +379,13 @@ class CollectionService
      *  - الدَّين اليدوي يجب أن يكون محمولاً إلى سنة تسجيل التلميذ الحالية وغير ملغى.
      *  - لا يمكن توزيع أكثر من متبقّي الرسم (مع القفل ضد التزامن).
      *
-     * @return array<int,float> fee_id => مبلغ موزَّع
+     * @return array<int,array<string,mixed>> مصفوفة التوزيعات المخططة
      */
     private function processPriorAllocations(array $data, Enrollment $enrollment): array
     {
         $input = $data['prior_allocations'] ?? [];
-        $planned = [];
-        $plannedManualDebts = [];
+        $plannedItems = [];
+        $plannedFeesTotal = [];
 
         foreach ($input as $allocation) {
             $feeId = (int) ($allocation['student_fee_id'] ?? 0);
@@ -436,42 +452,26 @@ class CollectionService
 
             $outstanding = $fee->outstanding();
 
-            $alreadyPlanned = (float) ($planned[$feeId] ?? 0.0);
-            if ($alreadyPlanned + $amount > $outstanding) {
+            $alreadyPlannedForFee = (float) ($plannedFeesTotal[$feeId] ?? 0.0);
+            if ($alreadyPlannedForFee + $amount > $outstanding) {
                 throw new \InvalidArgumentException(
-                    'مبلغ التوزيع ('.number_format($alreadyPlanned + $amount, 2, '.', '')
+                    'مبلغ التوزيع ('.number_format($alreadyPlannedForFee + $amount, 2, '.', '')
                     .') يتجاوز المتبقّي ('.number_format($outstanding, 2, '.', '')
                     .') للرسم: '.$fee->description
                 );
             }
 
-            $planned[$feeId] = round($alreadyPlanned + $amount, 2);
+            $plannedFeesTotal[$feeId] = round($alreadyPlannedForFee + $amount, 2);
 
-            if ($manualDebtId > 0) {
-                $plannedManualDebts[$manualDebtId] = round(
-                    (float) ($plannedManualDebts[$manualDebtId] ?? 0.0) + $amount,
-                    2
-                );
-            }
+            $plannedItems[] = [
+                'student_fee_id' => $feeId,
+                'manual_student_debt_id' => $manualDebtId > 0 ? $manualDebtId : null,
+                'opening_balance_id' => $openingBalanceId > 0 ? $openingBalanceId : null,
+                'amount' => $amount,
+            ];
         }
 
-        // تحديث حالة الديون اليدوية بعد التخطيط من المتبقّي الفعلي لا من واجهة المستخدم.
-        foreach ($plannedManualDebts as $debtId => $amount) {
-            /** @var ManualStudentDebt|null $debt */
-            $debt = ManualStudentDebt::query()->find($debtId);
-            if (! $debt) {
-                continue;
-            }
-
-            $remaining = round(max(0, $debt->outstanding() - $amount), 2);
-            $debt->update([
-                'status' => $remaining > 0
-                    ? ManualStudentDebt::STATUS_PARTIAL
-                    : ManualStudentDebt::STATUS_PAID,
-            ]);
-        }
-
-        return $planned;
+        return $plannedItems;
     }
 
     public function monthLedger(int $enrollmentId): array

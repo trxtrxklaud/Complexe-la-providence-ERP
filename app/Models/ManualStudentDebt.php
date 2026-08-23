@@ -72,19 +72,21 @@ class ManualStudentDebt extends Model
         return $this->belongsTo(User::class, 'cancelled_by');
     }
 
+    /** التوزيعات المالية المخصصة لهذا الدين تحديداً. */
+    public function paymentAllocations(): \Illuminate\Database\Eloquent\Relations\HasMany
+    {
+        return $this->hasMany(PaymentAllocation::class, 'manual_student_debt_id');
+    }
+
     public function isCancelled(): bool
     {
         return $this->cancelled_at !== null;
     }
 
-    /** مجموع ما حُصّل فعلاً من الدفعات غير الملغاة. */
+    /** مجموع ما حُصّل فعلاً من الدفعات المخصصة لهذا الدين وغير الملغاة. */
     public function collected(): float
     {
-        if (! $this->source_student_fee_id) {
-            return 0.0;
-        }
-
-        return round((float) PaymentAllocation::where('student_fee_id', $this->source_student_fee_id)
+        return round((float) $this->paymentAllocations()
             ->whereHas('payment', fn ($q) => $q->whereNull('cancelled_at'))
             ->sum('amount_allocated'), 2);
     }

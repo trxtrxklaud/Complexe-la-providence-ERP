@@ -3,8 +3,12 @@
 namespace App\Http\Controllers;
 
 use App\Models\AcademicYear;
+use App\Models\Employee;
+use App\Models\EmployeeLiability;
 use App\Models\Enrollment;
+use App\Models\Level;
 use App\Models\ManualStudentDebt;
+use App\Models\Section;
 use App\Models\StudentFee;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -93,21 +97,13 @@ class ManualDebtController extends Controller
                     );
                 }
 
-                $bridgeFee = StudentFee::create([
-                    'enrollment_id' => $priorEnrollment->id,
-                    'fee_plan_id' => null,
-                    'fee_type_id' => null,
-                    'club_monthly_fee_id' => null,
-                    'description' => 'دَين قديم: '.$data['description'],
-                    'amount_due' => number_format((float) $data['original_amount'], 2, '.', ''),
-                    'due_date' => $priorEnrollment->academicYear->start_date,
-                    'status' => 'pending',
-                ]);
+                $bridgeFee = $this->createBridgeFee(
+                    $data,
+                    $priorEnrollment->id,
+                    (string) $priorEnrollment->academicYear->start_date
+                );
 
-                return ManualStudentDebt::create([
-                    ...$data,
-                    'source_student_fee_id' => $bridgeFee->id,
-                ]);
+                return $this->createDebtRecord($data, $bridgeFee->id);
             });
         } catch (RuntimeException $e) {
             return response()->json(['message' => $e->getMessage()], 422);
@@ -175,5 +171,265 @@ class ManualDebtController extends Controller
             'student:id,first_name,last_name',
             'cancelledBy:id,first_name,last_name',
         ]));
+    }
+
+    // ==================== الإدخال الجماعي ====================
+
+    /**
+     * خيارات الإدخال الجماعي: المستويات والأقسام والإطارات النشطة والسنة
+     * النشطة، مع مستحقّات الإطارات القائمة هذه السنة (لتعبئة الجدول مسبقاً).
+     *
+     * مسار مستقل تحت manage_treasury لأن /levels و /sections و /employees
+     * محمية بصلاحيات أخرى لا يملكها صاحب الخزينة.
+     */
+    public function bulkOptions(): JsonResponse
+    {
+        $activeYear = AcademicYear::where('is_active', true)->first();
+
+        $existingLiabilities = EmployeeLiability::query()
+            ->when($activeYear, fn ($q) => $q->where('academic_year_id', $activeYear->id))
+            ->whereNull('cancelled_at')
+            ->get()
+            ->map(fn (EmployeeLiability $l) => [
+                'id' => $l->id,
+                'employee_id' => $l->employee_id,
+                'liability_type' => $l->liability_type,
+                'original_amount' => (float) $l->original_amount,
+                'paid_amount' => $l->paid(),
+                'outstanding_amount' => $l->outstanding(),
+                'notes' => $l->notes,
+                'status' => $l->status,
+                'original_year_label' => $l->original_year_label,
+                'created_at' => $l->created_at?->toIso8601String(),
+            ])
+            ->values();
+
+        return response()->json([
+            'active_year' => $activeYear ? [
+                'id' => $activeYear->id,
+                'name' => $activeYear->name,
+                'start_date' => $activeYear->start_date,
+            ] : null,
+            'levels' => Level::orderBy('order')->get(['id', 'name']),
+            'sections' => Section::orderBy('name')->get(['id', 'name', 'level_id']),
+            'employees' => Employee::where('is_active', true)
+                ->orderBy('first_name')
+                ->orderBy('last_name')
+                ->get(['id', 'first_name', 'last_name', 'job_title', 'staff_type']),
+            'existing_liabilities' => $existingLiabilities,
+        ]);
+    }
+
+    /**
+     * تلاميذ قسم في سنة دراسية (النشطة افتراضياً) مع دَينهم القديم القائم
+     * إن وُجد — لتعبئة سطور الجدول مسبقاً بلا ازدواج.
+     */
+    public function sectionStudents(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'section_id' => ['required', 'integer', 'exists:sections,id'],
+            'academic_year_id' => ['nullable', 'integer', 'exists:academic_years,id'],
+        ]);
+
+        $yearId = $data['academic_year_id'] ?? AcademicYear::where('is_active', true)->value('id');
+
+        if (! $yearId) {
+            return response()->json(['message' => 'لا توجد سنة دراسية نشطة'], 422);
+        }
+
+        $students = Enrollment::query()
+            ->join('students', 'students.id', '=', 'enrollments.student_id')
+            ->where('enrollments.academic_year_id', $yearId)
+            ->where('enrollments.section_id', $data['section_id'])
+            ->where('enrollments.status', 'active')
+            ->whereNull('enrollments.deleted_at')
+            ->orderBy('students.first_name')
+            ->orderBy('students.last_name')
+            ->get([
+                'students.id',
+                'students.first_name',
+                'students.last_name',
+                'students.student_code',
+            ]);
+
+        $existingDebts = ManualStudentDebt::query()
+            ->where('academic_year_id', $yearId)
+            ->whereNull('cancelled_at')
+            ->whereIn('student_id', $students->pluck('id'))
+            ->get()
+            ->keyBy('student_id');
+
+        $rows = $students->map(fn ($student) => [
+            'id' => $student->id,
+            'full_name' => trim($student->first_name.' '.$student->last_name),
+            'student_code' => $student->student_code,
+            'existing' => $existingDebts->has($student->id) ? [
+                'id' => $existingDebts[$student->id]->id,
+                'debt_type' => $existingDebts[$student->id]->debt_type,
+                'original_amount' => (float) $existingDebts[$student->id]->original_amount,
+                'notes' => $existingDebts[$student->id]->notes,
+                'collected_amount' => $existingDebts[$student->id]->collected(),
+            ] : null,
+        ])->values();
+
+        return response()->json([
+            'academic_year_id' => (int) $yearId,
+            'students' => $rows,
+        ]);
+    }
+
+    /**
+     * حفظ ديون قديمة لعدة تلاميذ دفعة واحدة (سطر لكل تلميذ له مبلغ > 0).
+     *
+     * قواعد:
+     *  - سنة المنشأ إجبارية ولا تطابق السنة الدراسية الحالية.
+     *  - تلميذ له دَين قائم هذه السنة يُحدَّث سطره (لا ازدواج)، ويُمنع
+     *    التحديث إن حُصّل منه جزء.
+     *  - الجسر رسم حرّ تحت تسجيل التلميذ الحالي بتاريخ استحقاق = بداية
+     *    السنة؛ الدفتر يصنّف قبضه متخلّدات لكونه دَيناً يدوياً مدخولاً.
+     */
+    public function bulkStore(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'academic_year_id' => ['nullable', 'integer', 'exists:academic_years,id'],
+            'original_year_label' => ['required', 'string', 'max:20'],
+            'items' => ['required', 'array', 'min:1', 'max:300'],
+            'items.*.student_id' => ['required', 'integer', 'distinct', 'exists:students,id'],
+            'items.*.debt_type' => ['required', 'string', 'in:'.implode(',', ManualStudentDebt::DEBT_TYPES)],
+            'items.*.amount' => ['required', 'numeric', 'min:0', 'max:1000000'],
+            'items.*.notes' => ['nullable', 'string', 'max:2000'],
+        ]);
+
+        $yearId = $data['academic_year_id'] ?? AcademicYear::where('is_active', true)->value('id');
+
+        if (! $yearId) {
+            return response()->json(['message' => 'لا توجد سنة دراسية نشطة؛ حدِّد السنة الدراسية'], 422);
+        }
+
+        $targetYear = AcademicYear::findOrFail($yearId);
+
+        if (trim($data['original_year_label']) === $targetYear->name) {
+            return response()->json([
+                'message' => 'سنة المنشأ ('.$data['original_year_label'].') لا يمكن أن تساوي السنة الدراسية الحالية',
+            ], 422);
+        }
+
+        $userId = $request->user()?->id;
+        $description = 'ديون قديمة — إدخال جماعي ('.$data['original_year_label'].')';
+
+        try {
+            $result = DB::transaction(function () use ($data, $targetYear, $userId, $description) {
+                $created = 0;
+                $updated = 0;
+
+                $enrollments = Enrollment::query()
+                    ->where('academic_year_id', $targetYear->id)
+                    ->whereIn('student_id', array_map(fn ($item) => (int) $item['student_id'], $data['items']))
+                    ->get()
+                    ->keyBy('student_id');
+
+                foreach ($data['items'] as $item) {
+                    $amount = round((float) $item['amount'], 2);
+
+                    // المبلغ صفر أو أقلّ → لا سجلّ لهذا التلميذ.
+                    if ($amount <= 0) {
+                        continue;
+                    }
+
+                    $studentId = (int) $item['student_id'];
+                    $enrollment = $enrollments->get($studentId);
+
+                    if (! $enrollment) {
+                        throw new RuntimeException(
+                            'التلميذ رقم '.$studentId.' غير مسجّل في السنة '.$targetYear->name
+                        );
+                    }
+
+                    $itemData = [
+                        'student_id' => $studentId,
+                        'academic_year_id' => (int) $targetYear->id,
+                        'original_year_label' => $data['original_year_label'],
+                        'debt_type' => $item['debt_type'],
+                        'description' => $description,
+                        'original_amount' => $amount,
+                        'notes' => $item['notes'] ?? null,
+                    ];
+
+                    /** @var ManualStudentDebt|null $existing */
+                    $existing = ManualStudentDebt::query()
+                        ->where('student_id', $studentId)
+                        ->where('academic_year_id', $targetYear->id)
+                        ->whereNull('cancelled_at')
+                        ->lockForUpdate()
+                        ->first();
+
+                    if ($existing) {
+                        if ($existing->collected() > 0) {
+                            throw new RuntimeException(
+                                'دَين التلميذ رقم '.$studentId.' حُصّل منه '.number_format($existing->collected(), 2, '.', '').'؛ عدِّله من قائمة الديون لا بالإدخال الجماعي'
+                            );
+                        }
+
+                        $existing->update([
+                            'original_year_label' => $itemData['original_year_label'],
+                            'debt_type' => $itemData['debt_type'],
+                            'original_amount' => $amount,
+                            'notes' => $itemData['notes'],
+                        ]);
+                        $existing->sourceStudentFee?->update([
+                            'amount_due' => number_format($amount, 2, '.', ''),
+                        ]);
+                        $updated++;
+
+                        continue;
+                    }
+
+                    $bridgeFee = $this->createBridgeFee($itemData, $enrollment->id, (string) $targetYear->start_date);
+                    $this->createDebtRecord($itemData, $bridgeFee->id, $userId);
+                    $created++;
+                }
+
+                return ['created' => $created, 'updated' => $updated];
+            });
+        } catch (RuntimeException $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
+
+        return response()->json([
+            'message' => 'تم حفظ ديون التلاميذ: '.$result['created'].' جديداً، '.$result['updated'].' محدَّثاً',
+            'created' => $result['created'],
+            'updated' => $result['updated'],
+        ], 201);
+    }
+
+    // ==================== الدوال المساعدة ====================
+
+    /**
+     * الرسم الجسر: حرّ (بلا معلیم/نوع/نادٍ) تحت تسجيل محدَّد.
+     * توزيعات الدفع تشير حتماً إلى student_fee، والدفتر يصنّف قبض الجسر
+     * دَيناً قديماً اعتماداً على ارتباطه بسجلّ دَين يدوي.
+     */
+    private function createBridgeFee(array $data, int $enrollmentId, string $dueDate): StudentFee
+    {
+        return StudentFee::create([
+            'enrollment_id' => $enrollmentId,
+            'fee_plan_id' => null,
+            'fee_type_id' => null,
+            'club_monthly_fee_id' => null,
+            'description' => 'دَين قديم: '.$data['description'],
+            'amount_due' => number_format((float) $data['original_amount'], 2, '.', ''),
+            'due_date' => $dueDate,
+            'status' => 'pending',
+        ]);
+    }
+
+    private function createDebtRecord(array $data, int $bridgeFeeId, ?int $userId = null): ManualStudentDebt
+    {
+        return ManualStudentDebt::create([
+            ...$data,
+            'source_student_fee_id' => $bridgeFeeId,
+            'status' => ManualStudentDebt::STATUS_PENDING,
+            'created_by' => $userId,
+        ]);
     }
 }

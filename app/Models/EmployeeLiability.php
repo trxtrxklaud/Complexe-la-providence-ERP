@@ -93,7 +93,7 @@ class EmployeeLiability extends Model
         return $this->cancelled_at !== null;
     }
 
-    /** المبلغ المدفوع فعلاً كما هو مثبت في الدفتر النقدي المركزي. */
+    /** المبلغ المحصّل فعلاً كما هو مثبت في الدفتر النقدي المركزي (تحصيل دين عامل قديم). */
     public function paid(): float
     {
         if ($this->isCancelled()) {
@@ -101,7 +101,10 @@ class EmployeeLiability extends Model
         }
 
         return round((float) $this->cashTransactions()
-            ->where('category', CashTransaction::CATEGORY_OLD_LIABILITY_PAYMENT)
+            ->whereIn('category', [
+                CashTransaction::CATEGORY_OLD_LIABILITY_PAYMENT,
+                CashTransaction::CATEGORY_OLD_LIABILITY_COLLECTION,
+            ])
             ->whereNull('cancelled_at')
             ->sum('amount'), 2);
     }

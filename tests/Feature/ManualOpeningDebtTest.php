@@ -260,4 +260,74 @@ class ManualOpeningDebtTest extends TestCase
                 'summary' => ['auto', 'manual' => ['by_type'], 'grand_total'],
             ]);
     }
+
+    public function test_regular_allocation_leaves_debt_target_ids_null(): void
+    {
+        Sanctum::actingAs($this->adminUser());
+        [$student, , $currentYearId, $enrollment] = $this->studentWithTwoYears();
+        $feeType = $this->makeFeeType('القسط الشهري', 4000);
+
+        $this->postJson('/api/payments/collect', $this->collectPayload($student->id, $enrollment->id, [
+            'months' => ['2025-09'],
+            'items' => [['fee_type_id' => $feeType->id, 'amount' => 4000]],
+        ]))->assertCreated();
+
+        $allocation = PaymentAllocation::first();
+        $this->assertNotNull($allocation);
+        $this->assertNull($allocation->manual_student_debt_id);
+        $this->assertNull($allocation->opening_balance_id);
+    }
+
+    public function test_manual_student_debt_collection_saves_explicit_manual_student_debt_id(): void
+    {
+        Sanctum::actingAs($this->adminUser());
+        [$student, , $currentYearId, $enrollment] = $this->studentWithTwoYears();
+        $debt = $this->enterManualDebt($student->id, $currentYearId, 10000);
+
+        $this->postJson('/api/payments/collect', $this->collectPayload($student->id, $enrollment->id, [
+            'prior_allocations' => [['manual_student_debt_id' => $debt->id, 'amount' => 3000]],
+        ]))->assertCreated();
+
+        $allocation = PaymentAllocation::first();
+        $this->assertNotNull($allocation);
+        $this->assertSame($debt->id, $allocation->manual_student_debt_id);
+        $this->assertNull($allocation->opening_balance_id);
+        $this->assertSame($debt->source_student_fee_id, $allocation->student_fee_id);
+
+        $this->assertSame(3000.0, $debt->collected());
+        $this->assertSame(7000.0, $debt->outstanding());
+    }
+
+    public function test_two_debts_sharing_source_fee_do_not_mix_payments(): void
+    {
+        Sanctum::actingAs($this->adminUser());
+        [$student, , $currentYearId, $enrollment] = $this->studentWithTwoYears();
+        $debt1 = $this->enterManualDebt($student->id, $currentYearId, 5000);
+
+        // إنشاء دين ثانٍ بنفس الرسم الجسر (لاختبار العزل المحاسبي الصريح)
+        $debt2 = ManualStudentDebt::create([
+            'student_id' => $student->id,
+            'academic_year_id' => $currentYearId,
+            'source_student_fee_id' => $debt1->source_student_fee_id,
+            'original_year_label' => '2024/2025',
+            'debt_type' => 'tuition',
+            'description' => 'دين ثانٍ',
+            'original_amount' => 3000,
+            'status' => ManualStudentDebt::STATUS_PENDING,
+        ]);
+
+        $this->postJson('/api/payments/collect', $this->collectPayload($student->id, $enrollment->id, [
+            'prior_allocations' => [['manual_student_debt_id' => $debt1->id, 'amount' => 2000]],
+        ]))->assertCreated();
+
+        $debt1->refresh();
+        $debt2->refresh();
+
+        // التخصيص محسوب للدين 1 فقط بفضل manual_student_debt_id الصريح
+        $this->assertSame(2000.0, $debt1->collected());
+        $this->assertSame(3000.0, $debt1->outstanding());
+
+        $this->assertSame(0.0, $debt2->collected());
+        $this->assertSame(3000.0, $debt2->outstanding());
+    }
 }
