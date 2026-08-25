@@ -475,7 +475,21 @@ class CollectionService
                 throw new \InvalidArgumentException('الرسم رقم '.$feeId.' غير موجود لهذا التلميذ');
             }
 
-            if ((int) $fee->enrollment?->academic_year_id === (int) $enrollment->academic_year_id) {
+            // جسر الدَّين اليدوي المُدخل جماعياً يقع تحت تسجيل السنة الحالية عمداً
+            // (لا تسجيل سابق للمستوى الجديد). يُستثنى من فحص «السنة الحالية» فقط
+            // عندما تتحقق العلاقة الفعلية كاملة: manual_student_debt_id يشير
+            // فعلاً إلى دَين نشط لنفس التلميذ ومرتبط بهذا الرسم تحديداً.
+            // التخصيصات بلا هدف صريح تبقى مرفوضة كما هي.
+            $isManualDebtBridge = $manualDebtId > 0
+                && (int) $fee->id === (int) $feeId
+                && ManualStudentDebt::query()
+                    ->whereKey($manualDebtId)
+                    ->where('source_student_fee_id', $fee->id)
+                    ->where('student_id', (int) $enrollment->student_id)
+                    ->whereNull('cancelled_at')
+                    ->exists();
+
+            if (! $isManualDebtBridge && (int) $fee->enrollment?->academic_year_id === (int) $enrollment->academic_year_id) {
                 throw new \InvalidArgumentException(
                     'الرسم «'.$fee->description.'» من السنة الحالية؛ قائمة المعاليم تعالجه لا متخلّدات السنوات السابقة'
                 );

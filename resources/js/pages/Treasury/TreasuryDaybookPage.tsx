@@ -183,6 +183,9 @@ function DayCard({
         </div>
       </div>
 
+      <TotalRow label="تحصيل ديون قديمة" value={day.prior_year_debt} />
+      <TotalRow label="إجمالي المقبوضات النقدية" value={day.income.total + (day.prior_year_debt ?? 0)} strong />
+      <TotalRow label="الدخل المحقق للسنة الحالية" value={day.income.total} />
       <TotalRow label="الدخل الصافي" value={day.net_income} strong danger />
       <TotalRow label="السحوبات" value={day.withdrawals} />
       {day.details && day.details.withdrawals.length > 0 && (
@@ -190,13 +193,15 @@ function DayCard({
           <DetailList title="تفاصيل السحوبات" items={day.details.withdrawals} />
         </div>
       )}
-      <TotalRow label="الرصيد النهائي اليومي" value={day.balance} strong danger />
+      <TotalRow label="الرصيد بعد السحوبات" value={day.balance} strong danger />
 
       {showCumulative && (
         <div style={{ backgroundColor: C.bg }}>
-          <TotalRow label="الدخل الصافي التراكمي" value={day.cumulative.net_income} />
+          <TotalRow label="تحصيل ديون قديمة (تراكمي)" value={day.cumulative.prior_year_debt} />
+          <TotalRow label="إجمالي المقبوضات النقدية (تراكمي)" value={(day.cumulative.net_income ?? 0) + (day.cumulative.prior_year_debt ?? 0)} />
+          <TotalRow label="الدخل المحقق للسنة الحالية (تراكمي)" value={day.cumulative.net_income} />
           <TotalRow label="السحوبات التراكمية" value={day.cumulative.withdrawals} />
-          <TotalRow label="الرصيد التراكمي بعد السحب" value={day.cumulative.balance} strong danger />
+          <TotalRow label="الرصيد بعد السحوبات (تراكمي)" value={day.cumulative.balance} strong danger />
         </div>
       )}
 

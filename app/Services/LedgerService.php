@@ -150,9 +150,17 @@ class LedgerService
             // قبض دين من سنة سابقة ليس مدخولاً للسنة الحالية: يُسجَّل في الخزينة
             // كبند مستقل (prior_year_debt) لا يدخل في الدخل الصافي ولا في المداخيل.
             $feeYearId = $fee?->enrollment?->academic_year_id;
-            $isPriorYearDebt = $feeYearId !== null
-                && $paymentYearId !== null
-                && (int) $feeYearId !== (int) $paymentYearId;
+
+            // الهدف الصريح manual_student_debt_id يحسم التصنيف وحده: تحصيل دَين
+            // قديم مدخل يدوياً — حتى لو كان رسم الجسر تحت تسجيل السنة الحالية
+            // (الإدخال الجماعي بلا تسجيلات سابقة). بلا هدف صريح يبقى التصنيف
+            // سنة التسجيل كما هو، فلا يتحول أي رسم عادي إلى دين قديم.
+            $isManualDebtTarget = (int) ($allocation->manual_student_debt_id ?? 0) > 0;
+
+            $isPriorYearDebt = $isManualDebtTarget
+                || ($feeYearId !== null
+                    && $paymentYearId !== null
+                    && (int) $feeYearId !== (int) $paymentYearId);
 
             $category = $isPriorYearDebt
                 ? CashTransaction::CATEGORY_PRIOR_YEAR_DEBT

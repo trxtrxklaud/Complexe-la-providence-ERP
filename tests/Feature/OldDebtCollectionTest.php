@@ -347,6 +347,16 @@ class OldDebtCollectionTest extends TestCase
         $this->assertDatabaseCount('manual_student_debts', 2);
     }
 
+    public function test_authenticated_collect_never_returns_401(): void
+    {
+        $debt = $this->createDebt('tuition', 1000);
+
+        // مستخدم مصادق بصلاحية صحيحة: أي نتيجة تقبل ما عدا 401 (201 متوقع).
+        $response = $this->collectDebt($debt, 300);
+        $this->assertNotSame(401, $response->status(), 'مستخدم مصادق يجب ألا يصله 401');
+        $response->assertCreated();
+    }
+
     public function test_zero_total_collect_is_rejected_k1(): void
     {
         $debt = $this->createDebt('tuition', 500);
