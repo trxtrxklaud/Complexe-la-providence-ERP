@@ -13,6 +13,7 @@ import {
   bulkCreateLiabilities,
   cancelEmployeeLiability,
   cancelManualDebt,
+  collectEmployeeLiability,
   createEmployeeLiability,
   createManualDebt,
   fetchBulkOptions,
@@ -657,18 +658,39 @@ export function OpeningBalancesPage() {
       setError('المبلغ يجب أن يكون أكبر من صفر');
       return;
     }
+    const isDebt = payTarget.liability_type === 'debt';
     setPayBusy(true);
     setError('');
     try {
-      await payEmployeeLiability(payTarget.id, {
-        amount: value,
-        paid_at: payDate,
-        method: payMethod,
-        notes: payNotes.trim() || null,
-      });
+      if (isDebt) {
+        await collectEmployeeLiability(payTarget.id, {
+          amount: value,
+          paid_at: payDate,
+          method: payMethod,
+          notes: payNotes.trim() || null,
+        });
+        flash('تم تحصيل الدين — دخل إلى الخزينة في بند «تحصيل دين عامل قديم»');
+      } else {
+        await payEmployeeLiability(payTarget.id, {
+          amount: value,
+          paid_at: payDate,
+          method: payMethod,
+          notes: payNotes.trim() || null,
+        });
+        flash('تمّ خلاص دَين الإطار — خرج من الخزينة في بند «خلاص ديون إطارات قديمة»');
+      }
       setPayTarget(null);
-      flash('تمّ خلاص دَين الإطار — خرج من الخزينة في بند «خلاص ديون إطارات قديمة»');
       await reloadLiabilities();
+      // تحديث خيارات الإدخال الجماعي إن كانت محملة
+      if (bulkOptions) {
+        try {
+          const opts = await fetchBulkOptions();
+          setBulkOptions(opts);
+          const map = new Map<number, BulkOptions['existing_liabilities'][number]>();
+          opts.existing_liabilities.forEach((l) => map.set(l.employee_id, l));
+          setBulkExistingLiabilities(map);
+        } catch {}
+      }
     } catch (err) {
       setError(errorMessage(err));
     } finally {
@@ -1002,8 +1024,8 @@ export function OpeningBalancesPage() {
                               <td className="no-print px-3 py-2.5">
                                 <div className="flex items-center gap-1.5">
                                   {!cancelled && outstanding > 0 ? (
-                                    <button type="button" onClick={() => openPay(liability)} title="خلاص دَين الإطار" className="px-2.5 py-1.5 rounded-lg text-xs font-medium text-white" style={{ backgroundColor: C.forest }}>
-                                      خلاص
+                                    <button type="button" onClick={() => openPay(liability)} title={liability.liability_type === 'debt' ? 'تحصيل الدين' : 'خلاص المستحق'} className="px-2.5 py-1.5 rounded-lg text-xs font-medium text-white" style={{ backgroundColor: C.forest }}>
+                                      {liability.liability_type === 'debt' ? 'تحصيل الدين' : 'خلاص المستحق'}
                                     </button>
                                   ) : null}
                                   {!cancelled && Number(liability.paid_amount ?? 0) === 0 ? (
@@ -1198,7 +1220,7 @@ export function OpeningBalancesPage() {
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-2">
                 <Wallet size={18} color={C.forest} />
-                <h3 className="font-bold" style={{ color: C.ink }}>خلاص دَين إطار قديم</h3>
+                <h3 className="font-bold" style={{ color: C.ink }}>{payTarget.liability_type === 'debt' ? 'تحصيل دين إطار قديم' : 'خلاص مستحق إطار قديم'}</h3>
               </div>
               <button onClick={() => setPayTarget(null)} type="button" className="text-sm" style={{ color: C.muted }}>إغلاق</button>
             </div>
@@ -1212,11 +1234,11 @@ export function OpeningBalancesPage() {
                 <input value={payAmount} onChange={(e) => setPayAmount(e.target.value)} type="number" step="0.01" min="0" className={fieldCls} style={{ ...fieldStyle, direction: 'ltr' }} />
               </div>
               <div>
-                <label className="block text-xs mb-1.5" style={{ color: C.muted }}>تاريخ الدفع</label>
+                <label className="block text-xs mb-1.5" style={{ color: C.muted }}>تاريخ {payTarget.liability_type === 'debt' ? 'التحصيل' : 'الدفع'}</label>
                 <input value={payDate} onChange={(e) => setPayDate(e.target.value)} type="date" className={fieldCls} style={{ ...fieldStyle, direction: 'ltr' }} />
               </div>
               <div>
-                <label className="block text-xs mb-1.5" style={{ color: C.muted }}>طريقة الدفع</label>
+                <label className="block text-xs mb-1.5" style={{ color: C.muted }}>طريقة {payTarget.liability_type === 'debt' ? 'التحصيل' : 'الدفع'}</label>
                 <select value={payMethod} onChange={(e) => setPayMethod(e.target.value)} className={fieldCls} style={fieldStyle}>
                   <option value="cash">نقداً</option>
                   <option value="bank">بنكياً</option>
@@ -1229,7 +1251,7 @@ export function OpeningBalancesPage() {
                 <input value={payNotes} onChange={(e) => setPayNotes(e.target.value)} className={fieldCls} style={fieldStyle} />
               </div>
             </div>
-            <p className="text-xs mt-3" style={{ color: C.muted }}>يخرج المبلغ من الخزينة في بند «خلاص ديون إطارات قديمة» — لا يُحتسب أجراً للسنة الحالية.</p>
+            <p className="text-xs mt-3" style={{ color: C.muted }}>{payTarget.liability_type === 'debt' ? 'سيدخل المبلغ إلى الخزينة في بند «تحصيل دين عامل قديم» — لا يُحتسب مدخولاً للسنة الحالية.' : 'يخرج المبلغ من الخزينة في بند «خلاص ديون إطارات قديمة» — لا يُحتسب أجراً للسنة الحالية.'}</p>
             <div className="flex gap-3 mt-4">
               <button
                 type="button"
@@ -1238,7 +1260,7 @@ export function OpeningBalancesPage() {
                 className="flex-1 py-2.5 rounded-xl text-white text-sm font-medium disabled:opacity-50"
                 style={{ backgroundColor: C.forest }}
               >
-                {payBusy ? 'جارٍ الخلاص…' : 'تأكيد الخلاص'}
+                {payBusy ? (payTarget.liability_type === 'debt' ? 'جارٍ التحصيل…' : 'جارٍ الخلاص…') : (payTarget.liability_type === 'debt' ? 'تأكيد التحصيل' : 'تأكيد الخلاص')}
               </button>
               <button type="button" onClick={() => setPayTarget(null)} className="px-5 py-2.5 rounded-xl text-sm" style={{ border: '1px solid ' + C.line, color: C.muted }}>
                 رجوع

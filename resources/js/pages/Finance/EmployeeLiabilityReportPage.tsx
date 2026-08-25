@@ -5,10 +5,12 @@ import { fetchYears, type AcademicYear } from '../../api/roster';
 import {
   DEBT_STATUS_LABELS,
   LIABILITY_TYPE_LABELS,
+  collectEmployeeLiability,
   fetchEmployeeLiabilitiesReport,
+  payEmployeeLiability,
   type EmployeeLiabilitiesReport,
 } from '../../api/manualDebts';
-import { errorMessage, money } from '../../lib/format';
+import { errorMessage, money, today } from '../../lib/format';
 import { ListSkeleton } from '../../components/DataSkeleton';
 
 const C = {
@@ -35,6 +37,10 @@ export function EmployeeLiabilityReportPage() {
   const [data, setData] = useState<EmployeeLiabilitiesReport | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
+  const [actionTarget, setActionTarget] = useState<EmployeeLiabilitiesReport['items'][number] | null>(null);
+  const [actionAmount, setActionAmount] = useState('');
+  const [actionBusy, setActionBusy] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -68,6 +74,46 @@ export function EmployeeLiabilityReportPage() {
   }, [yearId, status]);
 
   const fieldStyle = { border: '1px solid ' + C.line, backgroundColor: '#fff', color: C.ink };
+  const fieldCls = 'w-full px-3 py-2.5 rounded-xl text-sm';
+
+  const openAction = (item: EmployeeLiabilitiesReport['items'][number]) => {
+    setActionTarget(item);
+    setActionAmount(String(item.outstanding_amount ?? 0));
+  };
+
+  const submitAction = async () => {
+    if (!actionTarget) return;
+    const v = Number(actionAmount);
+    if (!Number.isFinite(v) || v <= 0) {
+      setError('المبلغ يجب أن يكون أكبر من صفر');
+      return;
+    }
+    setActionBusy(true);
+    setError('');
+    try {
+      if (actionTarget.liability_type === 'debt') {
+        await collectEmployeeLiability(actionTarget.id, { amount: v, paid_at: today() });
+        setNotice('تم تحصيل الدين — دخل إلى الخزينة');
+      } else {
+        await payEmployeeLiability(actionTarget.id, { amount: v, paid_at: today() });
+        setNotice('تم خلاص المستحق — خرج من الخزينة');
+      }
+      setActionTarget(null);
+      setActionAmount('');
+      // إعادة تحميل التقرير
+      setLoading(true);
+      const report = await fetchEmployeeLiabilitiesReport({
+        academic_year_id: yearId === '' ? null : yearId,
+        status: status || null,
+      });
+      setData(report);
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setActionBusy(false);
+      setLoading(false);
+    }
+  };
 
   return (
     <div className="px-6 pb-10 max-w-6xl mx-auto" dir="rtl">
@@ -99,6 +145,9 @@ export function EmployeeLiabilityReportPage() {
         <div>
           {error ? (
             <div className="mb-4 px-4 py-3 rounded-xl text-sm" style={{ backgroundColor: C.errorBg, color: C.error }}>{error}</div>
+          ) : null}
+          {notice ? (
+            <div className="mb-4 px-4 py-3 rounded-xl text-sm" style={{ backgroundColor: C.sage, color: C.deep }}>{notice}</div>
           ) : null}
 
           <div className="no-print flex flex-wrap gap-3 mb-6">
@@ -147,11 +196,14 @@ export function EmployeeLiabilityReportPage() {
                       <th className="text-right px-3 py-3 font-medium">المدفوع</th>
                       <th className="text-right px-3 py-3 font-medium">المتبقّي</th>
                       <th className="text-right px-3 py-3 font-medium">الحالة</th>
+                      <th className="no-print px-3 py-3 font-medium">الإجراء</th>
                     </tr>
                   </thead>
                   <tbody>
                     {data.items.map((item) => {
                       const cancelled = Boolean(item.cancelled_at);
+                      const isDebt = item.liability_type === 'debt';
+                      const canAct = !cancelled && Number(item.outstanding_amount ?? 0) > 0;
                       return (
                         <tr key={item.id} style={{ borderBottom: '1px solid ' + C.line, opacity: cancelled ? 0.55 : 1 }}>
                           <td className="px-3 py-2.5 font-medium" style={{ color: C.ink }}>{personLabel(item.employee)}</td>
@@ -166,6 +218,13 @@ export function EmployeeLiabilityReportPage() {
                           <td className="px-3 py-2.5" style={{ color: C.muted, direction: 'ltr', textAlign: 'right' }}>{money(item.paid_amount)}</td>
                           <td className="px-3 py-2.5 font-medium" style={{ color: C.forest, direction: 'ltr', textAlign: 'right' }}>{money(item.outstanding_amount)}</td>
                           <td className="px-3 py-2.5" style={{ color: C.muted }}>{DEBT_STATUS_LABELS[item.status] ?? item.status}</td>
+                          <td className="no-print px-3 py-2.5">
+                            {canAct ? (
+                              <button type="button" onClick={() => openAction(item)} className="px-3 py-1.5 rounded-lg text-xs font-medium text-white" style={{ backgroundColor: C.forest }}>
+                                {isDebt ? 'تحصيل الدين' : 'خلاص المستحق'}
+                              </button>
+                            ) : null}
+                          </td>
                         </tr>
                       );
                     })}
@@ -176,6 +235,28 @@ export function EmployeeLiabilityReportPage() {
           </div>
         </div>
       </PageShell>
+
+      {actionTarget ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ backgroundColor: 'rgba(31,38,28,0.45)' }}>
+          <div className="bg-white rounded-2xl w-full max-w-md p-6" dir="rtl">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="font-bold" style={{ color: C.ink }}>{actionTarget.liability_type === 'debt' ? 'تحصيل دين عامل قديم' : 'خلاص مستحق قديم'}</h3>
+              <button onClick={() => setActionTarget(null)} type="button" className="text-sm" style={{ color: C.muted }}>إغلاق</button>
+            </div>
+            <p className="text-sm mb-1" style={{ color: C.ink }}>{personLabel(actionTarget.employee)} — {actionTarget.description}</p>
+            <p className="text-xs mb-3" style={{ color: C.muted }}>المتبقي: {money(actionTarget.outstanding_amount)} د.ت • {actionTarget.liability_type === 'debt' ? 'سيدخل إلى الخزينة' : 'سيخرج من الخزينة'}</p>
+            <label className="block text-xs mb-1.5" style={{ color: C.muted }}>المبلغ (د.ت) *</label>
+            <input value={actionAmount} onChange={(e) => setActionAmount(e.target.value)} type="number" step="0.01" min="0" className={fieldCls} style={{ ...fieldStyle, direction: 'ltr' }} />
+            <p className="text-xs mt-3" style={{ color: C.muted }}>{actionTarget.liability_type === 'debt' ? 'سيدخل المبلغ إلى الخزينة في بند «تحصيل دين عامل قديم»' : 'سيخرج المبلغ من الخزينة'}</p>
+            <div className="flex gap-3 mt-4">
+              <button type="button" onClick={() => void submitAction()} disabled={actionBusy} className="flex-1 py-2.5 rounded-xl text-white text-sm font-medium disabled:opacity-50" style={{ backgroundColor: C.forest }}>
+                {actionBusy ? 'جارٍ التنفيذ…' : (actionTarget.liability_type === 'debt' ? 'تأكيد التحصيل' : 'تأكيد الخلاص')}
+              </button>
+              <button type="button" onClick={() => setActionTarget(null)} className="px-5 py-2.5 rounded-xl text-sm" style={{ border: '1px solid ' + C.line, color: C.muted }}>رجوع</button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

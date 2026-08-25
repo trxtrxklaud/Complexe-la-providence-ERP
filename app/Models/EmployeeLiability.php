@@ -93,18 +93,22 @@ class EmployeeLiability extends Model
         return $this->cancelled_at !== null;
     }
 
-    /** المبلغ المحصّل فعلاً كما هو مثبت في الدفتر النقدي المركزي (تحصيل دين عامل قديم). */
+    /** المبلغ المحصّل/المدفوع — يفرق بين دين للمؤسسة (IN) ومستحق للعامل (OUT). */
     public function paid(): float
     {
         if ($this->isCancelled()) {
             return 0.0;
         }
 
+        if (in_array($this->liability_type, ['debt', 'advance'], true)) {
+            return round((float) $this->cashTransactions()
+                ->where('category', CashTransaction::CATEGORY_OLD_LIABILITY_COLLECTION)
+                ->whereNull('cancelled_at')
+                ->sum('amount'), 2);
+        }
+
         return round((float) $this->cashTransactions()
-            ->whereIn('category', [
-                CashTransaction::CATEGORY_OLD_LIABILITY_PAYMENT,
-                CashTransaction::CATEGORY_OLD_LIABILITY_COLLECTION,
-            ])
+            ->where('category', CashTransaction::CATEGORY_OLD_LIABILITY_PAYMENT)
             ->whereNull('cancelled_at')
             ->sum('amount'), 2);
     }

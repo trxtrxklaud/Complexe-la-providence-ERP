@@ -95,6 +95,67 @@ class EmployeeLiabilityController extends Controller
     }
 
     /**
+     * تحصيل دين قديم على إطار/عامل — قبض داخل فقط، لا راتب ولا مصروف.
+     *
+     * الفئة old_liability_collection / IN — تدخل cash_in ولا تدخل
+     * current_year_income أو net_income.
+     */
+    public function collect(Request $request, EmployeeLiability $liability): JsonResponse
+    {
+        $data = $request->validate([
+            'amount' => ['required', 'numeric', 'min:0.01', 'max:1000000'],
+            'paid_at' => ['nullable', 'date'],
+            'method' => ['nullable', 'string', 'max:50'],
+            'reference' => ['nullable', 'string', 'max:100'],
+            'notes' => ['nullable', 'string', 'max:500'],
+        ]);
+
+        if ($liability->isCancelled()) {
+            return response()->json(['message' => 'لا يمكن تحصيل دين ملغى'], 422);
+        }
+        if ($liability->liability_type !== 'debt') {
+            // حالياً كل الديون الحالية نوعها debt؛ نحتفظ بالتحقق الصريح
+            // لعدم الاعتماد على الوصف النصي وحده.
+            return response()->json(['message' => 'هذا الالتزام ليس ديناً قابلاً للتحصيل'], 422);
+        }
+
+        $userId = $request->user()?->id;
+
+        try {
+            $result = DB::transaction(function () use ($liability, $data, $userId) {
+                $locked = EmployeeLiability::whereKey($liability->getKey())->lockForUpdate()->firstOrFail();
+                if ($locked->outstanding() < (float) $data['amount']) {
+                    throw new RuntimeException(
+                        'المبلغ ('.number_format((float) $data['amount'], 2, '.', '')
+                        .') يتجاوز المتبقي من الدين ('.number_format($locked->outstanding(), 2, '.', '').')'
+                    );
+                }
+                $paidAt = $data['paid_at'] ?? now()->toDateString();
+                $amount = round((float) $data['amount'], 2);
+
+                $this->ledger->recordLiabilityCollection($locked, $amount, $paidAt, $userId);
+
+                $fresh = $locked->fresh();
+                $fresh->update([
+                    'status' => $fresh->paid() >= (float) $fresh->original_amount
+                        ? EmployeeLiability::STATUS_PAID
+                        : EmployeeLiability::STATUS_PARTIAL,
+                ]);
+
+                return $fresh->fresh();
+            });
+        } catch (RuntimeException $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
+
+        return response()->json([
+            'liability' => $result->load(['employee:id,first_name,last_name', 'academicYear:id,name']),
+            'collected' => $result->paid(),
+            'outstanding' => $result->outstanding(),
+        ], 201);
+    }
+
+    /**
      * خلاص استحقاق قديم: راتب تسجيلي مرتبط بالاستحقاق يُسقط في الدفتر كبند
      * مستقل (old_liability_payment) فيخرج من الخزينة من غير أن يُحتسب أجراً
      * للسنة الحالية. الإلغاء يتمّ عبر مسار إلغاء الرواتب المعتاد.
@@ -111,6 +172,10 @@ class EmployeeLiabilityController extends Controller
 
         if ($liability->isCancelled()) {
             return response()->json(['message' => 'لا يمكن خلاص استحقاق ملغى'], 422);
+        }
+
+        if ($liability->liability_type === 'debt') {
+            return response()->json(['message' => 'هذا دين مستحق للمؤسسة، استخدم زر تحصيل الدين'], 422);
         }
 
         $userId = $request->user()?->id;
@@ -140,7 +205,7 @@ class EmployeeLiabilityController extends Controller
                     'paid_at' => $paidAt,
                     'method' => $data['method'] ?? 'cash',
                     'reference' => $data['reference'] ?? null,
-                    'notes' => 'خلاص مستحقّ سابق: '.$locked->description.($data['notes'] ? ' — '.$data['notes'] : ''),
+                    'notes' => 'خلاص مستحقّ سابق: '.$locked->description.(($data['notes'] ?? null) ? ' — '.$data['notes'] : ''),
                     'created_by' => $userId,
                 ]);
 

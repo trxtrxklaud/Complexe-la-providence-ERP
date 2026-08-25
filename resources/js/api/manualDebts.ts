@@ -185,6 +185,17 @@ export function payEmployeeLiability(
   });
 }
 
+export function collectEmployeeLiability(
+  id: number,
+  payload: { amount: number; paid_at?: string; method?: string | null; reference?: string | null; notes?: string | null }
+): Promise<{ liability: EmployeeLiability; collected: number; outstanding: number }> {
+  return apiFetch<{ liability: EmployeeLiability; collected: number; outstanding: number }>('/employee-liabilities/' + id + '/collect', {
+    method: 'POST',
+    body: payload,
+    fallbackMessage: 'تعذّر تحصيل الدين',
+  });
+}
+
 export function cancelEmployeeLiability(id: number, reason: string): Promise<EmployeeLiability> {
   return apiFetch<EmployeeLiability>('/employee-liabilities/' + id + '/cancel', {
     method: 'POST',

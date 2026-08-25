@@ -384,6 +384,41 @@ class LedgerService
     }
 
     /**
+     * تحصيل دين قديم على إطار/عامل → قبض نقدي داخل، لا مصروف ولا سحب.
+     *
+     * لا ينشئ Salary — يسجل حركة تحصيل مباشرة على الاستحقاق نفسه بمبلغ
+     * التحصيل المُمرَّر، ويُحدَّث سطر الدفتر المجمَّع بالرصيد الجديد.
+     */
+    public function recordLiabilityCollection(EmployeeLiability $liability, float $incrementAmount, string $date, ?int $createdBy = null): void
+    {
+        if ($incrementAmount <= 0) {
+            return;
+        }
+
+        $existingPaid = (float) $liability->paid();
+        $newTotal = round($existingPaid + $incrementAmount, 2);
+
+        if ($newTotal <= 0) {
+            $this->cancelFor($liability, null, null);
+            return;
+        }
+
+        $liability->loadMissing('employee');
+
+        $this->post(
+            source: $liability,
+            category: CashTransaction::CATEGORY_OLD_LIABILITY_COLLECTION,
+            direction: CashTransaction::DIRECTION_IN,
+            amount: $newTotal,
+            date: $date,
+            academicYearId: $liability->academic_year_id,
+            description: 'تحصيل دين قديم: '.($liability->employee?->full_name ?? ('إطار #'.$liability->employee_id))
+                .' — '.$liability->description,
+            createdBy: $createdBy ?? $liability->created_by,
+        );
+    }
+
+    /**
      * سحب من الخزينة → حركة مستقلة لا تدخل في الدخل الصافي.
      */
     public function recordWithdrawal(TreasuryWithdrawal $withdrawal): void

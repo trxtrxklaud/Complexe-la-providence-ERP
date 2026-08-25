@@ -103,8 +103,24 @@ class EmployeeOpeningBalanceTest extends TestCase
 
     public function test_liability_payments_use_liability_as_ledger_source_and_accumulate(): void
     {
+        // pay for debt should be rejected — debt is collected via /collect, not pay
+        $employeeDebt = $this->employee('monthly_teacher');
+        $debtLiability = $this->createLiability($employeeDebt, 500);
+        $this->postJson('/api/employee-liabilities/'.$debtLiability->id.'/pay', [
+            'amount' => 100,
+        ])->assertStatus(422);
+
+        // pay still works for a true payable (legacy salary type created directly)
         $employee = $this->employee('monthly_teacher');
-        $liability = $this->createLiability($employee, 500);
+        $liability = EmployeeLiability::create([
+            'employee_id' => $employee->id,
+            'academic_year_id' => $this->year->id,
+            'original_year_label' => '2025/2026',
+            'liability_type' => 'salary',
+            'description' => 'مستحق فعلي للاختبار',
+            'original_amount' => 500,
+            'status' => EmployeeLiability::STATUS_PENDING,
+        ]);
 
         $first = $this->postJson('/api/employee-liabilities/'.$liability->id.'/pay', [
             'amount' => 200,
