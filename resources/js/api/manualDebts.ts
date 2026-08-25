@@ -193,6 +193,101 @@ export function cancelEmployeeLiability(id: number, reason: string): Promise<Emp
   });
 }
 
+// ===== استخلاص الديون القديمة =====
+
+export type OldDebtSummaryItem = {
+  id: number;
+  type: 'student';
+  debt_type: string;
+  description: string;
+  original_year_label: string;
+  created_at: string | null;
+  academic_year?: string | null;
+  original_amount: number;
+  collected_amount: number;
+  outstanding_amount: number;
+  status: string;
+};
+
+export type OldDebtSummary = {
+  student_id: number;
+  items: OldDebtSummaryItem[];
+  totals: { count: number; original_amount: number; collected_amount: number; outstanding_amount: number };
+};
+
+export type OldDebtPaymentRow = {
+  allocation_id: number;
+  payment_id: number | null;
+  payment_date: string | null;
+  method: string | null;
+  amount: number;
+  status: 'active' | 'cancelled';
+  cancelled_at: string | null;
+  cancellation_reason: string | null;
+};
+
+export type OldDebtStatement = {
+  debt: {
+    id: number;
+    type: 'student';
+    debt_type: string;
+    description: string;
+    student_name: string;
+    student_code: string | null;
+    level: string | null;
+    section: string | null;
+    original_year_label: string;
+    created_at: string | null;
+    original_amount: number;
+    paid_amount: number;
+    outstanding_amount: number;
+    status: string;
+  };
+  payments: OldDebtPaymentRow[];
+  totals: { paid_active: number; cancelled: number; count: number };
+};
+
+export function fetchOldDebtSummary(studentId: number): Promise<OldDebtSummary> {
+  return apiFetch<OldDebtSummary>('/students/' + studentId + '/old-debt-summary', {
+    fallbackMessage: 'تعذّر تحميل ملخص الدين القديم',
+  });
+}
+
+export function collectOldDebt(
+  debtId: number,
+  payload: { amount: number; payment_date?: string; method?: string; notes?: string | null }
+): Promise<BulkResult & { receipt: unknown }> {
+  return apiFetch('/manual-debts/' + debtId + '/collect', {
+    method: 'POST',
+    body: payload,
+    fallbackMessage: 'تعذّر تحصيل الدين القديم',
+  }) as Promise<BulkResult & { receipt: unknown }>;
+}
+
+export function fetchOldDebtPayments(debtId: number): Promise<{
+  debt_id: number;
+  payments: OldDebtPaymentRow[];
+  totals: { paid_active: number; cancelled: number; count: number };
+}> {
+  return apiFetch('/manual-debts/' + debtId + '/payments', {
+    fallbackMessage: 'تعذّر تحميل سجل دفعات الدين',
+  });
+}
+
+export function fetchOldDebtStatement(debtId: number): Promise<OldDebtStatement> {
+  return apiFetch<OldDebtStatement>('/manual-debts/' + debtId + '/statement', {
+    fallbackMessage: 'تعذّر تحميل كشف استخلاص متخلد قديم',
+  });
+}
+
+export function cancelOldDebtPayment(paymentId: number, reason: string): Promise<unknown> {
+  return apiFetch('/payments/' + paymentId + '/cancel', {
+    method: 'POST',
+    body: { reason },
+    fallbackMessage: 'تعذّر إلغاء الدفعة',
+  });
+}
+
 // ===== تقارير الأرصدة الافتتاحية =====
 
 export type ManualDebtsReport = {

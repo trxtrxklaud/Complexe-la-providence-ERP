@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { motion, type Variants } from 'motion/react';
 import { useAuth } from '../../contexts/AuthContext';
 import {
   AlertCircle,
@@ -59,8 +60,20 @@ function PriorDebtDetailModal({
   const employees = summary.employee_details.filter((row) => row.original_amount > 0);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ backgroundColor: 'rgba(31,38,28,0.45)' }} dir="rtl">
-      <div className="bg-white rounded-2xl w-full max-w-3xl max-h-[85vh] overflow-y-auto p-6">
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      transition={{ duration: 0.18 }}
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 backdrop-blur-sm"
+      style={{ backgroundColor: 'rgba(31,38,28,0.45)' }}
+      dir="rtl"
+    >
+      <motion.div
+        initial={{ opacity: 0, scale: 0.96, y: 10 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
+        className="bg-white rounded-2xl w-full max-w-3xl max-h-[85vh] overflow-y-auto p-6"
+      >
         <div className="flex items-center justify-between mb-4">
           <h3 className="font-bold text-lg" style={{ color: C.ink }}>تحصيل الديون السابقة — التفصيل</h3>
           <button type="button" onClick={onClose} aria-label="إغلاق">
@@ -123,8 +136,8 @@ function PriorDebtDetailModal({
             </tbody>
           </table>
         </div>
-      </div>
-    </div>
+      </motion.div>
+    </motion.div>
   );
 }
 
@@ -178,6 +191,19 @@ function AnalogClock({ size = 150 }: { size?: number }) {  const [now, setNow] =
   );
 }
 
+/**
+ * دخول متدرّج لطيف لكروت المؤشّرات. تجميل بصري بحت — لا يمسّ أيّ قيمة أو تسمية،
+ * ويُحترم تفضيل تقليل الحركة عبر MotionConfig reducedMotion="user" في App.
+ */
+const gridStagger: Variants = {
+  hidden: {},
+  show: { transition: { staggerChildren: 0.06 } },
+};
+const cardRise: Variants = {
+  hidden: { opacity: 0, y: 12 },
+  show: { opacity: 1, y: 0, transition: { duration: 0.3, ease: [0.16, 1, 0.3, 1] } },
+};
+
 function KpiCard({
   label,
   value,
@@ -194,7 +220,7 @@ function KpiCard({
   hint?: string;
 }) {
   return (
-    <div className="rounded-[22px] p-5" style={{ backgroundColor: tint }}>
+    <motion.div variants={cardRise} className="card-interactive shadow-card rounded-[22px] p-5" style={{ backgroundColor: tint }}>
       <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white/70" style={{ color: iconColor }}>
         <Icon size={20} />
       </div>
@@ -209,7 +235,7 @@ function KpiCard({
           {hint}
         </p>
       )}
-    </div>
+    </motion.div>
   );
 }
 
@@ -289,7 +315,7 @@ export default function Dashboard() {
 
       {!loading && data && (
         <>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
+          <motion.div variants={gridStagger} initial="hidden" animate="show" className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
             <KpiCard
               label="مداخيل اليوم"
               value={<Money value={today?.income} />}
@@ -319,9 +345,9 @@ export default function Dashboard() {
               iconColor="#9A6B7E"
               hint="من بداية السجلّ بعد السحوبات"
             />
-          </div>
+          </motion.div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
+          <motion.div variants={gridStagger} initial="hidden" animate="show" className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
             <KpiCard
               label="إجمالي التلاميذ"
               value={totalActive}
@@ -372,12 +398,12 @@ export default function Dashboard() {
                 hint={`خلاص كامل: ${data.club_revenue.paid_students_count} | في انتظار الدفع: ${data.club_revenue.pending_students_count}`}
               />
             )}
-          </div>
+          </motion.div>
 
           {/* تحصيل الديون السابقة — تظهر لمن يملك رؤية الماليّة فقط:
               الخادم يحجب prior_debt_summary عمّن لا يملك manage_treasury/view_reports. */}
           {data.prior_debt_summary && (
-            <div className="rounded-[22px] p-5 mb-5" style={{ backgroundColor: C.sage }}>
+            <div className="rounded-[22px] p-5 mb-5 shadow-card" style={{ backgroundColor: C.sage }}>
               <div className="flex items-start justify-between gap-4 flex-wrap">
                 <div>
                   <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white/70" style={{ color: C.forest }}>
@@ -398,7 +424,7 @@ export default function Dashboard() {
                 <button
                   type="button"
                   onClick={() => setPriorDebtDetailOpen(true)}
-                  className="px-4 py-2 rounded-xl text-white text-sm font-medium"
+                  className="px-4 py-2 rounded-xl text-white text-sm font-medium transition-opacity hover:opacity-90"
                   style={{ backgroundColor: C.forest }}
                 >
                   عرض التفصيل
@@ -408,7 +434,7 @@ export default function Dashboard() {
           )}
 
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
-            <div className="lg:col-span-2 bg-white rounded-[22px] p-6 border border-[#EDF1E8]">
+            <div className="lg:col-span-2 bg-white rounded-[22px] p-6 border border-[#EDF1E8] shadow-card">
               <h2 className="font-bold text-lg mb-4" style={{ color: C.ink }}>
                 الشهر الجاري
               </h2>
@@ -436,7 +462,7 @@ export default function Dashboard() {
             </div>
 
             <div
-              className="rounded-[22px] p-6 flex flex-col items-center justify-center"
+              className="rounded-[22px] p-6 flex flex-col items-center justify-center shadow-card"
               style={{ background: `linear-gradient(165deg, ${C.forest}, ${C.deep})` }}
             >
               <p className="text-white/70 text-sm mb-3">توقيت المؤسسة</p>

@@ -224,6 +224,15 @@ export async function getStudentOpeningBalances(studentId: number, academicYearI
     academic_year_id: number | null;
     summary: { count: number; total: number; outstanding: number; paid: number };
     items: OpeningBalanceItem[];
+    manual_debts?: Array<{
+      id: number;
+      description: string;
+      original_year_label: string;
+      debt_type: string;
+      original_amount: number | string;
+      collected_amount?: number;
+      outstanding_amount?: number;
+    }>;
   }>;
 }
 

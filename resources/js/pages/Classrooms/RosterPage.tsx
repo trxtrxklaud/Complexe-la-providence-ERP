@@ -357,35 +357,64 @@ export function RosterPage() {
   const selectStyle = { border: '1px solid ' + C.line, backgroundColor: '#fff', color: C.ink };
   const inputCls = 'w-full px-2 py-1.5 rounded-lg text-sm';
   const inputStyle = { border: '1px solid ' + C.line, backgroundColor: '#fff', color: C.ink };
-  const thPrint = { padding: '6px 8px', border: '1px solid #ccc', fontWeight: 'bold' as const };
-  const tdPrint = { padding: '6px 8px', border: '1px solid #ccc' };
+  const thPrint: React.CSSProperties = { padding: '10px 10px', border: '1px solid #bbb', fontWeight: 700, fontSize: 14, background: '#2E3B2A', color: '#fff' };
+  const tdPrint: React.CSSProperties = { padding: '10px 10px', border: '1px solid #ccc', fontSize: 14, fontWeight: 600 };
 
   return (
     <div className="p-6" dir="rtl" style={{ backgroundColor: C.bg, minHeight: '100vh' }}>
       <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;700;800&display=swap');
         .print-only { display: none; }
         @media print {
+          @page { size: A4 portrait; margin: 8mm; }
           body * { visibility: hidden; }
           #print-area, #print-area * { visibility: visible; }
-          #print-area { display: block !important; position: absolute; top: 0; left: 0; right: 0; width: 100%; padding: 10mm; box-sizing: border-box; }
-          .no-print { display: none !important; }
-          #print-area > div { page-break-inside: avoid; }
+          #print-area {
+            display: block !important;
+            position: static !important;
+            width: 100% !important;
+            min-height: 88vh !important;
+            height: auto !important;
+            margin: 0 !important;
+            padding: 8mm !important;
+            box-sizing: border-box !important;
+            background: #fff !important;
+            font-family: 'Cairo', sans-serif !important;
+            font-size: 14px !important;
+            font-weight: 600 !important;
+            border: 1px solid #2a9d8f !important;
+            border-radius: 0 !important;
+          }
+          #print-area > div {
+            display: flex !important;
+            flex-direction: column !important;
+            min-height: 80vh !important;
+          }
+          #print-area table {
+            width: 100% !important;
+            border-collapse: collapse !important;
+            height: auto !important;
+          }
           #print-area thead { display: table-header-group; }
-          #print-area tr { break-inside: avoid; }
-          @page { size: A4 portrait; margin: 0; }
+          #print-area tr { page-break-inside: avoid; break-inside: avoid; }
+          #print-area tbody tr {
+            height: calc((88vh - 220px) / var(--print-rows, 20)) !important;
+            min-height: 28px !important;
+            max-height: 48px !important;
+          }
+          .no-print { display: none !important; }
+          * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
         }
       `}</style>
 
       {/* ===== منطقة الطباعة (مخفية على الشاشة) ===== */}
       <div id="print-area" className="print-only" dir="rtl">
         {printStudent ? (
-          <div style={{ fontFamily: 'sans-serif', color: '#222' }}>
-            <div style={{ textAlign: 'center', marginBottom: 24 }}>
-              <h1 style={{ fontSize: 22, fontWeight: 'bold', margin: 0 }}>{SCHOOL_NAME}</h1>
-              <p style={{ fontSize: 13, color: '#555', marginTop: 6 }}>{printDate}</p>
-              <p style={{ fontSize: 13, color: '#555', marginTop: 2 }}>هاتف: <span style={{ direction: 'ltr', display: 'inline-block' }}>{SCHOOL_PHONE}</span></p>
-              <hr style={{ margin: '14px 0', border: 'none', borderTop: '1px solid #ccc' }} />
-              <h2 style={{ fontSize: 18, margin: 0 }}>بطاقة تلميذ</h2>
+          <div style={{ fontFamily: "'Cairo', sans-serif", color: '#222', display: 'flex', flexDirection: 'column', minHeight: '82vh' }}>
+            <div style={{ textAlign: 'center', borderBottom: '2px solid #2a9d8f', paddingBottom: 8, marginBottom: 12 }}>
+              <div style={{ fontWeight: 800, fontSize: 15, color: '#c8a96e' }}>Complexe La Providence — {SCHOOL_NAME}</div>
+              <div style={{ fontSize: 9, fontWeight: 600, color: '#7d93a8', marginTop: 2 }}>{printDate} — هاتف <span style={{ direction: 'ltr', display: 'inline-block' }}>{SCHOOL_PHONE}</span></div>
+              <div style={{ fontWeight: 700, fontSize: 13, color: '#1a3a5c', marginTop: 6, borderTop: '1px solid #E3EBDB', paddingTop: 6 }}>بطاقة تلميذ</div>
             </div>
             <div style={{ fontSize: 15, lineHeight: 2.2 }}>
               <p style={{ margin: '6px 0' }}><strong>الاسم واللقب: </strong>{printStudent.first_name} {printStudent.last_name}</p>
@@ -403,19 +432,20 @@ export function RosterPage() {
                 </p>
               ))}
             </div>
+            <div style={{ marginTop: 'auto', paddingTop: 10, borderTop: '1px solid #2a9d8f', display: 'flex', justifyContent: 'space-between', fontSize: 9, fontWeight: 600, color: '#7d93a8' }}>
+              <span>توقيع الولي: ______________</span>
+              <span>توقيع الإدارة: ______________</span>
+              <span>{printDate}</span>
+            </div>
           </div>
         ) : roster ? (
-          <div style={{ fontFamily: 'sans-serif', color: '#222' }}>
-            <h1 style={{ textAlign: 'center', fontSize: 20, fontWeight: 'bold', margin: 0 }}>{SCHOOL_NAME}</h1>
-            <p style={{ textAlign: 'center', fontSize: 12, color: '#555', margin: '2px 0' }}>{printDate}</p>
-            <p style={{ textAlign: 'center', fontSize: 12, color: '#555', margin: '2px 0' }}>هاتف: <span style={{ direction: 'ltr', display: 'inline-block' }}>{SCHOOL_PHONE}</span></p>
-            <h2 style={{ textAlign: 'center', fontSize: 18, marginBottom: 4, marginTop: 12 }}>
-              {roster.level} — {roster.section}
-            </h2>
-            <p style={{ textAlign: 'center', fontSize: 13, color: '#666', marginBottom: 16 }}>
-              السنة الدراسية {roster.year} · {roster.students.length} تلميذ
-            </p>
-            <table style={{ width: '100%', fontSize: 13, borderCollapse: 'collapse' }}>
+          <div style={{ fontFamily: "'Cairo', sans-serif", color: '#222', display: 'flex', flexDirection: 'column', minHeight: '82vh' }}>
+            <div style={{ textAlign: 'center', borderBottom: '2px solid #2a9d8f', paddingBottom: 8, marginBottom: 10 }}>
+              <div style={{ fontWeight: 800, fontSize: 15, color: '#c8a96e', letterSpacing: 0.5 }}>Complexe La Providence — {SCHOOL_NAME}</div>
+              <div style={{ fontSize: 9, fontWeight: 600, color: '#7d93a8', marginTop: 2 }}>{printDate} — هاتف <span style={{ direction: 'ltr', display: 'inline-block' }}>{SCHOOL_PHONE}</span></div>
+              <div style={{ fontWeight: 700, fontSize: 13, color: '#1a3a5c', marginTop: 6 }}>{roster.level} — {roster.section} <span style={{ fontWeight: 400, color: '#7d93a8', fontSize: 10 }}>({roster.year} · {roster.students.length} تلميذ)</span></div>
+            </div>
+            <table style={{ width: '100%', fontSize: 13, borderCollapse: 'collapse', ['--print-rows' as any]: Math.max(roster.students.length, 1) } as React.CSSProperties}>
               <thead>
                 <tr>
                   <th style={thPrint}>#</th>
@@ -439,7 +469,12 @@ export function RosterPage() {
                   </tr>
                 ))}
               </tbody>
-            </table>
+              </table>
+            <div style={{ marginTop: 'auto', paddingTop: 10, borderTop: '1px solid #2a9d8f', display: 'flex', justifyContent: 'space-between', fontSize: 9, fontWeight: 600, color: '#7d93a8' }}>
+              <span>توقيع الإدارة: ______________</span>
+              <span>تاريخ الطباعة: {printDate}</span>
+              <span>عدد التلاميذ: {roster.students.length}</span>
+            </div>
           </div>
         ) : null}
       </div>

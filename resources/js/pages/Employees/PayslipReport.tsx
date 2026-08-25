@@ -72,7 +72,7 @@ export function PayslipReport({ employee, month, summary, days }: Props) {
   const netHours = Math.max(0, workedHours - absenceHours);
 
   return (
-    <div className="payslip-print-root" style={{ fontFamily: "'Cairo', sans-serif", direction: 'rtl', position: 'relative' }}>
+    <div className="payslip-print-root" style={{ fontFamily: "'Cairo', sans-serif", direction: 'rtl', position: 'relative', width: '100%', minHeight: '100%', display: 'flex', flexDirection: 'column', fontSize: 14, fontWeight: 600, boxSizing: 'border-box' }}>
       <style>{`
   @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;700;800&display=swap');
   @media print {
@@ -80,17 +80,22 @@ export function PayslipReport({ employee, month, summary, days }: Props) {
     .payslip-print-root, .payslip-print-root * { visibility: visible !important; }
     .payslip-print-root {
       position: fixed !important;
-      top: 0 !important; left: 0 !important; right: 0 !important;
+      top: 0 !important; left: 0 !important;
+      width: 100% !important;
+      height: 100% !important;
       margin: 0 !important;
-      padding: 6mm !important;
+      padding: 8mm !important;
       box-sizing: border-box !important;
-      z-index: 99999 !important;
       background: #fff !important;
+      box-shadow: none !important;
+      border: none !important;
+      border-radius: 0 !important;
+      display: flex !important;
+      flex-direction: column !important;
+      z-index: 99999 !important;
     }
-    a, a[href]::after { display: none !important; content: none !important; }
-    * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-    html { -webkit-print-color-adjust: exact; }
-    @page { margin: 0; size: A4 portrait; }
+    .payslip-print-root * { font-weight: 600 !important; }
+    @page { size: A4 portrait; margin: 8mm; }
   }
 `}</style>
 
@@ -98,14 +103,14 @@ export function PayslipReport({ employee, month, summary, days }: Props) {
       <div style={{ position: 'absolute', top: -40, left: -40, width: 180, height: 180, borderRadius: '50%', background: 'rgba(42,157,143,0.10)', pointerEvents: 'none' }} />
       <div style={{ position: 'absolute', top: -10, left: 30, width: 100, height: 100, borderRadius: '50%', background: 'rgba(42,157,143,0.12)', pointerEvents: 'none' }} />
 
-      <div style={{ maxWidth: 720, margin: '0 auto', background: '#ffffff', color: '#1f2937' }}>
+      <div style={{ maxWidth: 720, margin: '0 auto', background: '#ffffff', color: '#1f2937', width: '100%', flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
         {/* الترويسة */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 20px 10px', borderBottom: `2px solid ${TEAL}`, position: 'relative' }}>
           <div style={{ textAlign: 'right' }}>
             <h2 style={{ margin: 0, fontSize: 26, fontWeight: 800, color: '#c8a96e', lineHeight: 1.3, letterSpacing: 1 }}>
               مركب العناية للتعليم الخاص
             </h2>
-            <p style={{ margin: '4px 0 0', fontSize: 13, color: '#7d93a8' }}>
+            <p style={{ margin: '4px 0 0', fontSize: 14, fontWeight: 600, color: '#7d93a8' }}>
               كشف حساب — أجر بالساعة
             </p>
           </div>
@@ -113,14 +118,14 @@ export function PayslipReport({ employee, month, summary, days }: Props) {
             <h1 style={{ margin: 0, fontSize: 18, fontWeight: 800, color: TEAL }}>
               كشف الخلاص
             </h1>
-            <p style={{ margin: '4px 0 0', fontSize: 13, color: '#7d93a8' }}>
+            <p style={{ margin: '4px 0 0', fontSize: 14, fontWeight: 600, color: '#7d93a8' }}>
               {month.slice(0, 4)} / {month.slice(5, 7)}
             </p>
           </div>
         </div>
 
         {/* بيانات الإطار */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 20px', fontSize: 13 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 20px', fontSize: 14, fontWeight: 600 }}>
           <div style={{ textAlign: 'right' }}>
             <p style={{ margin: 0, color: '#7d93a8', fontWeight: 700 }}>مدفوع إلى:</p>
             <p style={{ margin: '4px 0 0', fontWeight: 800, color: NAVY }}>
@@ -147,7 +152,7 @@ export function PayslipReport({ employee, month, summary, days }: Props) {
           const col2 = days.slice(half);
 
           const renderTable = (rows: typeof days) => (
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
               <thead>
                 <tr style={{ background: TEAL, color: '#ffffff' }}>
                   <th style={{ padding: '7px 8px', textAlign: 'right', fontWeight: 700 }}>التاريخ</th>
@@ -164,7 +169,7 @@ export function PayslipReport({ employee, month, summary, days }: Props) {
                     <td style={{ padding: '5px 8px' }}>
                       <span style={{
                         display: 'inline-block', padding: '1px 6px',
-                        borderRadius: 999, fontSize: 10, fontWeight: 700,
+                        borderRadius: 999, fontSize: 13, fontWeight: 700,
                         background: BADGE[d.note_type].bg, color: BADGE[d.note_type].fg,
                       }}>
                         {HOURS_NOTE_LABELS[d.note_type]}
@@ -182,7 +187,7 @@ export function PayslipReport({ employee, month, summary, days }: Props) {
           return (
             <div style={{ padding: '0 20px' }}>
               {days.length === 0 ? (
-                <p style={{ textAlign: 'center', color: '#9ca3af', fontSize: 13 }}>لا ساعات مسجّلة لهذا الشهر</p>
+                <p style={{ textAlign: 'center', color: '#9ca3af', fontSize: 14, fontWeight: 600 }}>لا ساعات مسجّلة لهذا الشهر</p>
               ) : days.length <= 10 ? (
                 renderTable(days)
               ) : (
@@ -196,8 +201,8 @@ export function PayslipReport({ employee, month, summary, days }: Props) {
         })()}
 
         {/* الملخص — أسفل اليمين */}
-        <div style={{ display: 'flex', justifyContent: 'flex-end', padding: '12px 20px' }}>
-          <div style={{ width: 320, border: `1px solid ${TEAL}`, borderRadius: 8, overflow: 'hidden', fontSize: 13 }}>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', padding: '12px 20px', marginTop: 'auto' }}>
+          <div style={{ width: 320, border: `1px solid ${TEAL}`, borderRadius: 8, overflow: 'hidden', fontSize: 14, fontWeight: 600 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', padding: '5px 10px', borderBottom: '1px solid #e0f0ee' }}>
               <span style={{ color: '#6b7280' }}>إجمالي ساعات العمل</span>
               <strong style={{ color: NAVY }}>{money(workedHours)}</strong>
@@ -223,7 +228,7 @@ export function PayslipReport({ employee, month, summary, days }: Props) {
 
         {/* التذييل */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: NAVY, padding: '10px 20px', marginTop: 8 }}>
-          <p style={{ margin: 0, color: '#ffffff', fontSize: 12 }}>
+          <p style={{ margin: 0, color: '#ffffff', fontSize: 13, fontWeight: 600 }}>
             هذا الكشف للإعلام فقط — يُعتمد بعد التوقيع من الإدارة
           </p>
           <button

@@ -5,6 +5,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { Plus, Edit2, Trash2, AlertCircle, Shield } from 'lucide-react';
 import { TableRowsSkeleton } from '../../components/DataSkeleton';
 import { UserDirectPermissionsModal } from '../../components/Users/UserDirectPermissionsModal';
+import { useToast } from '../../components/ui/Toast';
 
 const C = {
     forest: '#3B4A36',
@@ -22,6 +23,7 @@ export function UsersList() {
     const [selectedUserForPermissions, setSelectedUserForPermissions] = useState<{ id: number; name: string } | null>(null);
 
     const { user: currentUser, hasPermission } = useAuth();
+    const toast = useToast();
     const canManage = hasPermission('manage_users');
     const canManagePermissions = hasPermission('manage_user_permissions') || canManage;
 
@@ -46,7 +48,7 @@ export function UsersList() {
             await deleteUser(id);
             setUsers(users.filter((u) => u.id !== id));
         } catch (err: unknown) {
-            alert(err instanceof Error ? err.message : 'فشل حذف المستخدم');
+            toast.error(err instanceof Error ? err.message : 'فشل حذف المستخدم');
         }
     }
 

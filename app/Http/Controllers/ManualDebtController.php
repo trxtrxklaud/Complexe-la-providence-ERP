@@ -9,7 +9,9 @@ use App\Models\Enrollment;
 use App\Models\Level;
 use App\Models\ManualStudentDebt;
 use App\Models\Section;
+use App\Models\Student;
 use App\Models\StudentFee;
+use App\Services\CollectionService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -22,12 +24,191 @@ use RuntimeException;
  * يتحرّك فقط يوم تحصيل الدَّين عبر مسار متخلّدات السنوات السابقة نفسه
  * (prior_allocations.manual_student_debt_id في عملية الاستخلاص).
  *
- * كل دَين ينشئ رسمَين جسراً تحت تسجيل التلميذ في آخر سنة دراسية سابقة:
- * توزيعات الدفع تشير حتماً إلى student_fee، ويصنّف الدفتر القبض دَين سنة
- * سابقة من اختلاف سنة التسجيل عن سنة الدفعة.
+ * كل دَين ينشئ رسمَين جسراً تحت تسجيل التلميذ: توزيعات الدفع تشير حتماً إلى
+ * student_fee، ويصنّف الدفتر القبض دَين سنة سابقة من اختلاف سنة التسجيل عن
+ * سنة الدفعة. التخصيص يحمل الهدف الصريح (manual_student_debt_id) إلى جانب
+ * student_fee_id حفاظاً على الفصل بين ديون التلميذ المتشابهة.
  */
 class ManualDebtController extends Controller
 {
+    public function __construct(private readonly CollectionService $collectionService) {}
+
+    /**
+     * تحصيل دَين قديم — يعيد استخدام CollectionService::collect() كاملاً:
+     * نفس الحرسان (الهدف الصريح، منع التجاوز بالقفل)، نفس تصنيف prior_year_debt،
+     * ولا علاقة بأي شهر دراسي.
+     */
+    public function collect(Request $request, ManualStudentDebt $debt): JsonResponse
+    {
+        if ($debt->isCancelled()) {
+            return response()->json(['message' => 'لا يمكن تحصيل دَين ملغى'], 422);
+        }
+
+        if ($debt->outstanding() <= 0) {
+            return response()->json(['message' => 'هذا الدَّين مسدّد بالكامل'], 422);
+        }
+
+        $data = $request->validate([
+            'amount' => ['required', 'numeric', 'min:0.01', 'max:1000000'],
+            'payment_date' => ['nullable', 'date'],
+            'method' => ['nullable', 'string', 'in:cash,bank_transfer,check,card'],
+            'reference' => ['nullable', 'string', 'max:100'],
+            'notes' => ['nullable', 'string', 'max:500'],
+        ]);
+
+        // تسجيل الدَّين يكون في السنة التي نُقل إليها؛ التحصيل يتطلب تسجيلاً نشطاً فيها.
+        $enrollment = Enrollment::where('student_id', $debt->student_id)
+            ->where('academic_year_id', $debt->academic_year_id)
+            ->where('status', 'active')
+            ->first();
+
+        if (! $enrollment) {
+            return response()->json(['message' => 'التلميذ غير مسجّل نشط في السنة الدراسية المحمول إليها الدَّين'], 422);
+        }
+
+        try {
+            $receipt = $this->collectionService->collect([
+                'student_id' => $debt->student_id,
+                'enrollment_id' => $enrollment->id,
+                'months' => [],
+                'items' => [],
+                'club_items' => [],
+                'prior_allocations' => [[
+                    'manual_student_debt_id' => $debt->getKey(),
+                    'amount' => round((float) $data['amount'], 2),
+                ]],
+                'payment_date' => $data['payment_date'] ?? now()->toDateString(),
+                'method' => $data['method'] ?? 'cash',
+                'reference' => $data['reference'] ?? null,
+                'notes' => $data['notes'] ?? null,
+                'idempotency_key' => $request->header('Idempotency-Key') ?: null,
+            ], (int) $request->user()?->id);
+        } catch (\InvalidArgumentException $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
+
+        $fresh = $debt->fresh();
+
+        return response()->json([
+            'message' => 'تم تحصيل الدَّين القديم بنجاح',
+            'receipt' => $receipt,
+            'debt' => [
+                'id' => $fresh->id,
+                'status' => $fresh->status,
+                'original_amount' => (float) $fresh->original_amount,
+                'collected_amount' => $fresh->collected(),
+                'outstanding_amount' => $fresh->outstanding(),
+            ],
+        ], 201);
+    }
+
+    /** سجلّ دفعات الدَّين: كل تخصيص مع وصلته وحالتها. */
+    public function payments(ManualStudentDebt $debt): JsonResponse
+    {
+        $rows = $debt->paymentAllocations()
+            ->with('payment')
+            ->orderByDesc('id')
+            ->get()
+            ->map(fn ($alloc) => [
+                'allocation_id' => $alloc->id,
+                'payment_id' => $alloc->payment?->id,
+                'payment_date' => $alloc->payment?->payment_date?->toDateString(),
+                'method' => $alloc->payment?->method,
+                'amount' => (float) $alloc->amount_allocated,
+                'status' => $alloc->payment?->cancelled_at ? 'cancelled' : 'active',
+                'cancelled_at' => $alloc->payment?->cancelled_at,
+                'cancellation_reason' => $alloc->payment?->cancellation_reason,
+                'created_by' => $alloc->payment?->created_by,
+            ])
+            ->values();
+
+        $active = $rows->where('status', 'active')->sum('amount');
+        $cancelled = $rows->where('status', 'cancelled')->sum('amount');
+
+        return response()->json([
+            'debt_id' => $debt->id,
+            'payments' => $rows,
+            'totals' => [
+                'paid_active' => round($active, 2),
+                'cancelled' => round($cancelled, 2),
+                'count' => $rows->count(),
+            ],
+        ]);
+    }
+
+    /** بيانات «كشف استخلاص متخلد قديم» للطباعة والمراجعة. */
+    public function statement(ManualStudentDebt $debt): JsonResponse
+    {
+        $debt->load(['student:id,first_name,last_name,student_code', 'academicYear:id,name']);
+
+        $enrollment = Enrollment::query()
+            ->with(['level:id,name', 'section:id,name'])
+            ->where('student_id', $debt->student_id)
+            ->where('academic_year_id', $debt->academic_year_id)
+            ->orderByDesc('id')
+            ->first();
+
+        $paymentsResponse = $this->payments($debt);
+        $paymentsData = $paymentsResponse->getData(true);
+
+        return response()->json([
+            'debt' => [
+                'id' => $debt->id,
+                'type' => 'student',
+                'debt_type' => $debt->debt_type,
+                'description' => $debt->description,
+                'student_name' => trim(($debt->student?->first_name ?? '').' '.($debt->student?->last_name ?? '')) ?: '—',
+                'student_code' => $debt->student?->student_code,
+                'level' => $enrollment?->level?->name,
+                'section' => $enrollment?->section?->name,
+                'original_year_label' => $debt->original_year_label,
+                'created_at' => $debt->created_at?->toIso8601String(),
+                'original_amount' => (float) $debt->original_amount,
+                'paid_amount' => $debt->collected(),
+                'outstanding_amount' => $debt->outstanding(),
+                'status' => $debt->status,
+            ],
+            'payments' => $paymentsData['payments'] ?? [],
+            'totals' => $paymentsData['totals'] ?? ['paid_active' => 0, 'cancelled' => 0, 'count' => 0],
+        ]);
+    }
+
+    /** ملخص الديون القديمة النشطة لتلميذ واحد (للواجهة والتنبيه). */
+    public function summary(Student $student): JsonResponse
+    {
+        $models = ManualStudentDebt::query()
+            ->with('academicYear:id,name')
+            ->whereNull('cancelled_at')
+            ->where('student_id', $student->id)
+            ->orderByDesc('id')
+            ->get();
+
+        $debts = $models->map(fn (ManualStudentDebt $d) => [
+            'id' => $d->id,
+            'type' => 'student',
+            'debt_type' => $d->debt_type,
+            'description' => $d->description,
+            'original_year_label' => $d->original_year_label,
+            'created_at' => $d->created_at?->toIso8601String(),
+            'academic_year' => $d->academicYear?->name,
+            'original_amount' => (float) $d->original_amount,
+            'collected_amount' => $d->collected(),
+            'outstanding_amount' => $d->outstanding(),
+            'status' => $d->status,
+        ])->values();
+
+        return response()->json([
+            'student_id' => $student->id,
+            'items' => $debts,
+            'totals' => [
+                'count' => $models->count(),
+                'original_amount' => round($models->sum(fn (ManualStudentDebt $d) => (float) $d->original_amount), 2),
+                'collected_amount' => round($models->sum(fn (ManualStudentDebt $d) => $d->collected()), 2),
+                'outstanding_amount' => round($models->sum(fn (ManualStudentDebt $d) => $d->outstanding()), 2),
+            ],
+        ]);
+    }
+
     public function index(Request $request): JsonResponse
     {
         $items = ManualStudentDebt::with([
@@ -78,6 +259,20 @@ class ManualDebtController extends Controller
         $data['academic_year_id'] = (int) $yearId;
         $data['created_by'] = $request->user()?->id;
         $data['status'] = ManualStudentDebt::STATUS_PENDING;
+
+        // K2: منع ازدواج الدَّين الفردي — دَين نشط واحد لنفس التلميذ/السنة/النوع.
+        $duplicate = ManualStudentDebt::query()
+            ->where('student_id', $data['student_id'])
+            ->where('academic_year_id', $data['academic_year_id'])
+            ->where('debt_type', $data['debt_type'])
+            ->whereNull('cancelled_at')
+            ->exists();
+
+        if ($duplicate) {
+            return response()->json([
+                'message' => 'يوجد دَين قديم نشط بنفس النوع لهذا التلميذ في هذه السنة الدراسية؛ عدِّله من القائمة بدل إنشاء نسخة مكررة',
+            ], 422);
+        }
 
         try {
             $debt = DB::transaction(function () use ($data) {

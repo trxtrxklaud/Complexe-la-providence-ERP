@@ -133,7 +133,7 @@ export function ReceiptModal({ receipt, cashierName, onClose, onDelete }: Props)
             flex: 1 !important;
             min-height: 90vh !important;
           }
-          @page { size: A4 portrait; margin: 0; }
+          @page { size: A4 portrait; margin: 8mm; }
         }
       `}</style>
 

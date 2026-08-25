@@ -235,6 +235,13 @@ Route::middleware(['auth:sanctum', 'active', 'throttle:120,1'])->group(function 
         Route::post('/families/{family}/collect', [FamilyController::class, 'collect']);
 
         Route::get('/enrollments/{enrollment}/ledger', [CollectionController::class, 'ledger']);
+
+        // استخلاص الديون القديمة — تحصيل عبر CollectionService نفسه (prior_year_debt/in)
+        // وقراءات السجلّ والكشف. الإلغاء عبر مسار الوصلات العام أعلاه.
+        Route::get('/students/{student}/old-debt-summary', [ManualDebtController::class, 'summary']);
+        Route::post('/manual-debts/{debt}/collect', [ManualDebtController::class, 'collect']);
+        Route::get('/manual-debts/{debt}/payments', [ManualDebtController::class, 'payments']);
+        Route::get('/manual-debts/{debt}/statement', [ManualDebtController::class, 'statement']);
     });
 
     // التنازل عن الدُّيون — صلاحية مستقلة عن manage_payments عمداً:

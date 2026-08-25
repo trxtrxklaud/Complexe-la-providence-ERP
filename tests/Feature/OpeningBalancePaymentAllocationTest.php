@@ -454,4 +454,25 @@ class OpeningBalancePaymentAllocationTest extends TestCase
         $this->assertSame(150.0, $ob->collected());
         $this->assertSame(50.0, $ob->outstanding());
     }
+
+    public function test_cannot_exceed_opening_balance_outstanding(): void
+    {
+        [$student, $old, $new, $oldEnrollment, $newEnrollment] = $this->makeTwoYearSetup();
+        $user = $this->makeUser();
+        Sanctum::actingAs($user->fresh(['role']));
+
+        $oldFee = $this->oldDebtFee($oldEnrollment); // 200 د.ت
+        $this->opening->closeYear($old, $new, $user->id);
+        $ob = OpeningBalance::firstOrFail();
+
+        // محاولة سداد 250 د.ت لرصيد متبقّ منه 200 د.ت
+        $this->expectException(\InvalidArgumentException::class);
+        $this->collection->collect([
+            'student_id' => $student->id,
+            'enrollment_id' => $newEnrollment->id,
+            'payment_date' => '2026-09-15',
+            'method' => 'cash',
+            'prior_allocations' => [['opening_balance_id' => $ob->id, 'amount' => 250]],
+        ], $user->id);
+    }
 }

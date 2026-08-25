@@ -1,6 +1,157 @@
 @import "tailwindcss";
 
 /* ==========================================================================
+   هوية «مدرسة العناية» — رموز التصميم (Tailwind v4 theme tokens)
+   --------------------------------------------------------------------------
+   أخضر زيتي تراثي (نفس أخضر الـSidebar) + لمسة نحاسية ذهبية + خلفية عاجية.
+   كلّها opt-in: تولّد أدوات مثل bg-brand و text-brass و font-display بلا أن
+   تمسّ أي شاشة قائمة ما لم تُستعمل صراحةً.
+   ========================================================================== */
+@theme {
+  --color-brand: #2E3B2A;
+  --color-brand-deep: #26311F;
+  --color-brand-mid: #3B4A34;
+  --color-sage: #81C784;
+  --color-brass: #C2A24E;
+  --color-brass-deep: #9C7E37;
+  --color-ivory: #F7F5EF;
+  --color-ink: #1E241B;
+
+  /* الخطّ الافتراضي لكل المنصة — Inter للّاتيني/الأرقام ثم IBM Plex Sans Arabic للعربية.
+     يغذّي --default-font-family في Tailwind v4؛ الحروف العربية تتراجع تلقائيًا لـPlex. */
+  --font-sans: "Inter", "IBM Plex Sans Arabic", "Tajawal", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Reem Kufi", "Tajawal", ui-sans-serif, system-ui, sans-serif;
+  --font-arabic: "Inter", "IBM Plex Sans Arabic", "Tajawal", ui-sans-serif, system-ui, sans-serif;
+
+  /* ظلال ناعمة موحّدة للكروت (تولّد shadow-card / shadow-card-hover). */
+  --shadow-card: 0 1px 2px rgba(30, 36, 27, 0.05), 0 6px 20px -6px rgba(30, 36, 27, 0.10);
+  --shadow-card-hover: 0 2px 6px rgba(30, 36, 27, 0.07), 0 16px 34px -8px rgba(30, 36, 27, 0.16);
+}
+
+/* ==========================================================================
+   طبقة تلميع عامّة — بصرية بحتة، لا تمسّ بنية أو محتوى أو منطق أي شاشة.
+   ========================================================================== */
+
+/* توكيد صريح: نصّ المنصة على Inter + IBM Plex Sans Arabic — وضوح موحّد كواجهة الدخول.
+   العناوين التي تحمل font-display تبقى بخطّ ريم كوفي لأنها تتجاوز هذا صراحةً. */
+body {
+  font-family: var(--font-arabic);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+/* أرقام مصطفّة عموديًا في الجداول المالية — محاذاة فقط، لا يغيّر أي قيمة. */
+table {
+  font-variant-numeric: tabular-nums;
+}
+
+/* حلقة تركيز نحاسية واضحة للوحة المفاتيح — تفيد الصفحات التي لا focus فيها.
+   :focus-visible لا يظهر مع نقر الفأرة فلا يزعج الاستعمال العادي. */
+:focus-visible {
+  outline: 2px solid var(--color-brass);
+  outline-offset: 2px;
+}
+
+/* أشرطة تمرير رفيعة بلون الهوية. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(46, 59, 42, 0.30) transparent;
+}
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(46, 59, 42, 0.25);
+  border-radius: 9999px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(46, 59, 42, 0.42);
+  background-clip: content-box;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* تظليل النصّ بلون الهوية. */
+::selection {
+  background: rgba(194, 160, 78, 0.28);
+  color: var(--color-ink);
+}
+
+/* حركات دقيقة — تُعطَّل كليًّا عند تفضيل تقليل الحركة. */
+@media (prefers-reduced-motion: no-preference) {
+  /* لمعان الهياكل (skeleton shimmer) بديل أنعم من نبض animate-pulse. */
+  @keyframes ui-shimmer {
+    100% { transform: translateX(100%); }
+  }
+  .skeleton-shimmer {
+    position: relative;
+    overflow: hidden;
+  }
+  .skeleton-shimmer::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    transform: translateX(-100%);
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.55), transparent);
+    animation: ui-shimmer 1.6s infinite;
+  }
+
+  /* رفع لطيف للكروت التفاعلية (opt-in — يُستعمل فقط حيث نضيف الصنف صراحةً). */
+  .card-interactive {
+    transition: transform 0.18s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.18s ease;
+    will-change: transform;
+  }
+  .card-interactive:hover {
+    transform: translateY(-3px);
+    box-shadow: var(--shadow-card-hover);
+  }
+}
+
+/* دخول لطيف للعناصر — يُحترم تفضيل تقليل الحركة. */
+@media (prefers-reduced-motion: no-preference) {
+  @keyframes login-rise {
+    from { opacity: 0; transform: translateY(14px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  .login-rise { animation: login-rise 0.7s cubic-bezier(0.16, 1, 0.3, 1) both; }
+}
+
+/* ==========================================================================
+   الشريط الجانبي القابل للطيّ — قواعد الوضع المطويّ (طبقة عرض فقط).
+   منطق الروابط/الصلاحيات/الخروج في Sidebar.tsx يبقى دون أيّ مساس.
+   ========================================================================== */
+.app-sidebar nav {
+  overflow-x: hidden; /* يمنع تدفّق النصوص أفقيًا أثناء حركة العرض */
+}
+.app-sidebar nav a > span {
+  white-space: nowrap; /* يمنع التفاف السطر أثناء الفتح */
+}
+@media (prefers-reduced-motion: reduce) {
+  .app-sidebar {
+    transition: none !important;
+  }
+}
+/* أيقونات فقط: توسيط الأيقونة وإخفاء النصوص وعناوين الأقسام وبطاقة المستخدم. */
+.app-sidebar[data-collapsed="true"] nav a,
+.app-sidebar[data-collapsed="true"] .side-logout {
+  justify-content: center;
+  gap: 0;
+  padding-left: 0;
+  padding-right: 0;
+}
+.app-sidebar[data-collapsed="true"] nav a > span,
+.app-sidebar[data-collapsed="true"] .side-logout > span,
+.app-sidebar[data-collapsed="true"] nav > p,
+.app-sidebar[data-collapsed="true"] .side-userinfo {
+  display: none;
+}
+
+/* ==========================================================================
    الطباعة — قواعد عامّة تسري على كل شاشات المنصة
    --------------------------------------------------------------------------
    أربع علل حقيقية كانت تفسد المطبوع، وهذا علاج كل واحدة منها:

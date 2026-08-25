@@ -115,6 +115,13 @@ class CollectionService
 
                 $total = round($itemsTotal + $priorTotal, 2);
 
+                // K1: لا وصل بصفر — أي عملية استخلاص يجب أن تحرّك مالاً فعلياً.
+                if ($total <= 0) {
+                    throw new \InvalidArgumentException(
+                        'لا يمكن إنشاء وصل بمبلغ صفر؛ أدخل مبلغاً أكبر من صفر.'
+                    );
+                }
+
                 $payment = Payment::create([
 
                     'student_id' => $data['student_id'],
@@ -386,6 +393,8 @@ class CollectionService
         $input = $data['prior_allocations'] ?? [];
         $plannedItems = [];
         $plannedFeesTotal = [];
+        $plannedManualDebts = [];
+        $plannedOpeningBalances = [];
 
         foreach ($input as $allocation) {
             $feeId = (int) ($allocation['student_fee_id'] ?? 0);
@@ -413,6 +422,17 @@ class CollectionService
                     throw new \InvalidArgumentException('الرصيد الافتتاحي رقم '.$openingBalanceId.' غير موجود لهذا التلميذ');
                 }
                 $feeId = (int) $sourceFee->id;
+
+                $balanceOutstanding = $balance->outstanding();
+                $alreadyPlannedBalance = (float) ($plannedOpeningBalances[$openingBalanceId] ?? 0.0);
+                if ($alreadyPlannedBalance + $amount > $balanceOutstanding) {
+                    throw new \InvalidArgumentException(
+                        'مبلغ التوزيع ('.number_format($alreadyPlannedBalance + $amount, 2, '.', '')
+                        .') يتجاوز المتبقّي ('.number_format($balanceOutstanding, 2, '.', '')
+                        .') للرصيد الافتتاحي رقم '.$openingBalanceId
+                    );
+                }
+                $plannedOpeningBalances[$openingBalanceId] = round($alreadyPlannedBalance + $amount, 2);
             }
 
             if ($manualDebtId > 0) {
@@ -435,6 +455,17 @@ class CollectionService
                 if (! $feeId) {
                     throw new \InvalidArgumentException('الدَّين اليدوي رقم '.$manualDebtId.' بلا رسم مصدر');
                 }
+
+                $debtOutstanding = $debt->outstanding();
+                $alreadyPlannedDebt = (float) ($plannedManualDebts[$manualDebtId] ?? 0.0);
+                if ($alreadyPlannedDebt + $amount > $debtOutstanding) {
+                    throw new \InvalidArgumentException(
+                        'مبلغ التوزيع ('.number_format($alreadyPlannedDebt + $amount, 2, '.', '')
+                        .') يتجاوز المتبقّي ('.number_format($debtOutstanding, 2, '.', '')
+                        .') للدَّين اليدوي: '.$debt->description
+                    );
+                }
+                $plannedManualDebts[$manualDebtId] = round($alreadyPlannedDebt + $amount, 2);
             }
 
             /** @var StudentFee|null $fee */

@@ -39,6 +39,8 @@ auth.json
 *.sqlite-journal
 *.sqlite-wal
 *.sqlite-shm
+*.sqlite.bak
+*.sqlite.backup_*
 /database/database.sqlite
 /database/backup-*.sqlite
 /providence

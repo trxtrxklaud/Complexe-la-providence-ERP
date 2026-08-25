@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { CreditCard, Loader2, AlertCircle } from 'lucide-react';
 import { getFeeTypes } from '../../api/feeTypes';
@@ -68,6 +69,7 @@ function findTuitionFee(fees: any[]) {
 }
 
 export function CollectionPage() {
+  const navigate = useNavigate();
   const { user } = useAuth();
   const [years, setYears] = useState<any[]>([]);
   const [sections, setSections] = useState<any[]>([]);
@@ -106,6 +108,9 @@ export function CollectionPage() {
   const [priorItems, setPriorItems] = useState<any[]>([]);
   const [priorSelections, setPriorSelections] = useState<Record<number, boolean>>({});
   const [priorAmounts, setPriorAmounts] = useState<Record<number, string>>({});
+
+  // ديون قديمة مدخلة يدوياً (manual_student_debts) — تنبيه فقط، بلا أي أثر مالي هنا.
+  const [manualDebtAlert, setManualDebtAlert] = useState<{ total: number; items: Array<{ id: number; description: string; outstanding: number }> } | null>(null);
 
   useEffect(() => {
     if (!picked || selectedMonths.length === 0) {
@@ -234,6 +239,16 @@ export function CollectionPage() {
         });
         setPriorSelections(pSel);
         setPriorAmounts(pAm);
+        // تنبيه الديون القديمة المدخلة يدوياً (قراءة فقط — لا حركة مالية هنا)
+        const manualDebts = (obRes.manual_debts || []).filter((d: any) => Number(d.outstanding_amount ?? 0) > 0);
+        if (manualDebts.length > 0) {
+          setManualDebtAlert({
+            total: manualDebts.reduce((s: number, d: any) => s + Number(d.outstanding_amount ?? 0), 0),
+            items: manualDebts.map((d: any) => ({ id: d.id, description: d.description, outstanding: Number(d.outstanding_amount ?? 0) })),
+          });
+        } else {
+          setManualDebtAlert(null);
+        }
       } catch {
         setPriorItems([]);
         setPriorSelections({});
@@ -583,6 +598,35 @@ export function CollectionPage() {
               )}
             </div>
 
+            {manualDebtAlert && manualDebtAlert.items.length > 0 && (
+              <div className="rounded-2xl border p-4 mb-4" style={{ borderColor: '#FDE68A', backgroundColor: '#FFFBEB' }}>
+                <div className="flex items-start gap-2 mb-2">
+                  <AlertCircle size={18} style={{ color: '#B45309', marginTop: 2 }} />
+                  <div className="flex-1">
+                    <div className="font-semibold" style={{ color: '#92400E' }}>
+                      تنبيه: لدى التلميذ ديون قديمة مدخلة يدوياً — الإجمالي المتبقي:{' '}
+                      <span dir="ltr">{Number(manualDebtAlert.total).toFixed(2)} د.ت</span>
+                    </div>
+                    <ul className="text-xs mt-1 space-y-0.5" style={{ color: '#92400E' }}>
+                      {manualDebtAlert.items.map((d) => (
+                        <li key={d.id}>• {d.description} — المتبقي {Number(d.outstanding).toFixed(2)} د.ت</li>
+                      ))}
+                    </ul>
+                    <p className="text-xs mt-1" style={{ color: C.muted }}>
+                      هذه الديون تُحصَّل من شاشة الاستخلاص القديم ولا تُضاف تلقائياً إلى الخلاص الحالي.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => navigate('/old-debt-collect?student_id=' + (picked?.student?.id ?? ''))}
+                    className="no-print px-3 py-1.5 rounded-lg text-xs font-medium text-white"
+                    style={{ backgroundColor: '#92400E' }}
+                  >
+                    فتح استخلاص الدين القديم
+                  </button>
+                </div>
+              </div>
+            )}
             {priorItems.length > 0 && (
               <div className="bg-white rounded-2xl border p-4" style={{ borderColor: '#E7E5E4' }}>
                 <div className="font-semibold mb-1" style={{ color: '#57534E' }}>المتخلدات والديون السابقة (الأرصدة الافتتاحية)</div>

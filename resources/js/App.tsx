@@ -1,9 +1,11 @@
 import React, { lazy, Suspense } from 'react';
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
+import { motion, MotionConfig } from 'motion/react';
 import { Sidebar } from './components/Sidebar';
 import { Login } from './pages/Login';
 import { AuthProvider } from './contexts/AuthContext';
 import { ProtectedRoute } from './components/ProtectedRoute';
+import { ToastProvider } from './components/ui/Toast';
 import { StudentsDashboard } from './pages/Students/StudentsDashboard';
 import { EnrollWizard } from './pages/Students/EnrollWizard';
 import Dashboard from './pages/Dashboard/Dashboard';
@@ -66,6 +68,7 @@ const NetIncomeDailyPage = lazy(() => loadNetIncomeDailyPage().then((module) => 
 const NetRevenueMonthlyPage = lazy(() => import('./pages/NetIncome/NetRevenueMonthlyPage').then((module) => ({ default: module.NetRevenueMonthlyPage })));
 const NetRevenueYearlyPage = lazy(() => import('./pages/NetIncome/NetRevenueYearlyPage').then((module) => ({ default: module.NetRevenueYearlyPage })));
 const OpeningBalancesPage = lazy(() => import('./pages/Finance/OpeningBalancesPage').then((module) => ({ default: module.OpeningBalancesPage })));
+const OldDebtCollectPage = lazy(() => import('./pages/Finance/OldDebtCollectPage').then((module) => ({ default: module.OldDebtCollectPage })));
 const OldDebtReportPage = lazy(() => import('./pages/Finance/OldDebtReportPage').then((module) => ({ default: module.OldDebtReportPage })));
 const EmployeeLiabilityReportPage = lazy(() => import('./pages/Finance/EmployeeLiabilityReportPage').then((module) => ({ default: module.EmployeeLiabilityReportPage })));
 
@@ -92,11 +95,24 @@ function RouteContentSkeleton() {
 }
 
 function Layout({ children }: { children: React.ReactNode }) {
+    const location = useLocation();
+    // مفتاح الانتقال = القطاع الأوّل من المسار. هكذا يتحرّك التنقّل بين الموديولات،
+    // دون إعادة تركيب التخطيطات المتداخلة (المداخيل/الخزينة…) عند تبديل تبويباتها.
+    const segment = location.pathname.split('/')[1] || 'root';
     return (
-        <div className="flex min-h-screen" style={{ backgroundColor: '#E9EEE3' }}>
+        <div className="flex min-h-screen" style={{ backgroundColor: '#F7F5EF' }}>
             <Sidebar />
             <main className="flex-1 overflow-x-hidden">
-                <Suspense fallback={<RouteContentSkeleton />}>{children}</Suspense>
+                <Suspense fallback={<RouteContentSkeleton />}>
+                    <motion.div
+                        key={segment}
+                        initial={{ opacity: 0, y: 8 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
+                    >
+                        {children}
+                    </motion.div>
+                </Suspense>
             </main>
         </div>
     );
@@ -110,9 +126,11 @@ function Layout({ children }: { children: React.ReactNode }) {
 export default function App() {
     return (
         <AuthProvider>
-            <BrowserRouter>
-                <Routes>
-                    <Route path="/login" element={<Login />} />
+            <MotionConfig reducedMotion="user">
+                <ToastProvider>
+                    <BrowserRouter>
+                        <Routes>
+                            <Route path="/login" element={<Login />} />
 
                     <Route path="/" element={
                         <ProtectedRoute>
@@ -330,8 +348,13 @@ export default function App() {
                         الإدخال والقائمة والخروج كلها manage_treasury حصراً —
                         الحارس يطابق routes/api.php حرفاً. */}
                     <Route path="/opening-balances" element={
-                        <ProtectedRoute permission="manage_treasury">
+                        <ProtectedRoute anyOf={['manage_treasury', 'view_reports']}>
                             <Layout><OpeningBalancesPage /></Layout>
+                        </ProtectedRoute>
+                    } />
+                    <Route path="/old-debt-collect" element={
+                        <ProtectedRoute permission="manage_payments">
+                            <Layout><OldDebtCollectPage /></Layout>
                         </ProtectedRoute>
                     } />
 
@@ -355,8 +378,10 @@ export default function App() {
                     } />
 
                     <Route path="*" element={<Navigate to="/" replace />} />
-                </Routes>
-            </BrowserRouter>
+                        </Routes>
+                    </BrowserRouter>
+                </ToastProvider>
+            </MotionConfig>
         </AuthProvider>
     );
 }

@@ -1,3 +1,52 @@
+# طبقة التلميع البصري والتفاعلي (Polish Layer)
+
+**تاريخ التقرير:** 24 أغسطس 2026
+
+## 1. الملخص التنفيذي
+
+طبقة **تجميلية وتفاعلية إضافية بحتة** فوق البنية القائمة — لا إعادة بناء. الهدف: رفع الإحساس البصري للمنصة إلى مستوى SaaS تعليمي عالمي مع صون هوية المدرسة (أخضر زيتوني `#2E3B2A` + نحاسي `#C2A24E` + عاجي `#F7F5EF`).
+
+> **قيد صارم محترَم بالكامل:** لا تغيير في أيّ نصّ/تسمية/محتوى ظاهر، ولا في منطق الأعمال، ولا الـAPI، ولا الـroutes، ولا الـprops، ولا إدارة الحالة. صفر مساس بالـbackend أو بالتدفّقات المالية الحسّاسة. كلّ نداءات `alert()`/`confirm()` في المسارات المالية بقيت سليمة.
+
+## 2. نطاق التغيير (بصري/تفاعلي فقط)
+
+| المجال | ما أُضيف |
+|---|---|
+| أساس عامّ (CSS) | خطّ Inter للّاتيني/الأرقام + IBM Plex Sans Arabic للعربية؛ حلقة تركيز نحاسية (`:focus-visible`)؛ أشرطة تمرير رفيعة بلون الهوية؛ `tabular-nums` لمحاذاة أرقام الجداول؛ تظليل نصّ بلون الهوية؛ shimmer للهياكل؛ أداة `.card-interactive` (رفع لطيف) — كلّها opt-in |
+| الشريط الجانبي | قابل للطيّ إلى شريط أيقونات (256px ⇄ 76px)، محفوظ في `localStorage`، مع تلميحات عائمة عبر portal عند الطيّ. **الروابط/الصلاحيات/الخروج دون أيّ مساس** |
+| القشرة | انتقال دخول لطيف بين الموديولات (`motion` مُفتاحه أوّل مقطع من المسار حتى لا تُعاد تهيئة الموديولات الفرعية) |
+| الهياكل | ترقية `animate-pulse` إلى shimmer بلون الهوية (نفس الـexports) |
+| نظام Toast (جديد) | `ToastProvider`/`useToast()`/`<Toaster>` — success/error/info، RTL، إخفاء تلقائي |
+| EmptyState (جديد) | إليستريشن SVG inline بلون الهوية (آمن دون اتصال) |
+| اللوحة الرئيسية | كروت KPI: رفع عند المرور + ظلّ موحّد + دخول متدرّج؛ مودال الديون السابقة: خلفية ضبابية + دخول متحرّك — **نفس التسميات والقيم والبيانات، بلا اتّجاهات/رسوم مختلقة** |
+
+## 3. الملفات المعدَّلة
+
+**البنية التحتية والقشرة:** `resources/css/app.css` · `resources/views/app.blade.php` (رابط خطّ Inter) · `resources/js/App.tsx` (انتقالات + `MotionConfig reducedMotion="user"` + `ToastProvider`) · `resources/js/components/Sidebar.tsx` · `resources/js/components/DataSkeleton.tsx`
+
+**مكوّنات جديدة:** `resources/js/components/ui/Toast.tsx` · `resources/js/components/EmptyState.tsx`
+
+**تلميع صفحات + ربط محدود (نفس النصّ حرفيًا):** `resources/js/pages/Dashboard/Dashboard.tsx` · `pages/Users/UsersList.tsx` و`pages/FeeTypes/FeeTypesPage.tsx` (خطأ الحذف: `alert()` → `toast.error()` بنفس النصّ) · `pages/Families/FamiliesListPage.tsx` (حالة الفراغ غير الجدولية → `EmptyState` بنفس النصّ)
+
+## 4. إصلاح حرج في تقسيم الحزم (vite.config.ts)
+
+**العرض:** شاشة بيضاء كاملة عند الإقلاع بعد إضافة `motion` — `TypeError: Cannot read properties of undefined (reading 'createContext')`.
+
+**السبب الجذري:** بين `react-vendor` (عبر `react-router-dom → history`) وحزمة `vendor` **اعتماد دائري**. لم يكن يضرّ سابقًا لأنّ لا شيء في `vendor` يلمس React وقت التهيئة. لكن `motion` ينشئ سياقات React (`createContext`) عند تحميل الوحدة، فوقع على React قبل أن تُهيَّأ حزمته → انهيار.
+
+**الحلّ:** نقل الحزم الأربع `motion` · `motion-dom` · `motion-utils` · `framer-motion` إلى مجموعة `react-vendor` لتُهيَّأ مع React في نفس الحزمة. بعده انكمش `vendor` من ‎133kB إلى ‎3.85kB، ونما `react-vendor` تبعًا لذلك.
+
+> **قاعدة للمستقبل:** أيّ مكتبة تستدعي `createContext`/تلمس React وقت التحميل يجب أن تُوضَع في `react-vendor` لا في `vendor`، وإلّا عادت الشاشة البيضاء. لم يُرفَع `chunkSizeWarningLimit` ولم يُحرَّر ناتج `public/build` يدويًا.
+
+## 5. التحقّق
+
+- `tsc --noEmit`: نظيف. `vite build`: نجح بلا تحذيرات حدود chunks.
+- شاشة الدخول تُصيَّر سليمة على الأساس الجديد (Reem Kufi للعنوان + Inter للنصّ)؛ قواعد الأساس الستّ حاضرة في الـCSS المبني.
+- القشرة خلف المصادقة (الطيّ/الانتقالات/الكروت/الـtoast/الفراغ): **أكّد المستخدم أنّ المنصة تعمل جيدًا** بعد الإصلاح.
+- كلّ الحركات تحترم `prefers-reduced-motion`.
+
+---
+
 # التقرير التفصيلي للتغييرات المنفذة في مشروع Complexe la Providence ERP
 
 **تاريخ التقرير:** 14 أغسطس 2026
