@@ -20,6 +20,15 @@ export interface PaymentFilters {
   exclude_cancelled?: boolean;
 }
 
+// مرشّحات صفحة «ما تم استخلاصه» — بلا created_by؛ الخادم يشتقّ المستخدم من التوكن.
+export interface MyCollectionsFilters {
+  date_from?: string;
+  date_to?: string;
+  exclude_cancelled?: boolean;
+  per_page?: number;
+  page?: number;
+}
+
 export const paymentsApi = {
   async index(filters?: PaymentFilters): Promise<PaginatedResponse<Payment>> {
     const params = new URLSearchParams();
@@ -32,6 +41,21 @@ export const paymentsApi = {
     const url = API_BASE + '/payments' + (q ? '?' + q : '');
     const res = await fetch(url, { headers: getHeaders() });
     if (!res.ok) throw new Error('تعذر جلب المقابيض');
+    return res.json();
+  },
+
+  // «ما تم استخلاصه» — ذاتيّ النطاق: لا نرسل معرّف مستخدم؛ الخادم يحدّده من التوكن.
+  async myCollections(filters?: MyCollectionsFilters): Promise<PaginatedResponse<Payment>> {
+    const params = new URLSearchParams();
+    if (filters) {
+      Object.entries(filters).forEach(([k, v]) => {
+        if (v !== undefined && v !== null && v !== '') params.append(k, String(v));
+      });
+    }
+    const q = params.toString();
+    const url = API_BASE + '/payments/my-collections' + (q ? '?' + q : '');
+    const res = await fetch(url, { headers: getHeaders() });
+    if (!res.ok) throw new Error('تعذر جلب الاستخلاصات');
     return res.json();
   },
 

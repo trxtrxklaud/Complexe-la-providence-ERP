@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\AcademicYearController;
+use App\Http\Controllers\AuditLogController;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\ClassroomRosterController;
 use App\Http\Controllers\ClubController;
@@ -155,8 +156,13 @@ Route::middleware(['auth:sanctum', 'active', 'throttle:120,1'])->group(function 
     // User Management
     Route::middleware('permission:manage_users')->group(function () {
         Route::get('/roles', [UserController::class, 'roles']);
+        // تغيير كلمة مرور مستخدم من قِبل المشرف — مسار صريح قبل apiResource.
+        Route::post('/users/{user}/change-password', [UserController::class, 'changePassword']);
         Route::apiResource('/users', UserController::class);
         Route::apiResource('/fee-types', FeeTypeController::class)->except(['index']);
+
+        // سجل العمليات — قراءة فقط بصلاحية manage_users حصراً.
+        Route::get('/audit-logs', [AuditLogController::class, 'index']);
     });
 
     // Direct Permission Overrides (منح / منع الصلاحيات المباشرة للمستخدم)
@@ -214,6 +220,8 @@ Route::middleware(['auth:sanctum', 'active', 'throttle:120,1'])->group(function 
 
     // Payments
     Route::middleware('permission:manage_payments')->group(function () {
+        // «ما تم استخلاصه» — ذاتيّ النطاق؛ يسبق apiResource كي لا يلتقطه GET /payments/{payment}.
+        Route::get('/payments/my-collections', [PaymentController::class, 'myCollections']);
         Route::apiResource('/payments', PaymentController::class)->except(['update', 'destroy']);
         Route::post('/payments/{payment}/cancel', [PaymentController::class, 'cancel']);
         Route::get('/fee-types', [FeeTypeController::class, 'index']);

@@ -8,6 +8,7 @@ use App\Models\OpeningBalance;
 use App\Models\Payment;
 use App\Models\Student;
 use App\Models\StudentFee;
+use App\Services\AuditService;
 use App\Services\LedgerService;
 use App\Services\PaymentService;
 use Illuminate\Http\JsonResponse;
@@ -25,6 +26,11 @@ class PaymentController extends Controller
     {
         $perPage = min($request->integer('per_page', 20), 100);
 
+        // الرؤية المالية المميّزة (نفس سياسة DashboardController): من يملك manage_treasury
+        // أو view_reports يرى دفعات الجميع؛ hasPermissionTo يتجاوز لأدوار super دون الاعتماد
+        // على اسم الدور "admin".
+        $seesAll = $this->canSeeAllPayments($request);
+
         $payments = Payment::with([
             'student:id,first_name,last_name,student_code',
             'enrollment:id,academic_year_id,level_id,status',
@@ -34,6 +40,14 @@ class PaymentController extends Controller
         ])
             ->when($request->student_id, fn ($q) => $q->where('student_id', $request->integer('student_id')))
             ->when($request->enrollment_id, fn ($q) => $q->where('enrollment_id', $request->integer('enrollment_id')))
+            // عزل خادميّ: المستخدم غير المميّز (manage_payments فقط، كالقابض) يُقصَر على دفعاته
+            // هو، ويُتجاهَل أيّ created_by من العميل. المميّز مالياً وحده يرى الجميع، وله استعمال
+            // created_by كمرشّح اختياري (سلوك Historique/الإدارة يبقى كما هو).
+            ->when(
+                ! $seesAll,
+                fn ($q) => $q->where('created_by', $request->user()->id),
+                fn ($q) => $q->when($request->created_by, fn ($qq) => $qq->where('created_by', $request->integer('created_by')))
+            )
             ->when($request->method, fn ($q) => $q->where('method', $request->input('method')))
             ->when($request->date_from, fn ($q) => $q->whereDate('payment_date', '>=', $request->input('date_from')))
             ->when($request->date_to, fn ($q) => $q->whereDate('payment_date', '<=', $request->input('date_to')))
@@ -51,6 +65,43 @@ class PaymentController extends Controller
         return response()->json($payments);
     }
 
+    /**
+     * «ما تم استخلاصه» — سجلّ استخلاصات المستخدم الحالي حصراً. النطاق يُحدَّد خادمياً من
+     * $request->user()->id، ولا يُقبل created_by من العميل إطلاقاً.
+     */
+    public function myCollections(Request $request): JsonResponse
+    {
+        $perPage = min($request->integer('per_page', 20), 100);
+
+        $payments = Payment::with([
+            'student:id,first_name,last_name,student_code',
+            'enrollment:id,academic_year_id,level_id,status',
+            'createdBy:id,first_name,last_name',
+            'cancelledBy:id,first_name,last_name',
+            'paymentAllocations.studentFee:id,description,amount_due,due_date,status',
+        ])
+            ->where('created_by', $request->user()->id)
+            ->when($request->date_from, fn ($q) => $q->whereDate('payment_date', '>=', $request->input('date_from')))
+            ->when($request->date_to, fn ($q) => $q->whereDate('payment_date', '<=', $request->input('date_to')))
+            ->when($request->boolean('exclude_cancelled'), fn ($q) => $q->whereNull('cancelled_at'))
+            ->latest('payment_date')
+            ->paginate($perPage);
+
+        return response()->json($payments);
+    }
+
+    /**
+     * رؤية دفعات الجميع = صلاحية مالية مميّزة (manage_treasury أو view_reports)، وهي نفس
+     * بوابة DashboardController للبيانات المالية. لا تُبنى على اسم الدور.
+     */
+    private function canSeeAllPayments(Request $request): bool
+    {
+        $user = $request->user();
+
+        return $user !== null
+            && ($user->hasPermissionTo('manage_treasury') || $user->hasPermissionTo('view_reports'));
+    }
+
     public function store(StorePaymentRequest $request): JsonResponse
     {
         try {
@@ -63,6 +114,11 @@ class PaymentController extends Controller
                 $data,
                 auth()->id()
             );
+
+            AuditService::log('payment.create', 'تسجيل دفعة بمبلغ '.$payment->amount.' د.ت', $payment, [
+                'amount'     => $payment->amount,
+                'student_id' => $payment->student_id,
+            ]);
 
             return response()->json(
                 $payment->load([
@@ -179,6 +235,8 @@ class PaymentController extends Controller
             // سحب أثر الدفعة من الدفتر النقدي المركزي بنفس السبب والمنفّذ.
             $this->ledger->cancelFor($payment, $request->user()?->id, $data['reason']);
         });
+
+        AuditService::log('payment.cancel', 'إلغاء دفعة رقم '.$payment->id, $payment, ['reason' => $data['reason']]);
 
         return response()->json(
             $payment->fresh()->load([
