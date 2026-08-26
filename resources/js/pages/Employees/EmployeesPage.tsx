@@ -154,7 +154,19 @@ export function EmployeesPage() {
       await deleteEmployee(employee.id);
       await loadBase();
     } catch (err: any) {
-      setError(err.message || 'فشل الحذف');
+      let msg = err.message || 'فشل الحذف';
+      const d = (err as any)?.details;
+      if (d && typeof d === 'object') {
+        const parts: string[] = [];
+        if (d.salaries) parts.push(`رواتب: ${d.salaries}`);
+        if (d.advances) parts.push(`سلف: ${d.advances}`);
+        if (d.liabilities) parts.push(`ديون: ${d.liabilities}`);
+        if (d.repayments) parts.push(`رديات: ${d.repayments}`);
+        if (d.daily_hours) parts.push(`ساعات: ${d.daily_hours}`);
+        if (d.cash_transactions) parts.push(`قيود نقدية: ${d.cash_transactions}`);
+        if (parts.length) msg += ' — ' + parts.join('، ');
+      }
+      setError(msg);
     }
   }
 

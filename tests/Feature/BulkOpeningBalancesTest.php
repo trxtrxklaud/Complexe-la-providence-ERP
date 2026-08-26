@@ -283,14 +283,23 @@ class BulkOpeningBalancesTest extends TestCase
         $year = $this->makeAcademicYear('2025-2026');
         $e1 = $this->makeEmployee('worker');
         $e2 = $this->makeEmployee('worker');
+        // بعد الإصلاح amount=0 مرفوض بـ422 (all-or-nothing) — لا سجل جزئي
         $this->postJson('/api/employee-liabilities/bulk', [
             'academic_year_id'=>$year->id,'original_year_label'=>'2024/2025',
             'items'=>[
                 ['employee_id'=>$e1->id,'liability_type'=>'debt','amount'=>0],
                 ['employee_id'=>$e2->id,'liability_type'=>'debt','amount'=>400],
             ],
+        ])->assertStatus(422);
+        $this->assertDatabaseCount('employee_liabilities', 0);
+
+        // إنشاء صحيح ثم تحديث مسموح
+        $this->postJson('/api/employee-liabilities/bulk', [
+            'academic_year_id'=>$year->id,'original_year_label'=>'2024/2025',
+            'items'=>[
+                ['employee_id'=>$e2->id,'liability_type'=>'debt','amount'=>400],
+            ],
         ])->assertCreated();
-        $this->assertDatabaseCount('employee_liabilities', 1);
         $this->assertDatabaseHas('employee_liabilities',['employee_id'=>$e2->id]);
 
         // create liability then simulate paid via direct cash transaction (since no pay route for new collection type yet, but paid() reads old collection; we seed directly)

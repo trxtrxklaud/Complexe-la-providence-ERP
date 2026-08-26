@@ -2,7 +2,12 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\CashTransaction;
 use App\Models\Employee;
+use App\Models\EmployeeLiability;
+use App\Models\Salary;
+use App\Models\EmployeeAdvance;
+use App\Models\EmployeeAdvanceRepayment;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
@@ -61,13 +66,53 @@ class EmployeeController extends Controller
 
     public function destroy(Employee $employee): JsonResponse
     {
-        $hasRelatedRecords = $employee->salaries()->exists()
-            || $employee->advances()->exists()
-            || $employee->repayments()->exists();
+        // عدّادات الحماية — لا حذف تلقائي ولا cascade، فقط منع وشرح
+        $salariesCount = $employee->salaries()->count();
+        $advancesCount = $employee->advances()->count();
+        $liabilitiesCount = EmployeeLiability::where('employee_id', $employee->id)->count();
+        $repaymentsCount = $employee->repayments()->count();
+        $dailyHoursCount = $employee->dailyHours()->count();
+
+        // cash_transactions المرتبطة عبر morph (source_type / source_id)
+        // المصدر يُخزن عبر getMorphClass() في LedgerService::post()
+        $salaryIds = $employee->salaries()->pluck('id')->all();
+        $advanceIds = $employee->advances()->pluck('id')->all();
+        $repaymentIds = $employee->repayments()->pluck('id')->all();
+        $liabilityIds = EmployeeLiability::where('employee_id', $employee->id)->pluck('id')->all();
+
+        $cashCount = 0;
+        $morphChecks = [
+            [$salaryIds, (new Salary())->getMorphClass()],
+            [$advanceIds, (new EmployeeAdvance())->getMorphClass()],
+            [$repaymentIds, (new EmployeeAdvanceRepayment())->getMorphClass()],
+            [$liabilityIds, (new EmployeeLiability())->getMorphClass()],
+        ];
+        foreach ($morphChecks as [$ids, $morph]) {
+            if (! empty($ids)) {
+                $cashCount += CashTransaction::where('source_type', $morph)->whereIn('source_id', $ids)->count();
+            }
+        }
+
+        $details = [
+            'salaries' => $salariesCount,
+            'advances' => $advancesCount,
+            'liabilities' => $liabilitiesCount,
+            'repayments' => $repaymentsCount,
+            'daily_hours' => $dailyHoursCount,
+            'cash_transactions' => $cashCount,
+        ];
+
+        $hasRelatedRecords = $salariesCount > 0
+            || $advancesCount > 0
+            || $liabilitiesCount > 0
+            || $repaymentsCount > 0
+            || $dailyHoursCount > 0
+            || $cashCount > 0;
 
         if ($hasRelatedRecords) {
             return response()->json([
-                'message' => 'لا يمكن حذف موظف لديه رواتب أو سلف أو سجلات مالية مرتبطة',
+                'message' => 'لا يمكن حذف هذا الإطار لأنه مرتبط بسجلات مالية أو رواتب أو سلف.',
+                'details' => $details,
             ], 422);
         }
 

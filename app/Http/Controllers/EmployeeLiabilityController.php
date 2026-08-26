@@ -251,8 +251,19 @@ class EmployeeLiabilityController extends Controller
             'items' => ['required', 'array', 'min:1', 'max:300'],
             'items.*.employee_id' => ['required', 'integer', 'distinct', 'exists:employees,id'],
             'items.*.liability_type' => ['required', 'string', 'in:'.implode(',', EmployeeLiability::LIABILITY_TYPES)],
-            'items.*.amount' => ['required', 'numeric', 'min:0', 'max:1000000'],
+            'items.*.amount' => ['required', 'numeric', 'min:0.01', 'max:1000000'],
             'items.*.notes' => ['nullable', 'string', 'max:2000'],
+        ], [
+            'items.required' => 'قائمة الإطارات مطلوبة.',
+            'items.array' => 'صيغة قائمة الإطارات غير صحيحة.',
+            'items.*.employee_id.required' => 'معرّف الإطار مطلوب.',
+            'items.*.employee_id.integer' => 'معرّف الإطار يجب أن يكون رقماً صحيحاً.',
+            'items.*.employee_id.exists' => 'الإطار المحدد غير موجود.',
+            'items.*.amount.required' => 'المبلغ مطلوب.',
+            'items.*.amount.numeric' => 'المبلغ يجب أن يكون رقماً.',
+            'items.*.amount.min' => 'المبلغ يجب أن يكون أكبر من صفر.',
+            'items.*.liability_type.required' => 'نوع الالتزام مطلوب.',
+            'items.*.liability_type.in' => 'نوع الالتزام يجب أن يكون دَيناً أو سلفة غير مسددة.',
         ]);
 
         $yearId = $data['academic_year_id'] ?? AcademicYear::where('is_active', true)->value('id');
@@ -285,19 +296,17 @@ class EmployeeLiabilityController extends Controller
                     ->get(['id', 'staff_type'])
                     ->keyBy('id');
 
-                foreach ($data['items'] as $item) {
+                foreach ($data['items'] as $idx => $item) {
                     $amount = round((float) $item['amount'], 2);
-                    if ($amount <= 0) {
-                        continue;
-                    }
+                    // validation يضمن amount >= 0.01، لا continue صامت — كل صف غير صالح فشل قبل الدخول هنا
                     $empId = (int) $item['employee_id'];
                     $emp = $employees->get($empId);
                     if (! $emp) {
-                        throw new RuntimeException('الإطار رقم '.$empId.' غير موجود');
+                        throw new RuntimeException('الصف '.($idx + 1).': الإطار رقم '.$empId.' غير موجود');
                     }
                     $allowed = $allowedFor($emp->staff_type);
                     if (! in_array($item['liability_type'], $allowed, true)) {
-                        throw new RuntimeException('نوع الالتزام غير مسموح للإطار رقم '.$empId.' (نوعه '.$emp->staff_type.')');
+                        throw new RuntimeException('الصف '.($idx + 1).': نوع الالتزام غير مسموح للإطار رقم '.$empId.' (نوعه '.$emp->staff_type.')');
                     }
 
                     $itemData = [
@@ -313,6 +322,7 @@ class EmployeeLiabilityController extends Controller
                     /** @var EmployeeLiability|null $existing */
                     $existing = EmployeeLiability::where('employee_id', $empId)
                         ->where('academic_year_id', $targetYear->id)
+                        ->where('liability_type', $item['liability_type'])
                         ->whereNull('cancelled_at')
                         ->lockForUpdate()
                         ->first();
@@ -320,7 +330,7 @@ class EmployeeLiabilityController extends Controller
                     if ($existing) {
                         if ($existing->paid() > 0) {
                             throw new RuntimeException(
-                                'التزام الإطار رقم '.$empId.' حُصّل منه '.number_format($existing->paid(), 2, '.', '').'؛ عدّله من قائمة الالتزامات لا بالإدخال الجماعي'
+                                'الصف '.($idx + 1).': التزام الإطار رقم '.$empId.' حُصّل منه '.number_format($existing->paid(), 2, '.', '').'؛ عدّله من قائمة الالتزامات لا بالإدخال الجماعي'
                             );
                         }
                         $existing->update([
@@ -340,7 +350,7 @@ class EmployeeLiabilityController extends Controller
                     ]);
                     $created++;
                 }
-                return ['created' => $created, 'updated' => $updated];
+                return ['created' => $created, 'updated' => $updated, 'skipped' => 0];
             });
         } catch (RuntimeException $e) {
             return response()->json(['message' => $e->getMessage()], 422);
@@ -350,6 +360,7 @@ class EmployeeLiabilityController extends Controller
             'message' => 'تم حفظ التزامات الإطارات: '.$result['created'].' جديداً، '.$result['updated'].' محدَّثاً',
             'created' => $result['created'],
             'updated' => $result['updated'],
+            'skipped' => $result['skipped'],
         ], 201);
     }
 

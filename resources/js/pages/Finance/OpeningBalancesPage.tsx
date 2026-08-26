@@ -512,7 +512,21 @@ export function OpeningBalancesPage() {
       setBulkEmployeeRows(rows);
       await reloadLiabilities();
     } catch (err) {
-      setError(errorMessage(err));
+      // عرض أخطاء التحقق بالصفوف (items.0.amount ... ) بدل أول خطأ فقط
+      const anyErr = err as any;
+      if (anyErr?.errors && typeof anyErr.errors === 'object') {
+        const rows: string[] = [];
+        Object.entries(anyErr.errors as Record<string, string[]>).forEach(([key, msgs]) => {
+          const m = Array.isArray(msgs) ? msgs[0] : String(msgs);
+          // تحويل items.0.amount إلى "الصف 1"
+          const match = key.match(/^items\.(\d+)\./);
+          const rowLabel = match ? `الصف ${Number(match[1]) + 1}` : key;
+          rows.push(`${rowLabel}: ${m}`);
+        });
+        setError(rows.join(' — '));
+      } else {
+        setError(errorMessage(err));
+      }
     } finally {
       setBulkSavingEmployees(false);
     }
