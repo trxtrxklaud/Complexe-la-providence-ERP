@@ -274,10 +274,144 @@ class OldDebtAccountingTest extends TestCase
         $this->assertSame(0, $countMonthly, 'التصنيف يجب ألا يعتمد على description');
     }
 
+    public function test_daybook_shows_old_debt_line_and_balance_after_withdrawals(): void
+    {
+        Sanctum::actingAs($this->adminUser());
+        [$student, $currentYear, $enrollment] = $this->studentWithTwoYears();
+        $date = now()->toDateString();
+
+        $debtId = $this->postJson('/api/manual-debts', [
+            'student_id' => $student->id,
+            'academic_year_id' => $currentYear->id,
+            'original_year_label' => '2024/2025',
+            'debt_type' => 'tuition',
+            'description' => 'دين يومية',
+            'original_amount' => 300,
+        ])->assertCreated()->json('id');
+
+        $this->postJson('/api/payments/collect', [
+            'student_id' => $student->id,
+            'enrollment_id' => $enrollment->id,
+            'payment_date' => $date,
+            'method' => 'cash',
+            'prior_allocations' => [['manual_student_debt_id' => $debtId, 'amount' => 300]],
+        ])->assertCreated();
+
+        // سحب 20 في نفس اليوم
+        $this->postJson('/api/treasury/withdrawals', [
+            'amount' => 20,
+            'withdrawn_at' => $date,
+            'type' => 'test',
+            'note' => 'اختبار رصيد',
+        ])->assertCreated();
+
+        $res = $this->getJson('/api/reports/treasury-daybook?date='.$date.'&details=1')->assertOk()->json();
+        $day = collect($res['days'])->firstWhere('date', $date);
+        $this->assertNotNull($day, 'يجب أن يعود اليوم في الكشف');
+
+        // القواعد الخمس
+        $this->assertEqualsWithDelta(300, $day['prior_year_debt'] ?? 0, 0.01, 'تحصيل الدين القديم يظهر في بند prior_year_debt');
+        $this->assertEqualsWithDelta(0, $day['income']['total'] ?? 0, 0.01, 'لا يدخل current_year_income');
+        $this->assertEqualsWithDelta(0, $day['net_income'] ?? 0, 0.01, 'لا يدخل net_income');
+        $this->assertEqualsWithDelta(280, $day['balance'] ?? 0, 0.01, 'يدخل في الرصيد بعد السحوبات: 300 - 20');
+        // cash_in مشتق: income + prior
+        $cashIn = ($day['income']['total'] ?? 0) + ($day['prior_year_debt'] ?? 0);
+        $this->assertEqualsWithDelta(300, $cashIn, 0.01, 'يدخل cash_in');
+        // تفصيل prior_debt يحوي السطر
+        $this->assertNotEmpty($day['details']['prior_debt'] ?? []);
+        $this->assertEqualsWithDelta(300, $day['details']['prior_debt'][0]['amount'] ?? 0, 0.01);
+    }
+
     private function invokeCashFigures(DashboardService $service, ?string $from, string $to): array
     {
         $ref = new \ReflectionMethod($service, 'cashFigures');
         $ref->setAccessible(true);
         return $ref->invoke($service, $from, $to);
+    }
+
+    // 6) كشف الخزينة والدخل الصافي يشملان دين الإطار مع دين التلميذ — ولا يخلطان خلاص المستحقّات
+    public function test_daybook_and_net_income_include_employee_debt_with_student_debt(): void
+    {
+        Sanctum::actingAs($this->adminUser());
+        [$student, $currentYear, $enrollment] = $this->studentWithTwoYears();
+        $date = now()->toDateString();
+
+        // دين تلميذ 50 → تحصيل عبر المسار الفعلي
+        $debtId = $this->postJson('/api/manual-debts', [
+            'student_id' => $student->id,
+            'academic_year_id' => $currentYear->id,
+            'original_year_label' => '2024/2025',
+            'debt_type' => 'tuition',
+            'description' => 'دين تلميذ قديم',
+            'original_amount' => 50,
+        ])->assertCreated()->json('id');
+
+        $this->postJson('/api/payments/collect', [
+            'student_id' => $student->id,
+            'enrollment_id' => $enrollment->id,
+            'payment_date' => $date,
+            'method' => 'cash',
+            'prior_allocations' => [['manual_student_debt_id' => $debtId, 'amount' => 50]],
+        ])->assertCreated();
+
+        // دين إطار 444 → تحصيل عبر مسار الالتزامات الفعلي
+        $employee = Employee::create([
+            'first_name' => 'علي',
+            'last_name' => 'الرباحي',
+            'staff_type' => 'teacher',
+            'is_active' => true,
+        ]);
+        $liability = EmployeeLiability::create([
+            'employee_id' => $employee->id,
+            'academic_year_id' => $currentYear->id,
+            'original_year_label' => '2024/2025',
+            'liability_type' => 'debt',
+            'description' => 'دين إطار قديم',
+            'original_amount' => 444,
+            'status' => EmployeeLiability::STATUS_PENDING,
+        ]);
+
+        $this->postJson('/api/employee-liabilities/'.$liability->id.'/collect', [
+            'amount' => 444,
+            'paid_at' => $date,
+        ])->assertCreated();
+
+        // خلاص مستحقّات (out) يجب ألا يدخل prior_year_debt
+        CashTransaction::create([
+            'transaction_date' => $date,
+            'direction' => CashTransaction::DIRECTION_OUT,
+            'category' => CashTransaction::CATEGORY_OLD_LIABILITY_PAYMENT,
+            'amount' => 999,
+            'source_type' => $liability->getMorphClass(),
+            'source_id' => $liability->getKey(),
+            'academic_year_id' => $currentYear->id,
+            'description' => 'خلاص مستحقّات — خارج البند',
+        ]);
+
+        // ---- كشف الخزينة ----
+        $res = $this->getJson('/api/reports/treasury-daybook?date='.$date.'&details=1')->assertOk()->json();
+        $day = collect($res['days'])->firstWhere('date', $date);
+        $this->assertNotNull($day);
+
+        $this->assertEqualsWithDelta(494, $day['prior_year_debt'] ?? 0, 0.01, 'prior_year_debt = تلميذ 50 + إطار 444');
+        $this->assertEqualsWithDelta(0, $day['income']['total'] ?? 0, 0.01, 'لا يدخل income التشغيلي');
+        $this->assertEqualsWithDelta(0, $day['net_income'] ?? 0, 0.01, 'لا يدخل net_income');
+        $this->assertEqualsWithDelta(494, $day['balance'] ?? 0, 0.01, 'الرصيد يتضمن التحصيلين');
+
+        // حركة الإطار تحت prior_debt ولا تسقط تحت expenses، وخلاص المستحقّات خارج البند
+        $priorIds = array_column($day['details']['prior_debt'] ?? [], 'id');
+        $expenseIds = array_column($day['details']['expenses'] ?? [], 'id');
+        $frameTxnId = (int) CashTransaction::where('category', CashTransaction::CATEGORY_OLD_LIABILITY_COLLECTION)
+            ->where('source_type', $liability->getMorphClass())
+            ->where('source_id', $liability->getKey())
+            ->value('id');
+        $this->assertContains($frameTxnId, $priorIds, 'حركة الإطار في bucket prior_debt');
+        $this->assertNotContains($frameTxnId, $expenseIds, 'حركة الإطار ليست ضمن مصاريف اليوم');
+
+        // ---- الدخل الصافي (تراكمي حتى التاريخ) ----
+        $net = $this->getJson('/api/reports/net-income?date='.$date)->assertOk()->json();
+        $this->assertEqualsWithDelta(494, $net['cumulative']['prior_year_debt'] ?? 0, 0.01, 'الدخل الصافي التراكمي = 494');
+        $this->assertEqualsWithDelta(494, $net['cumulative']['balance'] ?? 0, 0.01, 'رصيد الدخل الصافي = 494');
+        $this->assertEqualsWithDelta(0, $net['cumulative']['net_income'] ?? 0, 0.01, 'net_income لا يتأثر');
     }
 }

@@ -715,8 +715,8 @@ class FinancialReportController extends Controller
         $income = $this->linesFor(CashTransaction::INCOME_CATEGORIES, $totals);
         $expenses = $this->linesFor(CashTransaction::EXPENSE_CATEGORIES, $totals);
         $withdrawals = round($totals[CashTransaction::CATEGORY_WITHDRAWAL] ?? 0.0, 2);
-        // تحصيل ديون السنوات السابقة: نقد في الصندوق لا مدخول للفترة.
-        $priorYearDebt = round($totals[CashTransaction::CATEGORY_PRIOR_YEAR_DEBT] ?? 0.0, 2);
+        // تحصيل الديون القديمة (تلميذ + إطار): نقد في الصندوق لا مدخول للفترة.
+        $priorYearDebt = round(collect($totals)->only(CashTransaction::OLD_DEBT_COLLECTION_CATEGORIES)->sum(), 2);
 
         $incomeTotal = round(array_sum(array_column($income, 'total')), 2);
         $expenseTotal = round(array_sum(array_column($expenses, 'total')), 2);
