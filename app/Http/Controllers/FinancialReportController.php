@@ -3,7 +3,6 @@
 namespace App\Http\Controllers;
 
 use App\Models\CashTransaction;
-use App\Models\EmployeeLiability;
 use App\Models\Enrollment;
 use App\Models\ManualStudentDebt;
 use App\Models\OpeningBalance;
@@ -628,64 +627,6 @@ class FinancialReportController extends Controller
                     'original_amount' => round($autoTotals['original_amount'] + $manualTotals['original_amount'], 2),
                     'outstanding_amount' => round($autoTotals['outstanding_amount'] + $manualTotals['outstanding_amount'], 2),
                 ],
-            ],
-        ]);
-    }
-
-    /**
-     * كشف مستحقات الإطارات القديمة: ما دُفع، ما بقي، لكل استحقاق.
-     *
-     * المدفوع يُقرأ من الرواتب والسلف الفعلية المرتبطة بالاستحقاق
-     * (employee_liability_id)، لا من عمود مخزّن.
-     */
-    public function employeeLiabilities(Request $request): JsonResponse
-    {
-        $data = $request->validate([
-            'academic_year_id' => ['nullable', 'integer', 'exists:academic_years,id'],
-            'employee_id' => ['nullable', 'integer', 'exists:employees,id'],
-            'liability_type' => ['nullable', 'string', 'in:'.implode(',', EmployeeLiability::LIABILITY_TYPES)],
-            'status' => ['nullable', 'string', 'in:pending,partial,paid,cancelled'],
-            'exclude_cancelled' => ['nullable', 'boolean'],
-        ]);
-
-        $query = EmployeeLiability::with([
-            'employee:id,first_name,last_name,job_title',
-            'academicYear:id,name',
-        ])
-            ->when($data['academic_year_id'] ?? null, fn ($q, $v) => $q->where('academic_year_id', (int) $v))
-            ->when($data['employee_id'] ?? null, fn ($q, $v) => $q->where('employee_id', (int) $v))
-            ->when($data['liability_type'] ?? null, fn ($q, $v) => $q->where('liability_type', $v))
-            ->when($data['status'] ?? null, fn ($q, $v) => $q->where('status', $v))
-            ->when($request->boolean('exclude_cancelled'), fn ($q) => $q->whereNull('cancelled_at'))
-            ->latest('id');
-
-        $rows = $query->get()->map(function (EmployeeLiability $liability) {
-            return [
-                'id' => $liability->id,
-                'employee' => $liability->employee,
-                'academic_year' => $liability->academicYear,
-                'original_year_label' => $liability->original_year_label,
-                'liability_type' => $liability->liability_type,
-                'description' => $liability->description,
-                'original_amount' => (float) $liability->original_amount,
-                'paid_amount' => $liability->paid(),
-                'outstanding_amount' => $liability->outstanding(),
-                'status' => $liability->status,
-                'cancelled_at' => $liability->cancelled_at,
-                'created_at' => $liability->created_at,
-            ];
-        });
-
-        $active = $rows->reject(fn (array $row) => $row['cancelled_at'] !== null)->values();
-
-        return response()->json([
-            'filters' => $data,
-            'items' => $rows,
-            'totals' => [
-                'count' => $active->count(),
-                'original_amount' => round($active->sum('original_amount'), 2),
-                'paid_amount' => round($active->sum('paid_amount'), 2),
-                'outstanding_amount' => round($active->sum('outstanding_amount'), 2),
             ],
         ]);
     }

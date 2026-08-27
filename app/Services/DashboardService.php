@@ -4,7 +4,6 @@ namespace App\Services;
 
 use App\Models\AcademicYear;
 use App\Models\CashTransaction;
-use App\Models\EmployeeLiability;
 use App\Models\Enrollment;
 use App\Models\FeeType;
 use App\Models\ManualStudentDebt;
@@ -287,44 +286,15 @@ class DashboardService
             ];
         })->values();
 
-        $employeeLiabilities = EmployeeLiability::query()
-            ->with('employee:id,first_name,last_name')
-            ->whereNull('cancelled_at')
-            ->where('original_amount', '>', 0)
-            ->orderByDesc('id')
-            ->get();
-
-        $employeeDetails = $employeeLiabilities->map(function (EmployeeLiability $liability): array {
-            $outstanding = $liability->outstanding();
-            $paid = $liability->paid();
-            $original = round((float) $liability->original_amount, 2);
-            return [
-                'id' => $liability->id,
-                'type' => 'employee',
-                'liability_type' => $liability->liability_type,
-                'employee_name' => trim(($liability->employee?->first_name ?? '').' '.($liability->employee?->last_name ?? '')) ?: '—',
-                'original_year_label' => $liability->original_year_label,
-                'created_at' => $liability->created_at?->toIso8601String(),
-                'original_amount' => $original,
-                'original' => $original,
-                'paid_amount' => $paid,
-                'paid' => $paid,
-                'outstanding_amount' => $outstanding,
-                'outstanding' => $outstanding,
-                'remaining' => $outstanding,
-            ];
-        })->values();
-
         return [
             'total_collected' => round($totalCollected, 2),
             // المتبقّي على كل السجلات السارية بلا ترشيح سنة — كما هو محدَّد للمواصفة.
             'total_remaining' => round(
-                (float) $manualDebts->sum(fn (ManualStudentDebt $d) => $d->outstanding())
-                + (float) $employeeLiabilities->sum(fn (EmployeeLiability $l) => $l->outstanding()),
+                (float) $manualDebts->sum(fn (ManualStudentDebt $d) => $d->outstanding()),
                 2
             ),
             'student_details' => $studentDetails,
-            'employee_details' => $employeeDetails,
+            'employee_details' => [],
         ];
     }
 

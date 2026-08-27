@@ -4,8 +4,6 @@ namespace Tests\Feature;
 
 use App\Models\AcademicYear;
 use App\Models\CashTransaction;
-use App\Models\Employee;
-use App\Models\EmployeeLiability;
 use App\Models\Enrollment;
 use App\Models\Level;
 use App\Models\ManualStudentDebt;
@@ -54,16 +52,6 @@ class BulkOpeningBalancesTest extends TestCase
         return $student;
     }
 
-    private function makeEmployee(string $type = 'worker'): Employee
-    {
-        return Employee::create([
-            'first_name' => 'موظف',
-            'last_name' => uniqid(),
-            'staff_type' => $type,
-            'is_active' => true,
-        ]);
-    }
-
     public function test_bulk_options_requires_treasury_permission(): void
     {
         $user = $this->makeUser('cashier');
@@ -76,10 +64,9 @@ class BulkOpeningBalancesTest extends TestCase
     {
         Sanctum::actingAs($this->admin());
         [$year, $level, $section] = $this->setupYearAndSection();
-        $this->makeEmployee('worker');
 
         $res = $this->getJson('/api/manual-debts/bulk-options')->assertOk();
-        $res->assertJsonStructure(['active_year' => ['id','name','start_date'], 'levels','sections','employees','existing_liabilities']);
+        $res->assertJsonStructure(['active_year' => ['id','name','start_date'], 'levels','sections']);
         $this->assertEquals($year->id, $res->json('active_year.id'));
     }
 
@@ -250,94 +237,5 @@ class BulkOpeningBalancesTest extends TestCase
             'items'=>[['student_id'=>$s1->id,'debt_type'=>'tuition','amount'=>400]],
         ])->assertCreated();
         $this->assertDatabaseCount('manual_student_debts', 1);
-    }
-
-    public function test_employee_bulk_creates_with_staff_type_validation(): void
-    {
-        Sanctum::actingAs($this->admin());
-        $year = $this->makeAcademicYear('2025-2026');
-        $w = $this->makeEmployee('worker');
-        $t = $this->makeEmployee('monthly_teacher');
-        // worker with advance should fail whole batch rollback
-        $this->postJson('/api/employee-liabilities/bulk', [
-            'academic_year_id'=>$year->id,'original_year_label'=>'2024/2025',
-            'items'=>[['employee_id'=>$w->id,'liability_type'=>'advance','amount'=>300]],
-        ])->assertStatus(422);
-        $this->assertDatabaseCount('employee_liabilities', 0);
-
-        // correct
-        $res = $this->postJson('/api/employee-liabilities/bulk', [
-            'academic_year_id'=>$year->id,'original_year_label'=>'2024/2025',
-            'items'=>[
-                ['employee_id'=>$w->id,'liability_type'=>'debt','amount'=>300],
-                ['employee_id'=>$t->id,'liability_type'=>'advance','amount'=>500],
-            ],
-        ])->assertCreated();
-        $this->assertEquals(2, $res->json('created'));
-        $this->assertDatabaseCount('cash_transactions', 0);
-    }
-
-    public function test_employee_bulk_zero_amount_skipped_and_update_blocked_when_paid(): void
-    {
-        Sanctum::actingAs($this->admin());
-        $year = $this->makeAcademicYear('2025-2026');
-        $e1 = $this->makeEmployee('worker');
-        $e2 = $this->makeEmployee('worker');
-        // بعد الإصلاح amount=0 مرفوض بـ422 (all-or-nothing) — لا سجل جزئي
-        $this->postJson('/api/employee-liabilities/bulk', [
-            'academic_year_id'=>$year->id,'original_year_label'=>'2024/2025',
-            'items'=>[
-                ['employee_id'=>$e1->id,'liability_type'=>'debt','amount'=>0],
-                ['employee_id'=>$e2->id,'liability_type'=>'debt','amount'=>400],
-            ],
-        ])->assertStatus(422);
-        $this->assertDatabaseCount('employee_liabilities', 0);
-
-        // إنشاء صحيح ثم تحديث مسموح
-        $this->postJson('/api/employee-liabilities/bulk', [
-            'academic_year_id'=>$year->id,'original_year_label'=>'2024/2025',
-            'items'=>[
-                ['employee_id'=>$e2->id,'liability_type'=>'debt','amount'=>400],
-            ],
-        ])->assertCreated();
-        $this->assertDatabaseHas('employee_liabilities',['employee_id'=>$e2->id]);
-
-        // create liability then simulate paid via direct cash transaction (since no pay route for new collection type yet, but paid() reads old collection; we seed directly)
-        // Instead test update allowed when not paid
-        $res = $this->postJson('/api/employee-liabilities/bulk', [
-            'academic_year_id'=>$year->id,'original_year_label'=>'2024/2025',
-            'items'=>[['employee_id'=>$e2->id,'liability_type'=>'debt','amount'=>600]],
-        ])->assertCreated();
-        $this->assertEquals(1, $res->json('updated'));
-        $this->assertDatabaseHas('employee_liabilities',['employee_id'=>$e2->id,'original_amount'=>600]);
-
-        // now make it paid partially via direct ledger entry
-        $liab = EmployeeLiability::where('employee_id',$e2->id)->first();
-        CashTransaction::create([
-            'transaction_date'=>now()->toDateString(),
-            'direction'=>CashTransaction::DIRECTION_IN,
-            'category'=>CashTransaction::CATEGORY_OLD_LIABILITY_COLLECTION,
-            'amount'=>100,
-            'source_type'=>$liab->getMorphClass(),
-            'source_id'=>$liab->getKey(),
-            'academic_year_id'=>$year->id,
-        ]);
-        $this->postJson('/api/employee-liabilities/bulk', [
-            'academic_year_id'=>$year->id,'original_year_label'=>'2024/2025',
-            'items'=>[['employee_id'=>$e2->id,'liability_type'=>'debt','amount'=>800]],
-        ])->assertStatus(422);
-    }
-
-    public function test_bulk_does_not_use_old_liability_payment(): void
-    {
-        Sanctum::actingAs($this->admin());
-        $year = $this->makeAcademicYear('2025-2026');
-        $e = $this->makeEmployee('worker');
-        $this->postJson('/api/employee-liabilities/bulk', [
-            'academic_year_id'=>$year->id,'original_year_label'=>'2024/2025',
-            'items'=>[['employee_id'=>$e->id,'liability_type'=>'debt','amount'=>300]],
-        ])->assertCreated();
-        $this->assertDatabaseMissing('cash_transactions',['category'=>CashTransaction::CATEGORY_OLD_LIABILITY_PAYMENT]);
-        $this->assertDatabaseMissing('cash_transactions',['category'=>CashTransaction::CATEGORY_OLD_LIABILITY_COLLECTION]);
     }
 }

@@ -4,8 +4,6 @@ namespace Tests\Feature;
 
 use App\Models\AcademicYear;
 use App\Models\CashTransaction;
-use App\Models\Employee;
-use App\Models\EmployeeLiability;
 use App\Models\ManualStudentDebt;
 use App\Models\Student;
 use App\Services\DashboardService;
@@ -102,45 +100,23 @@ class OldDebtAccountingTest extends TestCase
         $this->assertEqualsWithDelta($figures['cash_in'] - $figures['expenses'] - $figures['withdrawals'], $figures['balance'], 0.01);
     }
 
-    // 2) دين عامل/إطار — بدون مسار API للتحصيل (زرع مباشر في الدفتر للاختبار فقط)
+    // 2) تحصيل دين قديم كحركة نقدية موروثة (زرع مباشر في الدفتر للاختبار)
     public function test_employee_old_debt_collection_via_direct_ledger_seeding_not_api(): void
     {
         Sanctum::actingAs($this->adminUser());
         $year = $this->makeAcademicYear('2025-2026');
-        $employee = Employee::create([
-            'first_name' => 'سناء',
-            'last_name' => 'المرابط',
-            'staff_type' => 'worker',
-            'is_active' => true,
-        ]);
-        $liability = EmployeeLiability::create([
-            'employee_id' => $employee->id,
-            'academic_year_id' => $year->id,
-            'original_year_label' => '2024/2025',
-            'liability_type' => 'debt',
-            'description' => 'دين عامل قديم',
-            'original_amount' => 500,
-            'status' => EmployeeLiability::STATUS_PENDING,
-        ]);
 
-        $this->assertSame(0.0, $liability->paid());
-        $this->assertSame(500.0, $liability->outstanding());
-
-        // زرع حركة تحصيل مباشرة في الدفتر (بيئة اختبار فقط) — لا يمثل مسار API
+        // زرع حركة تحصيل مباشرة في الدفتر (بيئة اختبار فقط)
         CashTransaction::create([
             'transaction_date' => now()->toDateString(),
             'direction' => CashTransaction::DIRECTION_IN,
             'category' => CashTransaction::CATEGORY_OLD_LIABILITY_COLLECTION,
             'amount' => 200,
-            'source_type' => $liability->getMorphClass(),
-            'source_id' => $liability->getKey(),
+            'source_type' => 'App\\Models\\EmployeeLiability',
+            'source_id' => 999,
             'academic_year_id' => $year->id,
             'description' => 'تحصيل دين عامل قديم (اختبار)',
         ]);
-
-        $liability->refresh();
-        $this->assertEqualsWithDelta(200, $liability->paid(), 0.01, 'paid() يجب أن يجمع old_liability_collection فقط');
-        $this->assertEqualsWithDelta(300, $liability->outstanding(), 0.01);
 
         $service = app(DashboardService::class);
         $data = $service->getDashboardData(true);
@@ -165,13 +141,6 @@ class OldDebtAccountingTest extends TestCase
             'original_amount' => 800,
         ])->assertCreated();
 
-        $emp = Employee::create(['first_name'=>'عامل','last_name'=>'قديم','staff_type'=>'worker','is_active'=>true]);
-        EmployeeLiability::create([
-            'employee_id'=>$emp->id,'academic_year_id'=>$currentYear->id,
-            'original_year_label'=>'2024/2025','liability_type'=>'debt',
-            'description'=>'دين عامل','original_amount'=>400,'status'=>EmployeeLiability::STATUS_PENDING,
-        ]);
-
         $service = app(DashboardService::class);
         $before = $service->getDashboardData(true);
         $cashInBefore = $before['cash']['all_time']['cash_in'] ?? 0;
@@ -194,7 +163,7 @@ class OldDebtAccountingTest extends TestCase
         $this->assertEqualsWithDelta(300, $after['prior_debt_summary']['total_collected'], 0.01);
     }
 
-    // 4) بطاقة "ديون قديمة" — إثبات النقص بفشل واضح إن لم تكن الحقول موجودة
+    // 4) بطاقة "ديون قديمة" — إثبات الحقول المطلوبة للتلاميذ
     public function test_card_displays_required_fields_or_fails_clearly(): void
     {
         Sanctum::actingAs($this->adminUser());
@@ -206,12 +175,6 @@ class OldDebtAccountingTest extends TestCase
             'original_year_label'=>'2024/2025','debt_type'=>'tuition',
             'description'=>'دين بطاقة','original_amount'=>600,'status'=>ManualStudentDebt::STATUS_PENDING,
         ]);
-        $emp = Employee::create(['first_name'=>'إطار','last_name'=>'قديم','staff_type'=>'worker','is_active'=>true]);
-        EmployeeLiability::create([
-            'employee_id'=>$emp->id,'academic_year_id'=>$year->id,
-            'original_year_label'=>'2024/2025','liability_type'=>'debt',
-            'description'=>'دين إطار بطاقة','original_amount'=>350,'status'=>EmployeeLiability::STATUS_PENDING,
-        ]);
 
         $data = app(DashboardService::class)->getDashboardData(true);
         $this->assertArrayHasKey('prior_debt_summary', $data);
@@ -221,28 +184,17 @@ class OldDebtAccountingTest extends TestCase
         $this->assertArrayHasKey('student_details', $summary);
         $this->assertArrayHasKey('employee_details', $summary);
 
-        // الحقول المطلوبة للعرض — إن غابت فالاختبار يفشل بوضوح ويشير إلى ضرورة تعديل DashboardService
+        // الحقول المطلوبة للعرض
         $s = $summary['student_details'][0] ?? null;
         $this->assertNotNull($s, 'student_details فارغ');
         foreach (['type','created_at','original_year_label'] as $field) {
-            // نتحقق من وجود المفتاح أو مرادفه (debt_type لـ type)
             $has = array_key_exists($field, $s) || ($field==='type' && array_key_exists('debt_type', $s));
             if (!$has) {
-                $this->fail("بطاقة 'ديون قديمة' ناقصة الحقل المطلوب للطالب: {$field} — يحتاج تعديل DashboardService::priorDebtSummary لإضافته (لا يُعتبر غيابه نجاحاً).");
+                $this->fail("بطاقة 'ديون قديمة' ناقصة الحقل المطلوب للطالب: {$field} — يحتاج تعديل DashboardService::priorDebtSummary لإضافته.");
             }
         }
-        $e = $summary['employee_details'][0] ?? null;
-        $this->assertNotNull($e, 'employee_details فارغ');
-        foreach (['type','created_at','original_year_label'] as $field) {
-            $key = $field==='type' ? 'liability_type' : $field;
-            if (!array_key_exists($key, $e)) {
-                $this->fail("بطاقة 'ديون قديمة' ناقصة الحقل المطلوب للإطار: {$field} (key: {$key}) — يحتاج تعديل DashboardService.");
-            }
-        }
-        // الحقول المالية الأساسية يجب أن تكون موجودة دائماً
         foreach (['original_amount','paid_amount','outstanding_amount'] as $k) {
             $this->assertArrayHasKey($k, $s);
-            $this->assertArrayHasKey($k, $e);
         }
     }
 
@@ -354,27 +306,17 @@ class OldDebtAccountingTest extends TestCase
             'prior_allocations' => [['manual_student_debt_id' => $debtId, 'amount' => 50]],
         ])->assertCreated();
 
-        // دين إطار 444 → تحصيل عبر مسار الالتزامات الفعلي
-        $employee = Employee::create([
-            'first_name' => 'علي',
-            'last_name' => 'الرباحي',
-            'staff_type' => 'teacher',
-            'is_active' => true,
-        ]);
-        $liability = EmployeeLiability::create([
-            'employee_id' => $employee->id,
-            'academic_year_id' => $currentYear->id,
-            'original_year_label' => '2024/2025',
-            'liability_type' => 'debt',
-            'description' => 'دين إطار قديم',
-            'original_amount' => 444,
-            'status' => EmployeeLiability::STATUS_PENDING,
-        ]);
-
-        $this->postJson('/api/employee-liabilities/'.$liability->id.'/collect', [
+        // حركة تحصيل دين قديم موروثة (444)
+        $frameTxn = CashTransaction::create([
+            'transaction_date' => $date,
+            'direction' => CashTransaction::DIRECTION_IN,
+            'category' => CashTransaction::CATEGORY_OLD_LIABILITY_COLLECTION,
             'amount' => 444,
-            'paid_at' => $date,
-        ])->assertCreated();
+            'source_type' => 'App\\Models\\EmployeeLiability',
+            'source_id' => 999,
+            'academic_year_id' => $currentYear->id,
+            'description' => 'دين إطار قديم',
+        ]);
 
         // خلاص مستحقّات (out) يجب ألا يدخل prior_year_debt
         CashTransaction::create([
@@ -382,8 +324,8 @@ class OldDebtAccountingTest extends TestCase
             'direction' => CashTransaction::DIRECTION_OUT,
             'category' => CashTransaction::CATEGORY_OLD_LIABILITY_PAYMENT,
             'amount' => 999,
-            'source_type' => $liability->getMorphClass(),
-            'source_id' => $liability->getKey(),
+            'source_type' => 'App\\Models\\EmployeeLiability',
+            'source_id' => 999,
             'academic_year_id' => $currentYear->id,
             'description' => 'خلاص مستحقّات — خارج البند',
         ]);
@@ -401,10 +343,7 @@ class OldDebtAccountingTest extends TestCase
         // حركة الإطار تحت prior_debt ولا تسقط تحت expenses، وخلاص المستحقّات خارج البند
         $priorIds = array_column($day['details']['prior_debt'] ?? [], 'id');
         $expenseIds = array_column($day['details']['expenses'] ?? [], 'id');
-        $frameTxnId = (int) CashTransaction::where('category', CashTransaction::CATEGORY_OLD_LIABILITY_COLLECTION)
-            ->where('source_type', $liability->getMorphClass())
-            ->where('source_id', $liability->getKey())
-            ->value('id');
+        $frameTxnId = (int) $frameTxn->id;
         $this->assertContains($frameTxnId, $priorIds, 'حركة الإطار في bucket prior_debt');
         $this->assertNotContains($frameTxnId, $expenseIds, 'حركة الإطار ليست ضمن مصاريف اليوم');
 

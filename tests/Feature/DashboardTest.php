@@ -5,7 +5,6 @@ namespace Tests\Feature;
 use App\Models\AcademicYear;
 use App\Models\CashTransaction;
 use App\Models\Employee;
-use App\Models\EmployeeLiability;
 use App\Models\Enrollment;
 use App\Models\Level;
 use App\Models\ManualStudentDebt;
@@ -100,26 +99,9 @@ class DashboardTest extends TestCase
             'academic_year_id' => $year->id,
         ]);
 
-        // استحقاق إطار قديم: 500 لم يُخلَّص منه شيء.
-        $employee = Employee::create([
-            'first_name' => 'سناء',
-            'last_name' => 'المرابط',
-            'staff_type' => 'monthly_teacher',
-            'is_active' => true,
-        ]);
-        EmployeeLiability::create([
-            'employee_id' => $employee->id,
-            'academic_year_id' => $year->id,
-            'original_year_label' => '2024/2025',
-            'liability_type' => 'debt',
-            'description' => 'أجور غير مدفوعة',
-            'original_amount' => 500,
-            'status' => EmployeeLiability::STATUS_PENDING,
-        ]);
-        // تحصيل دين إطار آخر (مصدر بلا سجلّ مقابل): يدخل في المحصّل الكلّي
-        // دون أن يمسّ متبقّي الاستحقاق المُدخل أعلاه.
+        // تحصيل دين إطار سابق كـ legacy CashTransaction: يدخل في المحصّل الكلّي
         CashTransaction::create([
-            'source_type' => EmployeeLiability::class,
+            'source_type' => 'App\\Models\\EmployeeLiability',
             'source_id' => 999,
             'category' => CashTransaction::CATEGORY_OLD_LIABILITY_COLLECTION,
             'direction' => CashTransaction::DIRECTION_IN,
@@ -132,8 +114,8 @@ class DashboardTest extends TestCase
 
         // المحصّل من الدفتر النقدي (بندا المتخلّدات وخلاص المستحقّات القديمة معاً).
         $this->assertEquals(3200, (float) $summary['total_collected']);
-        // المتبقّي = 10000 (تلميذ، لا توزيعات هنا) + 500 (إطار).
-        $this->assertEquals(10500, (float) $summary['total_remaining']);
+        // المتبقّي = 10000 (تلميذ، لا توزيعات هنا).
+        $this->assertEquals(10000, (float) $summary['total_remaining']);
 
         $this->assertCount(1, $summary['student_details']);
         $this->assertSame('أحمد بن صالح', $summary['student_details'][0]['student_name']);
@@ -141,10 +123,7 @@ class DashboardTest extends TestCase
         $this->assertEquals(0, (float) $summary['student_details'][0]['paid_amount']);
         $this->assertEquals(10000, (float) $summary['student_details'][0]['outstanding_amount']);
 
-        $this->assertCount(1, $summary['employee_details']);
-        $this->assertSame('سناء المرابط', $summary['employee_details'][0]['employee_name']);
-        $this->assertSame('debt', $summary['employee_details'][0]['liability_type']);
-        $this->assertEquals(500, (float) $summary['employee_details'][0]['outstanding_amount']);
+        $this->assertEmpty($summary['employee_details']);
     }
 
     public function test_admin_super_role_receives_financial_data(): void
@@ -423,7 +402,7 @@ class DashboardTest extends TestCase
 
         // 4. خلاص مستحق قديم = 100
         CashTransaction::create([
-            'source_type' => EmployeeLiability::class,
+            'source_type' => 'App\\Models\\EmployeeLiability',
             'source_id' => 104,
             'category' => CashTransaction::CATEGORY_OLD_LIABILITY_PAYMENT,
             'direction' => CashTransaction::DIRECTION_OUT,
@@ -452,7 +431,7 @@ class DashboardTest extends TestCase
         $year = $this->makeAcademicYear();
 
         CashTransaction::create([
-            'source_type' => EmployeeLiability::class,
+            'source_type' => 'App\\Models\\EmployeeLiability',
             'source_id' => 201,
             'category' => CashTransaction::CATEGORY_OLD_LIABILITY_PAYMENT,
             'direction' => CashTransaction::DIRECTION_OUT,
@@ -482,7 +461,7 @@ class DashboardTest extends TestCase
         $year = $this->makeAcademicYear();
 
         CashTransaction::create([
-            'source_type' => EmployeeLiability::class,
+            'source_type' => 'App\\Models\\EmployeeLiability',
             'source_id' => 301,
             'category' => CashTransaction::CATEGORY_OLD_LIABILITY_COLLECTION,
             'direction' => CashTransaction::DIRECTION_IN,

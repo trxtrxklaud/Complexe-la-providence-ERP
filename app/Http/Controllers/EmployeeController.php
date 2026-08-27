@@ -4,7 +4,6 @@ namespace App\Http\Controllers;
 
 use App\Models\CashTransaction;
 use App\Models\Employee;
-use App\Models\EmployeeLiability;
 use App\Models\Salary;
 use App\Models\EmployeeAdvance;
 use App\Models\EmployeeAdvanceRepayment;
@@ -69,7 +68,6 @@ class EmployeeController extends Controller
         // عدّادات الحماية — لا حذف تلقائي ولا cascade، فقط منع وشرح
         $salariesCount = $employee->salaries()->count();
         $advancesCount = $employee->advances()->count();
-        $liabilitiesCount = EmployeeLiability::where('employee_id', $employee->id)->count();
         $repaymentsCount = $employee->repayments()->count();
         $dailyHoursCount = $employee->dailyHours()->count();
 
@@ -78,14 +76,12 @@ class EmployeeController extends Controller
         $salaryIds = $employee->salaries()->pluck('id')->all();
         $advanceIds = $employee->advances()->pluck('id')->all();
         $repaymentIds = $employee->repayments()->pluck('id')->all();
-        $liabilityIds = EmployeeLiability::where('employee_id', $employee->id)->pluck('id')->all();
 
         $cashCount = 0;
         $morphChecks = [
             [$salaryIds, (new Salary())->getMorphClass()],
             [$advanceIds, (new EmployeeAdvance())->getMorphClass()],
             [$repaymentIds, (new EmployeeAdvanceRepayment())->getMorphClass()],
-            [$liabilityIds, (new EmployeeLiability())->getMorphClass()],
         ];
         foreach ($morphChecks as [$ids, $morph]) {
             if (! empty($ids)) {
@@ -96,7 +92,6 @@ class EmployeeController extends Controller
         $details = [
             'salaries' => $salariesCount,
             'advances' => $advancesCount,
-            'liabilities' => $liabilitiesCount,
             'repayments' => $repaymentsCount,
             'daily_hours' => $dailyHoursCount,
             'cash_transactions' => $cashCount,
@@ -104,7 +99,6 @@ class EmployeeController extends Controller
 
         $hasRelatedRecords = $salariesCount > 0
             || $advancesCount > 0
-            || $liabilitiesCount > 0
             || $repaymentsCount > 0
             || $dailyHoursCount > 0
             || $cashCount > 0;

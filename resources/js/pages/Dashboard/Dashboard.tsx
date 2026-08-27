@@ -18,7 +18,6 @@ import {
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { fetchDashboard, type DashboardData, type PriorDebtSummary } from '../../api/dashboard';
-import { LIABILITY_TYPE_LABELS } from '../../api/manualDebts';
 import { errorMessage } from '../../lib/format';
 import { PageDataSkeleton } from '../../components/DataSkeleton';
 
@@ -202,7 +201,7 @@ function SectionLabel({ title, hint }: { title: string; hint?: string }) {
   );
 }
 
-/** نافذة تفصيل تحصيل الديون السابقة: جدولان — ديون التلاميذ وديون الإطارات (لا خلط بينهما). */
+/** نافذة تفصيل تحصيل الديون السابقة: جدول ديون التلاميذ. */
 function PriorDebtDetailModal({
   summary,
   onClose,
@@ -211,7 +210,6 @@ function PriorDebtDetailModal({
   onClose: () => void;
 }) {
   const students = summary.student_details.filter((row) => row.original_amount > 0);
-  const employees = summary.employee_details.filter((row) => row.original_amount > 0);
 
   return (
     <motion.div
@@ -246,10 +244,7 @@ function PriorDebtDetailModal({
         </div>
 
         {/* ديون التلاميذ */}
-        <h4 className='mb-3 text-[15px] font-bold' style={{ color: C.forest }}>
-          ديون التلاميذ
-        </h4>
-        <div className='mb-6 overflow-x-auto rounded-2xl' style={{ border: `1px solid ${C.hair}` }}>
+        <div className='overflow-x-auto rounded-2xl' style={{ border: `1px solid ${C.hair}` }}>
           <table className='w-full text-sm'>
             <thead>
               <tr style={{ backgroundColor: C.sage, color: C.deep }}>
@@ -270,43 +265,6 @@ function PriorDebtDetailModal({
                 students.map((row) => (
                   <tr key={row.id} style={{ borderTop: `1px solid ${C.hair}` }}>
                     <td className='px-3 py-2.5' style={{ color: C.ink }}>{row.student_name}</td>
-                    <td className='px-3 py-2.5' style={{ color: C.ink }}><bdi dir='ltr' style={NUM}>{dinar(row.original_amount)}</bdi></td>
-                    <td className='px-3 py-2.5' style={{ color: C.collected }}><bdi dir='ltr' style={NUM}>{dinar(row.paid_amount)}</bdi></td>
-                    <td className='px-3 py-2.5 font-medium' style={{ color: C.remaining }}><bdi dir='ltr' style={NUM}>{dinar(row.outstanding_amount)}</bdi></td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-
-        {/* ديون الإطارات */}
-        <h4 className='mb-3 text-[15px] font-bold' style={{ color: C.forest }}>
-          ديون الإطارات
-        </h4>
-        <div className='overflow-x-auto rounded-2xl' style={{ border: `1px solid ${C.hair}` }}>
-          <table className='w-full text-sm'>
-            <thead>
-              <tr style={{ backgroundColor: C.sage, color: C.deep }}>
-                <th className='px-3 py-2.5 text-right font-medium'>الاسم</th>
-                <th className='px-3 py-2.5 text-right font-medium'>النوع</th>
-                <th className='px-3 py-2.5 text-right font-medium'>المبلغ الأصلي</th>
-                <th className='px-3 py-2.5 text-right font-medium'>المحصّل</th>
-                <th className='px-3 py-2.5 text-right font-medium'>المتبقي</th>
-              </tr>
-            </thead>
-            <tbody>
-              {employees.length === 0 ? (
-                <tr>
-                  <td colSpan={5} className='px-3 py-6 text-center' style={{ color: C.muted }}>
-                    لا توجد سجلات
-                  </td>
-                </tr>
-              ) : (
-                employees.map((row) => (
-                  <tr key={row.id} style={{ borderTop: `1px solid ${C.hair}` }}>
-                    <td className='px-3 py-2.5' style={{ color: C.ink }}>{row.employee_name}</td>
-                    <td className='px-3 py-2.5' style={{ color: C.muted }}>{LIABILITY_TYPE_LABELS[row.liability_type] ?? row.liability_type}</td>
                     <td className='px-3 py-2.5' style={{ color: C.ink }}><bdi dir='ltr' style={NUM}>{dinar(row.original_amount)}</bdi></td>
                     <td className='px-3 py-2.5' style={{ color: C.collected }}><bdi dir='ltr' style={NUM}>{dinar(row.paid_amount)}</bdi></td>
                     <td className='px-3 py-2.5 font-medium' style={{ color: C.remaining }}><bdi dir='ltr' style={NUM}>{dinar(row.outstanding_amount)}</bdi></td>

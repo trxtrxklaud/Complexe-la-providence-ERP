@@ -7,7 +7,6 @@ use App\Models\Employee;
 use App\Models\EmployeeAdvance;
 use App\Models\EmployeeAdvanceRepayment;
 use App\Models\EmployeeDailyHour;
-use App\Models\EmployeeLiability;
 use App\Models\Permission;
 use App\Models\Salary;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -121,38 +120,6 @@ class EmployeeDeleteProtectionTest extends TestCase
         $this->assertDatabaseHas('employee_advance_repayments', ['employee_id' => $employee->id]);
         $response->assertJsonPath('details.advances', 1);
         $response->assertJsonPath('details.repayments', 1);
-    }
-
-    public function test_employee_with_liability_cannot_be_deleted(): void
-    {
-        $this->makeActiveUserWithPermission('manage_employees');
-        $year = $this->makeAcademicYear();
-
-        $employee = Employee::create([
-            'first_name' => 'علي',
-            'last_name' => 'الرابحي',
-            'staff_type' => 'worker',
-            'is_active' => true,
-        ]);
-
-        EmployeeLiability::create([
-            'employee_id' => $employee->id,
-            'academic_year_id' => $year->id,
-            'original_year_label' => '2024/2025',
-            'liability_type' => 'debt',
-            'description' => 'دين قديم',
-            'original_amount' => '500.00',
-            'status' => EmployeeLiability::STATUS_PENDING,
-        ]);
-
-        $response = $this->deleteJson('/api/employees/' . $employee->id);
-
-        $response->assertStatus(422)
-            ->assertJson(['message' => 'لا يمكن حذف هذا الإطار لأنه مرتبط بسجلات مالية أو رواتب أو سلف.']);
-        $response->assertJsonPath('details.liabilities', 1);
-        $this->assertDatabaseHas('employees', ['id' => $employee->id]);
-        // لا تُحذف ديون الموظف عند الرفض
-        $this->assertDatabaseHas('employee_liabilities', ['employee_id' => $employee->id]);
     }
 
     public function test_employee_with_daily_hours_cannot_be_deleted(): void
@@ -287,25 +254,6 @@ class EmployeeDeleteProtectionTest extends TestCase
             'period_to' => '2025-09-30',
         ]);
 
-        EmployeeLiability::create([
-            'employee_id' => $employee->id,
-            'academic_year_id' => $year->id,
-            'original_year_label' => '2024/2025',
-            'liability_type' => 'debt',
-            'description' => 'دين',
-            'original_amount' => '300.00',
-            'status' => EmployeeLiability::STATUS_PENDING,
-        ]);
-        EmployeeLiability::create([
-            'employee_id' => $employee->id,
-            'academic_year_id' => $year->id,
-            'original_year_label' => '2024/2025',
-            'liability_type' => 'advance',
-            'description' => 'سلفة',
-            'original_amount' => '200.00',
-            'status' => EmployeeLiability::STATUS_PENDING,
-        ]);
-
         EmployeeDailyHour::create([
             'employee_id' => $employee->id,
             'work_date' => '2025-09-11',
@@ -316,7 +264,6 @@ class EmployeeDeleteProtectionTest extends TestCase
         $response = $this->deleteJson('/api/employees/' . $employee->id);
         $response->assertStatus(422);
         $response->assertJsonPath('details.salaries', 1);
-        $response->assertJsonPath('details.liabilities', 2);
         $response->assertJsonPath('details.daily_hours', 1);
         $response->assertJsonPath('details.advances', 0);
         $response->assertJsonPath('details.repayments', 0);
@@ -347,13 +294,11 @@ class EmployeeDeleteProtectionTest extends TestCase
 
         $countBeforeSalaries = Salary::count();
         $countBeforeAdvances = EmployeeAdvance::count();
-        $countBeforeLiabilities = EmployeeLiability::count();
 
         $this->deleteJson('/api/employees/' . $employee->id)->assertStatus(422);
 
         $this->assertEquals($countBeforeSalaries, Salary::count());
         $this->assertEquals($countBeforeAdvances, EmployeeAdvance::count());
-        $this->assertEquals($countBeforeLiabilities, EmployeeLiability::count());
         $this->assertDatabaseHas('employees', ['id' => $employee->id]);
         $this->assertDatabaseHas('salaries', ['id' => $salary->id]);
     }

@@ -7,7 +7,6 @@ use App\Models\CashTransaction;
 use App\Models\ClubMonthlyFee;
 use App\Models\EmployeeAdvance;
 use App\Models\EmployeeAdvanceRepayment;
-use App\Models\EmployeeLiability;
 use App\Models\Expense;
 use App\Models\Payment;
 use App\Models\Salary;
@@ -334,87 +333,6 @@ class LedgerService
             academicYearId: $repayment->academic_year_id,
             description: 'خلاص سلفة: '.($repayment->employee?->full_name ?? ('إطار #'.$repayment->employee_id)),
             createdBy: $repayment->created_by,
-        );
-    }
-
-    /**
-     * خلاص استحقاق قديم لإطار → خروج نقدي في بند مستقل عن مصاريف السنة الحالية.
-     *
-     * الراتب هنا هو أداة تسجيل الخلاص فقط (amount هو الصافي المدفوع)،
-     * فلا يُسقَط عبر recordSalary لئلا يُحسب كأجر حالي — المستحقّ القديم
-     * بندٌ قائم بذاته يظهر في تقارير مستحقات الإطارات.
-     */
-    public function recordLiabilityPayment(Salary $salary, EmployeeLiability $liability): void
-    {
-        $paidAmount = round(
-            (float) $liability->salaries()->whereNull('cancelled_at')->sum('amount')
-            + (float) $liability->advances()->whereNull('cancelled_at')->sum('amount'),
-            2
-        );
-
-        if ($paidAmount <= 0) {
-            $this->cancelFor($liability, $salary->cancelled_by, $salary->cancellation_reason);
-
-            return;
-        }
-
-        $liability->loadMissing('employee');
-        $latestActiveSalary = $liability->salaries()
-            ->whereNull('cancelled_at')
-            ->orderByDesc('paid_at')
-            ->orderByDesc('id')
-            ->first();
-
-        $date = $latestActiveSalary?->paid_at?->toDateString()
-            ?? $latestActiveSalary?->period_to?->toDateString()
-            ?? $salary->paid_at?->toDateString()
-            ?? now()->toDateString();
-
-        $this->post(
-            source: $liability,
-            category: CashTransaction::CATEGORY_OLD_LIABILITY_PAYMENT,
-            direction: CashTransaction::DIRECTION_OUT,
-            amount: $paidAmount,
-            date: $date,
-            academicYearId: $latestActiveSalary?->academic_year_id ?? $salary->academic_year_id,
-            description: 'خلاص مستحقّ سابق: '.($liability->employee?->full_name ?? ('إطار #'.$liability->employee_id))
-                .' — '.$liability->description,
-            createdBy: $latestActiveSalary?->created_by ?? $salary->created_by,
-        );
-    }
-
-    /**
-     * تحصيل دين قديم على إطار/عامل → قبض نقدي داخل، لا مصروف ولا سحب.
-     *
-     * لا ينشئ Salary — يسجل حركة تحصيل مباشرة على الاستحقاق نفسه بمبلغ
-     * التحصيل المُمرَّر، ويُحدَّث سطر الدفتر المجمَّع بالرصيد الجديد.
-     */
-    public function recordLiabilityCollection(EmployeeLiability $liability, float $incrementAmount, string $date, ?int $createdBy = null): void
-    {
-        if ($incrementAmount <= 0) {
-            return;
-        }
-
-        $existingPaid = (float) $liability->paid();
-        $newTotal = round($existingPaid + $incrementAmount, 2);
-
-        if ($newTotal <= 0) {
-            $this->cancelFor($liability, null, null);
-            return;
-        }
-
-        $liability->loadMissing('employee');
-
-        $this->post(
-            source: $liability,
-            category: CashTransaction::CATEGORY_OLD_LIABILITY_COLLECTION,
-            direction: CashTransaction::DIRECTION_IN,
-            amount: $newTotal,
-            date: $date,
-            academicYearId: $liability->academic_year_id,
-            description: 'تحصيل دين قديم: '.($liability->employee?->full_name ?? ('إطار #'.$liability->employee_id))
-                .' — '.$liability->description,
-            createdBy: $createdBy ?? $liability->created_by,
         );
     }
 

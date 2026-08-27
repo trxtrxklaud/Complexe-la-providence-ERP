@@ -369,13 +369,6 @@ export function Sidebar() {
                             <Receipt size={20} />
                             <span>كشف الديون القديمة</span>
                         </NavLink>
-                        <NavLink
-                            to="/reports/employee-liabilities"
-                            className={({ isActive }) => linkClass(isActive || startsWith('/reports/employee-liabilities'))}
-                        >
-                            <Receipt size={20} />
-                            <span>مستحقات الإطارات القديمة</span>
-                        </NavLink>
                     </>
                 )}
 

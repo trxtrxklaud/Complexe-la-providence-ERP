@@ -12,32 +12,6 @@ export const DEBT_TYPE_LABELS: Record<string, string> = {
   other: 'أخرى',
 };
 
-export const LIABILITY_TYPE_LABELS: Record<string, string> = {
-  debt: 'دين',
-  advance: 'سلفة غير مسددة',
-  // قيم قديمة تظهر على سجلات سابقة فقط — لا تُعرض كخيارات في نموذج الإدخال.
-  salary: 'أجور',
-  bonus: 'منح',
-  other: 'أخرى',
-};
-
-/**
- * أنواع الاستحقاقات المسموحة حسب تصنيف الإطار — مطابقة لثوابت
- * EmployeeLiabilityController على الخادم:
- * عاملة (worker): دين فقط؛ معلم (بساعة/بالشهر) ومنشط نوادي: دين + سلفة غير مسددة؛
- * وأي تصنيف آخر يقع على الدَّين العام.
- */
-export const LIABILITY_TYPES_BY_STAFF_TYPE: Record<string, string[]> = {
-  worker: ['debt'],
-  hourly_teacher: ['debt', 'advance'],
-  monthly_teacher: ['debt', 'advance'],
-  club_animator: ['debt', 'advance'],
-};
-
-export function liabilityTypesForStaff(staffType?: string | null): string[] {
-  return LIABILITY_TYPES_BY_STAFF_TYPE[staffType ?? ''] ?? ['debt'];
-}
-
 export const DEBT_STATUS_LABELS: Record<string, string> = {
   pending: 'قائم',
   partial: 'مُحصّل جزئياً',
@@ -113,110 +87,6 @@ export function cancelManualDebt(id: number, reason: string): Promise<ManualDebt
     method: 'POST',
     body: { reason },
     fallbackMessage: 'تعذّر إلغاء الدَّين',
-  });
-}
-
-// ===== مستحقات الإطارات القديمة =====
-
-export type EmployeeLiability = {
-  id: number;
-  employee_id: number;
-  academic_year_id: number;
-  original_year_label: string;
-  liability_type: string;
-  description: string;
-  original_amount: number | string;
-  notes?: string | null;
-  status: string;
-  cancelled_at?: string | null;
-  cancellation_reason?: string | null;
-  created_at?: string;
-  employee?: { id: number; first_name: string; last_name: string; job_title?: string | null } | null;
-  academic_year?: { id: number; name: string } | null;
-  paid_amount?: number;
-  outstanding_amount?: number;
-  created_by?: unknown;
-  cancelled_by?: unknown;
-};
-
-export type EmployeeLiabilityInput = {
-  employee_id: number;
-  academic_year_id?: number | null;
-  original_year_label: string;
-  liability_type: string;
-  description: string;
-  original_amount: number;
-  notes?: string | null;
-};
-
-export type EmployeeLiabilityFilters = {
-  employee_id?: number | null;
-  academic_year_id?: number | null;
-  liability_type?: string | null;
-  status?: string | null;
-  exclude_cancelled?: boolean;
-  per_page?: number;
-  page?: number;
-};
-
-export function fetchEmployeeLiabilities(filters: EmployeeLiabilityFilters = {}): Promise<Paginated<EmployeeLiability>> {
-  return apiFetch<Paginated<EmployeeLiability>>('/employee-liabilities', {
-    params: filters as QueryParams,
-    fallbackMessage: 'تعذّر تحميل مستحقات الإطارات',
-  });
-}
-
-export function createEmployeeLiability(payload: EmployeeLiabilityInput): Promise<EmployeeLiability> {
-  return apiFetch<EmployeeLiability>('/employee-liabilities', {
-    method: 'POST',
-    body: payload,
-    fallbackMessage: 'تعذّر إدخال المستحقّ',
-  });
-}
-
-export function updateEmployeeLiability(
-  id: number,
-  payload: {
-    original_amount?: number;
-    liability_type?: string;
-    description?: string;
-    notes?: string | null;
-  }
-): Promise<EmployeeLiability> {
-  return apiFetch<EmployeeLiability>('/employee-liabilities/' + id, {
-    method: 'PUT',
-    body: payload,
-    fallbackMessage: 'تعذّر تعديل المستحقّ',
-  });
-}
-
-export function payEmployeeLiability(
-  id: number,
-  payload: { amount: number; paid_at?: string; method?: string | null; reference?: string | null; notes?: string | null }
-): Promise<{ salary: unknown; liability: EmployeeLiability }> {
-  return apiFetch<{ salary: unknown; liability: EmployeeLiability }>('/employee-liabilities/' + id + '/pay', {
-    method: 'POST',
-    body: payload,
-    fallbackMessage: 'تعذّر خلاص المستحقّ',
-  });
-}
-
-export function collectEmployeeLiability(
-  id: number,
-  payload: { amount: number; paid_at?: string; method?: string | null; reference?: string | null; notes?: string | null }
-): Promise<{ liability: EmployeeLiability; collected: number; outstanding: number }> {
-  return apiFetch<{ liability: EmployeeLiability; collected: number; outstanding: number }>('/employee-liabilities/' + id + '/collect', {
-    method: 'POST',
-    body: payload,
-    fallbackMessage: 'تعذّر تحصيل الدين',
-  });
-}
-
-export function cancelEmployeeLiability(id: number, reason: string): Promise<EmployeeLiability> {
-  return apiFetch<EmployeeLiability>('/employee-liabilities/' + id + '/cancel', {
-    method: 'POST',
-    body: { reason },
-    fallbackMessage: 'تعذّر إلغاء المستحقّ',
   });
 }
 
@@ -378,56 +248,12 @@ export function fetchOpeningBalancesSummary(academic_year_id?: number | null): P
   });
 }
 
-export type EmployeeLiabilitiesReport = {
-  filters: Record<string, unknown>;
-  items: Array<{
-    id: number;
-    employee: EmployeeLiability['employee'];
-    academic_year: EmployeeLiability['academic_year'];
-    original_year_label: string;
-    liability_type: string;
-    description: string;
-    original_amount: number;
-    paid_amount: number;
-    outstanding_amount: number;
-    status: string;
-    cancelled_at: string | null;
-    created_at: string | null;
-  }>;
-  totals: {
-    count: number;
-    original_amount: number;
-    paid_amount: number;
-    outstanding_amount: number;
-  };
-};
-
-export function fetchEmployeeLiabilitiesReport(filters: { academic_year_id?: number | null; employee_id?: number | null; liability_type?: string | null; status?: string | null; exclude_cancelled?: boolean } = {}) {
-  return apiFetch<EmployeeLiabilitiesReport>('/reports/employee-liabilities', {
-    params: filters as QueryParams,
-    fallbackMessage: 'تعذّر تحميل كشف مستحقات الإطارات',
-  });
-}
-
 // ===== الإدخال الجماعي =====
 
 export type BulkOptions = {
   active_year: { id: number; name: string; start_date: string } | null;
   levels: Array<{ id: number; name: string }>;
   sections: Array<{ id: number; name: string; level_id: number }>;
-  employees: Array<{ id: number; first_name: string; last_name: string; job_title: string | null; staff_type: string | null }>;
-  existing_liabilities: Array<{
-    id: number;
-    employee_id: number;
-    liability_type: string;
-    original_amount: number | string;
-    paid_amount: number;
-    outstanding_amount: number;
-    notes: string | null;
-    status: string;
-    original_year_label: string;
-    created_at: string | null;
-  }>;
 };
 
 export type SectionStudentsResponse = {
@@ -451,13 +277,6 @@ export type SectionStudentRow = SectionStudentsResponse['students'][number];
 export type BulkDebtItem = {
   student_id: number;
   debt_type: string;
-  amount: number;
-  notes?: string | null;
-};
-
-export type BulkLiabilityItem = {
-  employee_id: number;
-  liability_type: string;
   amount: number;
   notes?: string | null;
 };
@@ -490,17 +309,5 @@ export function bulkCreateDebts(payload: {
     method: 'POST',
     body: payload,
     fallbackMessage: 'تعذّر حفظ الديون الجماعية',
-  });
-}
-
-export function bulkCreateLiabilities(payload: {
-  academic_year_id?: number | null;
-  original_year_label: string;
-  items: BulkLiabilityItem[];
-}): Promise<BulkResult> {
-  return apiFetch<BulkResult>('/employee-liabilities/bulk', {
-    method: 'POST',
-    body: payload,
-    fallbackMessage: 'تعذّر حفظ التزامات الإطارات الجماعية',
   });
 }

@@ -3,8 +3,6 @@
 namespace App\Http\Controllers;
 
 use App\Models\AcademicYear;
-use App\Models\Employee;
-use App\Models\EmployeeLiability;
 use App\Models\Enrollment;
 use App\Models\Level;
 use App\Models\ManualStudentDebt;
@@ -371,33 +369,14 @@ class ManualDebtController extends Controller
     // ==================== الإدخال الجماعي ====================
 
     /**
-     * خيارات الإدخال الجماعي: المستويات والأقسام والإطارات النشطة والسنة
-     * النشطة، مع مستحقّات الإطارات القائمة هذه السنة (لتعبئة الجدول مسبقاً).
+     * خيارات الإدخال الجماعي: المستويات والأقسام والسنة النشطة.
      *
-     * مسار مستقل تحت manage_treasury لأن /levels و /sections و /employees
+     * مسار مستقل تحت manage_treasury لأن /levels و /sections
      * محمية بصلاحيات أخرى لا يملكها صاحب الخزينة.
      */
     public function bulkOptions(): JsonResponse
     {
         $activeYear = AcademicYear::where('is_active', true)->first();
-
-        $existingLiabilities = EmployeeLiability::query()
-            ->when($activeYear, fn ($q) => $q->where('academic_year_id', $activeYear->id))
-            ->whereNull('cancelled_at')
-            ->get()
-            ->map(fn (EmployeeLiability $l) => [
-                'id' => $l->id,
-                'employee_id' => $l->employee_id,
-                'liability_type' => $l->liability_type,
-                'original_amount' => (float) $l->original_amount,
-                'paid_amount' => $l->paid(),
-                'outstanding_amount' => $l->outstanding(),
-                'notes' => $l->notes,
-                'status' => $l->status,
-                'original_year_label' => $l->original_year_label,
-                'created_at' => $l->created_at?->toIso8601String(),
-            ])
-            ->values();
 
         return response()->json([
             'active_year' => $activeYear ? [
@@ -407,11 +386,6 @@ class ManualDebtController extends Controller
             ] : null,
             'levels' => Level::orderBy('order')->get(['id', 'name']),
             'sections' => Section::orderBy('name')->get(['id', 'name', 'level_id']),
-            'employees' => Employee::where('is_active', true)
-                ->orderBy('first_name')
-                ->orderBy('last_name')
-                ->get(['id', 'first_name', 'last_name', 'job_title', 'staff_type']),
-            'existing_liabilities' => $existingLiabilities,
         ]);
     }
 

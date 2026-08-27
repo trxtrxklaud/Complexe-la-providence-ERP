@@ -73,7 +73,6 @@ const NetRevenueYearlyPage = lazy(() => import('./pages/NetIncome/NetRevenueYear
 const OpeningBalancesPage = lazy(() => import('./pages/Finance/OpeningBalancesPage').then((module) => ({ default: module.OpeningBalancesPage })));
 const OldDebtCollectPage = lazy(() => import('./pages/Finance/OldDebtCollectPage').then((module) => ({ default: module.OldDebtCollectPage })));
 const OldDebtReportPage = lazy(() => import('./pages/Finance/OldDebtReportPage').then((module) => ({ default: module.OldDebtReportPage })));
-const EmployeeLiabilityReportPage = lazy(() => import('./pages/Finance/EmployeeLiabilityReportPage').then((module) => ({ default: module.EmployeeLiabilityReportPage })));
 
 function RouteContentSkeleton() {
     return (
@@ -412,11 +411,6 @@ export default function App() {
                     <Route path="/reports/old-debts" element={
                         <ProtectedRoute permission="view_reports">
                             <Layout><OldDebtReportPage /></Layout>
-                        </ProtectedRoute>
-                    } />
-                    <Route path="/reports/employee-liabilities" element={
-                        <ProtectedRoute permission="view_reports">
-                            <Layout><EmployeeLiabilityReportPage /></Layout>
                         </ProtectedRoute>
                     } />
 
