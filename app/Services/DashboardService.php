@@ -7,6 +7,7 @@ use App\Models\CashTransaction;
 use App\Models\Enrollment;
 use App\Models\FeeType;
 use App\Models\ManualStudentDebt;
+use App\Models\OldEmployeeDebt;
 use App\Models\Payment;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -286,15 +287,45 @@ class DashboardService
             ];
         })->values();
 
+        $employeeDebts = OldEmployeeDebt::query()
+            ->with('employee:id,first_name,last_name,job_title')
+            ->whereNull('cancelled_at')
+            ->where('original_amount', '>', 0)
+            ->orderByDesc('id')
+            ->get();
+
+        $employeeDetails = $employeeDebts->map(function (OldEmployeeDebt $debt): array {
+            $outstanding = $debt->outstandingAmount();
+            $paid = $debt->collectedAmount();
+            $original = round((float) $debt->original_amount, 2);
+            $empName = trim(($debt->employee?->first_name ?? '').' '.($debt->employee?->last_name ?? '')) ?: '—';
+            return [
+                'id' => $debt->id,
+                'type' => 'employee',
+                'debt_type' => $debt->debt_type,
+                'employee_name' => $empName,
+                'job_title' => $debt->employee?->job_title,
+                'original_year_label' => $debt->original_year_label,
+                'created_at' => $debt->created_at?->toIso8601String(),
+                'original_amount' => $original,
+                'original' => $original,
+                'paid_amount' => $paid,
+                'paid' => $paid,
+                'outstanding_amount' => $outstanding,
+                'outstanding' => $outstanding,
+                'remaining' => $outstanding,
+            ];
+        })->values();
+
+        $totalRemaining = (float) $manualDebts->sum(fn (ManualStudentDebt $d) => $d->outstanding())
+            + (float) $employeeDebts->sum(fn (OldEmployeeDebt $d) => $d->outstandingAmount());
+
         return [
             'total_collected' => round($totalCollected, 2),
             // المتبقّي على كل السجلات السارية بلا ترشيح سنة — كما هو محدَّد للمواصفة.
-            'total_remaining' => round(
-                (float) $manualDebts->sum(fn (ManualStudentDebt $d) => $d->outstanding()),
-                2
-            ),
+            'total_remaining' => round($totalRemaining, 2),
             'student_details' => $studentDetails,
-            'employee_details' => [],
+            'employee_details' => $employeeDetails,
         ];
     }
 

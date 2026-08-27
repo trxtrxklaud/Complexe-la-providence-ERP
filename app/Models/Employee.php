@@ -59,6 +59,12 @@ class Employee extends Model
         return $this->hasMany(EmployeeDailyHour::class);
     }
 
+    /** ديون الإطار القديمة (أرصدة افتتاحية تاريخية). */
+    public function openingDebts(): HasMany
+    {
+        return $this->hasMany(OldEmployeeDebt::class);
+    }
+
     public function getFullNameAttribute(): string
     {
         return trim($this->first_name.' '.$this->last_name);

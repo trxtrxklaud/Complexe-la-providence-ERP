@@ -7,6 +7,8 @@ use App\Models\Employee;
 use App\Models\Salary;
 use App\Models\EmployeeAdvance;
 use App\Models\EmployeeAdvanceRepayment;
+use App\Models\OldEmployeeDebt;
+use App\Models\OldEmployeeDebtCollection;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
@@ -70,18 +72,25 @@ class EmployeeController extends Controller
         $advancesCount = $employee->advances()->count();
         $repaymentsCount = $employee->repayments()->count();
         $dailyHoursCount = $employee->dailyHours()->count();
+        $openingDebtsCount = $employee->openingDebts()->count();
 
         // cash_transactions المرتبطة عبر morph (source_type / source_id)
         // المصدر يُخزن عبر getMorphClass() في LedgerService::post()
         $salaryIds = $employee->salaries()->pluck('id')->all();
         $advanceIds = $employee->advances()->pluck('id')->all();
         $repaymentIds = $employee->repayments()->pluck('id')->all();
+        $openingDebtIds = $employee->openingDebts()->pluck('id')->all();
+        $collectionIds = ! empty($openingDebtIds)
+            ? OldEmployeeDebtCollection::whereIn('employee_opening_debt_id', $openingDebtIds)->pluck('id')->all()
+            : [];
 
         $cashCount = 0;
         $morphChecks = [
             [$salaryIds, (new Salary())->getMorphClass()],
             [$advanceIds, (new EmployeeAdvance())->getMorphClass()],
             [$repaymentIds, (new EmployeeAdvanceRepayment())->getMorphClass()],
+            [$openingDebtIds, (new OldEmployeeDebt())->getMorphClass()],
+            [$collectionIds, (new OldEmployeeDebtCollection())->getMorphClass()],
         ];
         foreach ($morphChecks as [$ids, $morph]) {
             if (! empty($ids)) {
@@ -94,6 +103,7 @@ class EmployeeController extends Controller
             'advances' => $advancesCount,
             'repayments' => $repaymentsCount,
             'daily_hours' => $dailyHoursCount,
+            'opening_debts' => $openingDebtsCount,
             'cash_transactions' => $cashCount,
         ];
 
@@ -101,6 +111,7 @@ class EmployeeController extends Controller
             || $advancesCount > 0
             || $repaymentsCount > 0
             || $dailyHoursCount > 0
+            || $openingDebtsCount > 0
             || $cashCount > 0;
 
         if ($hasRelatedRecords) {

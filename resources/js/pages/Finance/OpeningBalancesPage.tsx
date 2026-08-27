@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
-import { Ban, BookOpenCheck, Layers, Plus, Save, Wallet } from 'lucide-react';
+import { Ban, BookOpenCheck, Coins, Edit2, Layers, Plus, Save, Users, Wallet, X } from 'lucide-react';
 import { PageShell } from '../../components/PageShell';
 import { CancelReasonModal } from '../../components/CancelReasonModal';
 import { fetchYears, type AcademicYear } from '../../api/roster';
 import { getStudents, type Student } from '../../api/students';
+import { getEmployees, type Employee } from '../../api/employees';
 import {
   DEBT_STATUS_LABELS,
   DEBT_TYPE_LABELS,
@@ -17,6 +18,16 @@ import {
   type ManualDebt,
   type SectionStudentRow,
 } from '../../api/manualDebts';
+import {
+  EMPLOYEE_DEBT_STATUS_LABELS,
+  EMPLOYEE_DEBT_TYPE_LABELS,
+  cancelOldEmployeeDebt,
+  collectOldEmployeeDebt,
+  createOldEmployeeDebt,
+  fetchOldEmployeeDebts,
+  updateOldEmployeeDebt,
+  type OldEmployeeDebt,
+} from '../../api/oldEmployeeDebts';
 import { errorMessage, money, personName } from '../../lib/format';
 import { ListSkeleton } from '../../components/DataSkeleton';
 
@@ -31,13 +42,27 @@ const C = {
   errorBg: '#FDECEC',
 };
 
-type Tab = 'debts' | 'bulk';
+const statusColor: Record<string, { bg: string; fg: string }> = {
+  pending: { bg: '#FEF3C7', fg: '#92400E' },
+  partial: { bg: '#DBEAFE', fg: '#1E40AF' },
+  paid: { bg: '#D1FAE5', fg: '#065F46' },
+  cancelled: { bg: '#F3F4F6', fg: '#6B7280' },
+};
+
+const METHOD_OPTIONS = [
+  { value: 'cash', label: 'نقداً' },
+  { value: 'bank_transfer', label: 'تحويل بنكي' },
+  { value: 'check', label: 'شيك' },
+  { value: 'card', label: 'بطاقة بنكية' },
+];
+
+type Tab = 'debts' | 'bulk' | 'employee_debts';
 
 export function OpeningBalancesPage() {
   const [tab, setTab] = useState<Tab>('debts');
   const [years, setYears] = useState<AcademicYear[]>([]);
 
-  // ===== قائمة الديون =====
+  // ===== ديون التلاميذ — قائمة الديون =====
   const [debts, setDebts] = useState<ManualDebt[]>([]);
   const [debtStatusFilter, setDebtStatusFilter] = useState('');
   const [loadingDebts, setLoadingDebts] = useState(false);
@@ -48,7 +73,7 @@ export function OpeningBalancesPage() {
   const [cancelDebtTarget, setCancelDebtTarget] = useState<ManualDebt | null>(null);
   const [cancelBusy, setCancelBusy] = useState(false);
 
-  // ===== نموذج إدخال دَين =====
+  // ===== ديون التلاميذ — نموذج إدخال دَين =====
   const [debtYearId, setDebtYearId] = useState<number | ''>('');
   const [debtType, setDebtType] = useState('tuition');
   const [debtYearLabel, setDebtYearLabel] = useState('');
@@ -62,7 +87,7 @@ export function OpeningBalancesPage() {
   const studentTimer = useRef<number | undefined>(undefined);
   const [savingDebt, setSavingDebt] = useState(false);
 
-  // ===== الإدخال الجماعي =====
+  // ===== ديون التلاميذ — الإدخال الجماعي =====
   const [bulkYearLabel, setBulkYearLabel] = useState('');
   const [bulkLevelId, setBulkLevelId] = useState<number | ''>('');
   const [bulkSectionId, setBulkSectionId] = useState<number | ''>('');
@@ -72,6 +97,44 @@ export function OpeningBalancesPage() {
   const [bulkLoading, setBulkLoading] = useState(false);
   const [bulkStudentsLoading, setBulkStudentsLoading] = useState(false);
   const [bulkSavingStudents, setBulkSavingStudents] = useState(false);
+
+  // ===== ديون الإطارات القديمة =====
+  const [employees, setEmployees] = useState<Employee[]>([]);
+  const [loadingEmployees, setLoadingEmployees] = useState(false);
+  const [employeeDebts, setEmployeeDebts] = useState<OldEmployeeDebt[]>([]);
+  const [empDebtStatusFilter, setEmpDebtStatusFilter] = useState('');
+  const [loadingEmpDebts, setLoadingEmpDebts] = useState(false);
+
+  // نموذج إدخال دين إطار
+  const [empId, setEmpId] = useState<number | ''>('');
+  const [empYearId, setEmpYearId] = useState<number | ''>('');
+  const [empYearLabel, setEmpYearLabel] = useState('');
+  const [empDebtType, setEmpDebtType] = useState('debt');
+  const [empDescription, setEmpDescription] = useState('');
+  const [empAmount, setEmpAmount] = useState('');
+  const [empNotes, setEmpNotes] = useState('');
+  const [savingEmpDebt, setSavingEmpDebt] = useState(false);
+
+  // نوافذ ديون الإطارات
+  const [collectTarget, setCollectTarget] = useState<OldEmployeeDebt | null>(null);
+  const [collectAmount, setCollectAmount] = useState('');
+  const [collectDate, setCollectDate] = useState('');
+  const [collectMethod, setCollectMethod] = useState('cash');
+  const [collectNotes, setCollectNotes] = useState('');
+  const [collecting, setCollecting] = useState(false);
+  const [collectError, setCollectError] = useState('');
+
+  const [editTarget, setEditTarget] = useState<OldEmployeeDebt | null>(null);
+  const [editYearLabel, setEditYearLabel] = useState('');
+  const [editDebtType, setEditDebtType] = useState('debt');
+  const [editDescription, setEditDescription] = useState('');
+  const [editAmount, setEditAmount] = useState('');
+  const [editNotes, setEditNotes] = useState('');
+  const [savingEdit, setSavingEdit] = useState(false);
+  const [editError, setEditError] = useState('');
+
+  const [cancelEmpTarget, setCancelEmpTarget] = useState<OldEmployeeDebt | null>(null);
+  const [cancelEmpBusy, setCancelEmpBusy] = useState(false);
 
   const flash = (message: string) => {
     setNotice(message);
@@ -93,6 +156,34 @@ export function OpeningBalancesPage() {
     }
   };
 
+  const reloadEmployeeDebts = async () => {
+    setLoadingEmpDebts(true);
+    try {
+      const page = await fetchOldEmployeeDebts({
+        status: empDebtStatusFilter || null,
+        per_page: 100,
+      });
+      setEmployeeDebts(page.data);
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setLoadingEmpDebts(false);
+    }
+  };
+
+  const loadEmployees = async () => {
+    if (employees.length > 0) return;
+    setLoadingEmployees(true);
+    try {
+      const list = await getEmployees();
+      setEmployees(list.filter((e) => e.is_active));
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setLoadingEmployees(false);
+    }
+  };
+
   useEffect(() => {
     (async () => {
       try {
@@ -101,6 +192,7 @@ export function OpeningBalancesPage() {
         const active = yrs.find((y) => y.is_active) ?? yrs[0];
         if (active) {
           setDebtYearId(active.id);
+          setEmpYearId(active.id);
         }
       } catch (err) {
         setError(errorMessage(err));
@@ -109,10 +201,15 @@ export function OpeningBalancesPage() {
   }, []);
 
   useEffect(() => {
-    void reloadDebts();
-  }, [debtStatusFilter]);
+    if (tab === 'debts') {
+      void reloadDebts();
+    } else if (tab === 'employee_debts') {
+      void reloadEmployeeDebts();
+      void loadEmployees();
+    }
+  }, [tab, debtStatusFilter, empDebtStatusFilter]);
 
-  // تحميل خيارات الإدخال الجماعي عند فتح التبويب
+  // تحميل خيارات الإدخال الجماعي للتلاميذ عند فتح التبويب
   useEffect(() => {
     if (tab !== 'bulk' || bulkOptions) return;
     (async () => {
@@ -248,40 +345,36 @@ export function OpeningBalancesPage() {
       .filter((s) => {
         const row = bulkStudentRows[s.id];
         if (!row?.checked) return false;
-        if ((s.existing?.collected_amount ?? 0) > 0) return false;
-        const v = Number(row.amount);
-        return Number.isFinite(v) && v > 0;
+        const val = Number(row.amount);
+        return Number.isFinite(val) && val > 0;
       })
-      .map((s) => ({
-        student_id: s.id,
-        debt_type: bulkStudentRows[s.id].debtType,
-        amount: Number(bulkStudentRows[s.id].amount),
-        notes: bulkStudentRows[s.id].notes.trim() || null,
-      }));
+      .map((s) => {
+        const row = bulkStudentRows[s.id]!;
+        return {
+          student_id: s.id,
+          debt_type: row.debtType,
+          original_amount: Number(row.amount),
+          notes: row.notes.trim() || null,
+        };
+      });
+
     if (items.length === 0) {
-      setError('حدد تلميذاً واحداً على الأقل بمبلغ موجب');
+      setError('لم يتم تحديد أي تلميذ بمبلغ صحيح (> 0)');
       return;
     }
+
     setBulkSavingStudents(true);
     setError('');
     try {
-      const res = await bulkCreateDebts({ original_year_label: bulkYearLabel.trim(), items });
-      flash(res.message);
-      // إعادة تحميل تلاميذ القسم + قائمة الديون
-      if (bulkSectionId) {
-        const refreshed = await fetchSectionStudents(bulkSectionId as number);
-        setBulkStudents(refreshed.students);
-        const rows: Record<number, { checked: boolean; debtType: string; amount: string; notes: string }> = {};
-        refreshed.students.forEach((s) => {
-          const ex = s.existing;
-          const prev = bulkStudentRows[s.id];
-          rows[s.id] = ex
-            ? { checked: false, debtType: ex.debt_type, amount: String(ex.original_amount), notes: ex.notes ?? '' }
-            : { checked: false, debtType: prev?.debtType ?? 'tuition', amount: '', notes: prev?.notes ?? '' };
-        });
-        setBulkStudentRows(rows);
-      }
-      await reloadDebts();
+      const activeYear = years.find((y) => y.is_active);
+      const res = await bulkCreateDebts({
+        academic_year_id: activeYear?.id ?? null,
+        original_year_label: bulkYearLabel.trim(),
+        items,
+      });
+      flash('تمّ تسجيل ديون جماعية بنجاح: ' + res.created + ' سجل');
+      const refreshed = await fetchSectionStudents(bulkSectionId as number);
+      setBulkStudents(refreshed.students);
     } catch (err) {
       setError(errorMessage(err));
     } finally {
@@ -292,7 +385,6 @@ export function OpeningBalancesPage() {
   const confirmCancelDebt = async (reason: string) => {
     if (!cancelDebtTarget) return;
     setCancelBusy(true);
-    setError('');
     try {
       await cancelManualDebt(cancelDebtTarget.id, reason);
       setCancelDebtTarget(null);
@@ -305,41 +397,203 @@ export function OpeningBalancesPage() {
     }
   };
 
-  const fieldStyle = { border: '1px solid ' + C.line, backgroundColor: '#fff', color: C.ink };
-  const fieldCls = 'w-full px-3 py-2.5 rounded-xl text-sm';
-  const btnCls = 'flex items-center gap-2 px-5 py-2.5 rounded-xl text-white text-sm font-medium disabled:opacity-50';
-  const statusColor: Record<string, string> = {
-    pending: '#B45309',
-    partial: '#2563EB',
-    paid: '#15803D',
-    cancelled: '#9CA3AF',
+  // ===== دوال ديون الإطارات =====
+  const submitEmployeeDebt = async () => {
+    if (!empId) {
+      setError('اختر الإطار');
+      return;
+    }
+    const value = Number(empAmount);
+    if (!Number.isFinite(value) || value <= 0) {
+      setError('المبلغ يجب أن يكون أكبر من صفر');
+      return;
+    }
+    if (empDescription.trim().length === 0) {
+      setError('الوصف مطلوب');
+      return;
+    }
+    if (empYearLabel.trim().length === 0) {
+      setError('تسمية السنة الأصلية مطلوبة — مثال: 2024/2025');
+      return;
+    }
+
+    setSavingEmpDebt(true);
+    setError('');
+    try {
+      await createOldEmployeeDebt({
+        employee_id: Number(empId),
+        academic_year_id: empYearId === '' ? null : Number(empYearId),
+        original_year_label: empYearLabel.trim(),
+        debt_type: empDebtType,
+        description: empDescription.trim(),
+        original_amount: value,
+        notes: empNotes.trim() || null,
+      });
+      setEmpId('');
+      setEmpDescription('');
+      setEmpAmount('');
+      setEmpNotes('');
+      flash('تمّ تسجيل دَين الإطار القديم بنجاح');
+      await reloadEmployeeDebts();
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setSavingEmpDebt(false);
+    }
   };
+
+  const openCollectModal = (debt: OldEmployeeDebt) => {
+    const outstanding = debt.outstanding_amount ?? 0;
+    setCollectTarget(debt);
+    setCollectAmount(outstanding > 0 ? String(outstanding) : '');
+    setCollectDate(new Date().toISOString().split('T')[0]);
+    setCollectMethod('cash');
+    setCollectNotes('');
+    setCollectError('');
+  };
+
+  const submitCollect = async () => {
+    if (!collectTarget) return;
+    const value = Number(collectAmount);
+    const outstanding = collectTarget.outstanding_amount ?? 0;
+    if (!Number.isFinite(value) || value <= 0) {
+      setCollectError('المبلغ يجب أن يكون أكبر من صفر');
+      return;
+    }
+    if (value > outstanding) {
+      setCollectError(`المبلغ المطلوب تحصيله (${value}) يتجاوز المتبقي (${outstanding})`);
+      return;
+    }
+
+    setCollecting(true);
+    setCollectError('');
+    try {
+      await collectOldEmployeeDebt(collectTarget.id, {
+        amount: value,
+        payment_date: collectDate || undefined,
+        method: collectMethod,
+        notes: collectNotes.trim() || null,
+      });
+      setCollectTarget(null);
+      flash('تمّ تحصيل دفعة دَين الإطار وإسقاطها في الخزينة بنجاح');
+      await reloadEmployeeDebts();
+    } catch (err) {
+      setCollectError(errorMessage(err));
+    } finally {
+      setCollecting(false);
+    }
+  };
+
+  const openEditModal = (debt: OldEmployeeDebt) => {
+    setEditTarget(debt);
+    setEditYearLabel(debt.original_year_label || '');
+    setEditDebtType(debt.debt_type || 'debt');
+    setEditDescription(debt.description || '');
+    setEditAmount(String(debt.original_amount || ''));
+    setEditNotes(debt.notes || '');
+    setEditError('');
+  };
+
+  const submitEdit = async () => {
+    if (!editTarget) return;
+    const hasPaid = (editTarget.collected_amount ?? 0) > 0;
+
+    setSavingEdit(true);
+    setEditError('');
+    try {
+      if (hasPaid) {
+        // بعد التحصيل: تعديل الملاحظات فقط
+        await updateOldEmployeeDebt(editTarget.id, {
+          notes: editNotes.trim() || null,
+        });
+      } else {
+        const value = Number(editAmount);
+        if (!Number.isFinite(value) || value <= 0) {
+          setEditError('المبلغ يجب أن يكون أكبر من صفر');
+          setSavingEdit(false);
+          return;
+        }
+        if (editDescription.trim().length === 0) {
+          setEditError('الوصف مطلوب');
+          setSavingEdit(false);
+          return;
+        }
+        if (editYearLabel.trim().length === 0) {
+          setEditError('السنة الأصلية مطلوبة');
+          setSavingEdit(false);
+          return;
+        }
+
+        await updateOldEmployeeDebt(editTarget.id, {
+          original_year_label: editYearLabel.trim(),
+          debt_type: editDebtType,
+          description: editDescription.trim(),
+          original_amount: value,
+          notes: editNotes.trim() || null,
+        });
+      }
+
+      setEditTarget(null);
+      flash('تمّ تحديث بيانات الدَّين بنجاح');
+      await reloadEmployeeDebts();
+    } catch (err) {
+      setEditError(errorMessage(err));
+    } finally {
+      setSavingEdit(false);
+    }
+  };
+
+  const openCancelEmpModal = (debt: OldEmployeeDebt) => {
+    if ((debt.collected_amount ?? 0) > 0) return;
+    setCancelEmpTarget(debt);
+  };
+
+  const confirmCancelEmpDebt = async (reason: string) => {
+    if (!cancelEmpTarget) return;
+    setCancelEmpBusy(true);
+    try {
+      await cancelOldEmployeeDebt(cancelEmpTarget.id, reason);
+      setCancelEmpTarget(null);
+      flash('تمّ إلغاء دَين الإطار');
+      await reloadEmployeeDebts();
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setCancelEmpBusy(false);
+    }
+  };
+
+  const fieldStyle = { border: '1px solid ' + C.line, backgroundColor: '#fff', color: C.ink };
+  const fieldCls = 'w-full px-3 py-2.5 rounded-xl text-sm transition-colors';
+  const btnCls = 'inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl text-white text-sm font-medium transition-colors disabled:opacity-50';
 
   return (
     <div className="px-6 pb-10 max-w-6xl mx-auto" dir="rtl">
       <PageShell
         title="الأرصدة الافتتاحية"
-        subtitle="الديون القديمة للتلاميذ — بيانات خارجية تُدخل يدوياً بلا أثر في الخزينة"
+        subtitle="الديون القديمة السابقة لتشغيل النظام (تلاميذ وإطارات) كأرصدة افتتاحية مستقلة"
         icon={Wallet}
       >
         <div>
           {error ? (
             <div className="mb-4 px-4 py-3 rounded-xl text-sm" style={{ backgroundColor: C.errorBg, color: C.error }}>{error}</div>
           ) : null}
+
           {notice ? (
             <div className="mb-4 px-4 py-3 rounded-xl text-sm" style={{ backgroundColor: C.sage, color: C.deep }}>{notice}</div>
           ) : null}
 
           {/* التبويبات */}
-          <div className="no-print flex gap-2 mb-6">
+          <div className="no-print flex flex-wrap gap-2 mb-6">
             {([
-              { key: 'debts', label: 'ديون التلاميذ', icon: BookOpenCheck },
-              { key: 'bulk', label: 'إدخال جماعي', icon: Layers },
+              { key: 'debts', label: 'ديون التلاميذ (فردي)', icon: BookOpenCheck },
+              { key: 'bulk', label: 'ديون التلاميذ (جماعي)', icon: Layers },
+              { key: 'employee_debts', label: 'ديون الإطارات القديمة', icon: Users },
             ] as const).map((item) => (
               <button
                 key={item.key}
                 type="button"
-                onClick={() => setTab(item.key)}
+                onClick={() => { setTab(item.key); setError(''); }}
                 className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-medium"
                 style={
                   tab === item.key
@@ -353,13 +607,14 @@ export function OpeningBalancesPage() {
             ))}
           </div>
 
-          {tab === 'debts' ? (
+          {/* ══════════ التبويب 1: ديون التلاميذ (فردي) ══════════ */}
+          {tab === 'debts' && (
             <>
-              {/* نموذج إدخال دَين */}
+              {/* نموذج إدخال دَين تلميذ */}
               <div className="no-print bg-white rounded-2xl p-5 mb-6" style={{ border: '1px solid ' + C.line }}>
                 <div className="flex items-center gap-2 mb-4">
                   <Plus size={18} color={C.deep} />
-                  <h3 className="font-bold" style={{ color: C.deep }}>إدخال دَين قديم</h3>
+                  <h3 className="font-bold" style={{ color: C.deep }}>إدخال دَين قديم لتلميذ</h3>
                 </div>
                 <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
                   <div className="relative">
@@ -426,10 +681,10 @@ export function OpeningBalancesPage() {
                 </button>
               </div>
 
-              {/* جدول الديون */}
+              {/* جدول ديون التلاميذ */}
               <div className="bg-white rounded-2xl overflow-hidden" style={{ border: '1px solid ' + C.line }}>
                 <div className="px-5 py-4 flex items-center justify-between" style={{ backgroundColor: C.sage }}>
-                  <h3 className="font-bold" style={{ color: C.deep }}>الديون المدخلة</h3>
+                  <h3 className="font-bold" style={{ color: C.deep }}>ديون التلاميذ المدخلة</h3>
                   <select value={debtStatusFilter} onChange={(e) => setDebtStatusFilter(e.target.value)} className="text-xs rounded-xl px-3 py-1.5" style={fieldStyle}>
                     <option value="">كل الحالات</option>
                     {Object.entries(DEBT_STATUS_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
@@ -448,41 +703,44 @@ export function OpeningBalancesPage() {
                           <th className="text-right px-3 py-3 font-medium">النوع</th>
                           <th className="text-right px-3 py-3 font-medium">الوصف</th>
                           <th className="text-right px-3 py-3 font-medium">السنة الأصلية</th>
-                          <th className="text-right px-3 py-3 font-medium">الأصلي</th>
+                          <th className="text-right px-3 py-3 font-medium">المبلغ الأصلي</th>
                           <th className="text-right px-3 py-3 font-medium">المحصّل</th>
                           <th className="text-right px-3 py-3 font-medium">المتبقّي</th>
                           <th className="text-right px-3 py-3 font-medium">الحالة</th>
-                          <th className="no-print px-3 py-3" style={{ width: '6rem' }} />
+                          <th className="text-right px-3 py-3 font-medium">الإجراءات</th>
                         </tr>
                       </thead>
                       <tbody>
-                        {debts.map((debt) => {
-                          const cancelled = Boolean(debt.cancelled_at);
+                        {debts.map((d) => {
+                          const outstanding = d.outstanding_amount ?? 0;
+                          const sStyle = statusColor[d.status] || { bg: '#F3F4F6', fg: '#6B7280' };
                           return (
-                            <tr key={debt.id} style={{ borderBottom: '1px solid ' + C.line, opacity: cancelled ? 0.55 : 1 }}>
-                              <td className="px-3 py-2.5 font-medium" style={{ color: C.ink }}>{personName(debt.student)}</td>
-                              <td className="px-3 py-2.5" style={{ color: C.muted }}>{DEBT_TYPE_LABELS[debt.debt_type] ?? debt.debt_type}</td>
-                              <td className="px-3 py-2.5" style={{ color: C.ink }}>
-                                {debt.description}
-                                {cancelled && debt.cancellation_reason ? (
-                                  <span className="block text-xs mt-0.5" style={{ color: C.error }}>ملغى: {debt.cancellation_reason}</span>
-                                ) : null}
-                              </td>
-                              <td className="px-3 py-2.5 text-xs" style={{ color: C.muted }}>{debt.original_year_label}</td>
-                              <td className="px-3 py-2.5" style={{ color: C.ink, direction: 'ltr', textAlign: 'right' }}>{money(debt.original_amount)}</td>
-                              <td className="px-3 py-2.5" style={{ color: C.muted, direction: 'ltr', textAlign: 'right' }}>{money(debt.collected_amount)}</td>
-                              <td className="px-3 py-2.5 font-medium" style={{ color: C.forest, direction: 'ltr', textAlign: 'right' }}>{money(debt.outstanding_amount)}</td>
-                              <td className="px-3 py-2.5">
-                                <span className="text-xs font-medium px-2.5 py-1 rounded-full" style={{ color: statusColor[debt.status] ?? C.muted, backgroundColor: '#F3F4F6' }}>
-                                  {DEBT_STATUS_LABELS[debt.status] ?? debt.status}
+                            <tr key={d.id} style={{ borderBottom: '1px solid ' + C.line }}>
+                              <td className="px-3 py-3 font-medium" style={{ color: C.ink }}>{personName(d.student)}</td>
+                              <td className="px-3 py-3 text-xs" style={{ color: C.muted }}>{DEBT_TYPE_LABELS[d.debt_type] || d.debt_type}</td>
+                              <td className="px-3 py-3 text-xs" style={{ color: C.ink }}>{d.description}</td>
+                              <td className="px-3 py-3 text-xs" style={{ color: C.muted }}>{d.original_year_label}</td>
+                              <td className="px-3 py-3 font-mono text-xs" style={{ color: C.ink, direction: 'ltr', textAlign: 'right' }}>{money(d.original_amount)}</td>
+                              <td className="px-3 py-3 font-mono text-xs" style={{ color: C.muted, direction: 'ltr', textAlign: 'right' }}>{money(d.collected_amount ?? 0)}</td>
+                              <td className="px-3 py-3 font-mono text-xs font-semibold" style={{ color: outstanding > 0 ? C.error : C.forest, direction: 'ltr', textAlign: 'right' }}>{money(outstanding)}</td>
+                              <td className="px-3 py-3">
+                                <span className="inline-block text-xs px-2.5 py-0.5 rounded-full font-medium" style={{ backgroundColor: sStyle.bg, color: sStyle.fg }}>
+                                  {DEBT_STATUS_LABELS[d.status] || d.status}
                                 </span>
                               </td>
-                              <td className="no-print px-3 py-2.5">
-                                {!cancelled && Number(debt.collected_amount ?? 0) === 0 ? (
-                                  <button type="button" onClick={() => setCancelDebtTarget(debt)} title="إلغاء الدَّين" className="p-1.5 rounded-lg bg-gray-50">
-                                    <Ban size={14} color={C.error} />
+                              <td className="px-3 py-3">
+                                {d.status !== 'cancelled' && (d.collected_amount ?? 0) === 0 ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => setCancelDebtTarget(d)}
+                                    className="p-1.5 rounded-lg text-rose-600 hover:bg-rose-50 transition-colors"
+                                    title="إلغاء الدَّين"
+                                  >
+                                    <Ban size={16} />
                                   </button>
-                                ) : null}
+                                ) : (
+                                  <span className="text-xs" style={{ color: C.muted }}>—</span>
+                                )}
                               </td>
                             </tr>
                           );
@@ -493,9 +751,12 @@ export function OpeningBalancesPage() {
                 )}
               </div>
             </>
-          ) : (
+          )}
+
+          {/* ══════════ التبويب 2: الإدخال الجماعي للتلاميذ ══════════ */}
+          {tab === 'bulk' && (
             <>
-              {/* ===== الإدخال الجماعي ===== */}
+              {/* شريط سنة المنشأ المشتركة */}
               <div className="bg-white rounded-2xl p-5 mb-6" style={{ border: '1px solid ' + C.line }}>
                 <label className="block text-xs mb-1.5" style={{ color: C.muted }}>السنة الأصلية (مشتركة) *</label>
                 <select value={bulkYearLabel} onChange={(e) => setBulkYearLabel(e.target.value)} className={fieldCls} style={fieldStyle}>
@@ -581,16 +842,484 @@ export function OpeningBalancesPage() {
               </div>
             </>
           )}
+
+          {/* ══════════ التبويب 3: ديون الإطارات القديمة ══════════ */}
+          {tab === 'employee_debts' && (
+            <>
+              {/* نموذج إدخال دَين إطار */}
+              <div className="no-print bg-white rounded-2xl p-5 mb-6" style={{ border: '1px solid ' + C.line }}>
+                <div className="flex items-center gap-2 mb-4">
+                  <Plus size={18} color={C.deep} />
+                  <h3 className="font-bold" style={{ color: C.deep }}>إدخال دَين قديم لإطار (رصيد افتتاحي)</h3>
+                </div>
+                <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                  <div>
+                    <label className="block text-xs mb-1.5" style={{ color: C.muted }}>الإطار *</label>
+                    <select
+                      value={empId}
+                      onChange={(e) => setEmpId(e.target.value ? Number(e.target.value) : '')}
+                      className={fieldCls}
+                      style={fieldStyle}
+                      disabled={loadingEmployees}
+                    >
+                      <option value="">اختر الإطار…</option>
+                      {employees.map((emp) => (
+                        <option key={emp.id} value={emp.id}>
+                          {emp.first_name} {emp.last_name} {emp.job_title ? `(${emp.job_title})` : ''}
+                        </option>
+                      ))}
+                    </select>
+                    {loadingEmployees ? <p className="text-xs mt-1" style={{ color: C.muted }}>جارٍ تحميل قائمة الإطارات…</p> : null}
+                  </div>
+                  <div>
+                    <label className="block text-xs mb-1.5" style={{ color: C.muted }}>السنة الدراسية (الربط)</label>
+                    <select
+                      value={empYearId}
+                      onChange={(e) => setEmpYearId(e.target.value ? Number(e.target.value) : '')}
+                      className={fieldCls}
+                      style={fieldStyle}
+                    >
+                      {years.map((y) => (
+                        <option key={y.id} value={y.id}>
+                          {y.name}{y.is_active ? ' — حالية' : ''}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs mb-1.5" style={{ color: C.muted }}>نوع الدَّين *</label>
+                    <select
+                      value={empDebtType}
+                      onChange={(e) => setEmpDebtType(e.target.value)}
+                      className={fieldCls}
+                      style={fieldStyle}
+                    >
+                      {Object.entries(EMPLOYEE_DEBT_TYPE_LABELS).map(([value, label]) => (
+                        <option key={value} value={value}>{label}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs mb-1.5" style={{ color: C.muted }}>السنة الأصلية *</label>
+                    <input
+                      value={empYearLabel}
+                      onChange={(e) => setEmpYearLabel(e.target.value)}
+                      className={fieldCls}
+                      style={fieldStyle}
+                      placeholder="مثال: 2024/2025"
+                    />
+                  </div>
+                  <div className="lg:col-span-2">
+                    <label className="block text-xs mb-1.5" style={{ color: C.muted }}>الوصف *</label>
+                    <input
+                      value={empDescription}
+                      onChange={(e) => setEmpDescription(e.target.value)}
+                      className={fieldCls}
+                      style={fieldStyle}
+                      placeholder="مثال: رصيد افتتاحي سابق لتشغيل المنظومة"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs mb-1.5" style={{ color: C.muted }}>المبلغ (د.ت) *</label>
+                    <input
+                      value={empAmount}
+                      onChange={(e) => setEmpAmount(e.target.value)}
+                      type="number"
+                      step="0.01"
+                      min="0.01"
+                      className={fieldCls}
+                      style={{ ...fieldStyle, direction: 'ltr' }}
+                      placeholder="0.00"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs mb-1.5" style={{ color: C.muted }}>ملاحظات</label>
+                    <input
+                      value={empNotes}
+                      onChange={(e) => setEmpNotes(e.target.value)}
+                      className={fieldCls}
+                      style={fieldStyle}
+                      placeholder="أي توضيحات إدارية…"
+                    />
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => void submitEmployeeDebt()}
+                  disabled={savingEmpDebt}
+                  className={btnCls + ' mt-5'}
+                  style={{ backgroundColor: C.forest }}
+                >
+                  <Save size={18} />
+                  <span>{savingEmpDebt ? 'جارٍ الحفظ…' : 'حفظ دَين الإطار'}</span>
+                </button>
+              </div>
+
+              {/* جدول ديون الإطارات */}
+              <div className="bg-white rounded-2xl overflow-hidden" style={{ border: '1px solid ' + C.line }}>
+                <div className="px-5 py-4 flex items-center justify-between" style={{ backgroundColor: C.sage }}>
+                  <h3 className="font-bold" style={{ color: C.deep }}>ديون الإطارات القديمة</h3>
+                  <select
+                    value={empDebtStatusFilter}
+                    onChange={(e) => setEmpDebtStatusFilter(e.target.value)}
+                    className="text-xs rounded-xl px-3 py-1.5"
+                    style={fieldStyle}
+                  >
+                    <option value="">كل الحالات</option>
+                    {Object.entries(EMPLOYEE_DEBT_STATUS_LABELS).map(([value, label]) => (
+                      <option key={value} value={value}>{label}</option>
+                    ))}
+                  </select>
+                </div>
+                {loadingEmpDebts ? (
+                  <ListSkeleton rows={4} />
+                ) : employeeDebts.length === 0 ? (
+                  <p className="px-5 py-8 text-sm text-center" style={{ color: C.muted }}>لا توجد ديون إطارات مسجلة.</p>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr style={{ borderBottom: '1px solid ' + C.line, color: C.muted }}>
+                          <th className="text-right px-3 py-3 font-medium">الإطار</th>
+                          <th className="text-right px-3 py-3 font-medium">الوظيفة</th>
+                          <th className="text-right px-3 py-3 font-medium">النوع</th>
+                          <th className="text-right px-3 py-3 font-medium">الوصف</th>
+                          <th className="text-right px-3 py-3 font-medium">سنة المنشأ</th>
+                          <th className="text-right px-3 py-3 font-medium">المبلغ الأصلي</th>
+                          <th className="text-right px-3 py-3 font-medium">المحصّل</th>
+                          <th className="text-right px-3 py-3 font-medium">المتبقّي</th>
+                          <th className="text-right px-3 py-3 font-medium">الحالة</th>
+                          <th className="text-right px-3 py-3 font-medium">الإجراءات</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {employeeDebts.map((d) => {
+                          const outstanding = d.outstanding_amount ?? 0;
+                          const collected = d.collected_amount ?? 0;
+                          const isCancelled = d.status === 'cancelled';
+                          const sStyle = statusColor[d.status] || { bg: '#F3F4F6', fg: '#6B7280' };
+                          const empName = d.employee ? `${d.employee.first_name} ${d.employee.last_name}` : `إطار #${d.employee_id}`;
+
+                          return (
+                            <tr key={d.id} style={{ borderBottom: '1px solid ' + C.line }}>
+                              <td className="px-3 py-3 font-medium" style={{ color: C.ink }}>{empName}</td>
+                              <td className="px-3 py-3 text-xs" style={{ color: C.muted }}>{d.employee?.job_title || '—'}</td>
+                              <td className="px-3 py-3 text-xs" style={{ color: C.muted }}>{EMPLOYEE_DEBT_TYPE_LABELS[d.debt_type] || d.debt_type}</td>
+                              <td className="px-3 py-3 text-xs" style={{ color: C.ink }}>{d.description}</td>
+                              <td className="px-3 py-3 text-xs" style={{ color: C.muted }}>{d.original_year_label}</td>
+                              <td className="px-3 py-3 font-mono text-xs" style={{ color: C.ink, direction: 'ltr', textAlign: 'right' }}>{money(d.original_amount)}</td>
+                              <td className="px-3 py-3 font-mono text-xs" style={{ color: C.muted, direction: 'ltr', textAlign: 'right' }}>{money(collected)}</td>
+                              <td className="px-3 py-3 font-mono text-xs font-semibold" style={{ color: outstanding > 0 ? C.error : C.forest, direction: 'ltr', textAlign: 'right' }}>{money(outstanding)}</td>
+                              <td className="px-3 py-3">
+                                <span className="inline-block text-xs px-2.5 py-0.5 rounded-full font-medium" style={{ backgroundColor: sStyle.bg, color: sStyle.fg }}>
+                                  {EMPLOYEE_DEBT_STATUS_LABELS[d.status] || d.status}
+                                </span>
+                              </td>
+                              <td className="px-3 py-3">
+                                <div className="flex items-center gap-1">
+                                  {/* زر التحصيل: يظهر للدين غير الملغى وله متبقٍ > 0 */}
+                                  {!isCancelled && outstanding > 0 && (
+                                    <button
+                                      type="button"
+                                      onClick={() => openCollectModal(d)}
+                                      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium text-white transition-colors"
+                                      style={{ backgroundColor: C.forest }}
+                                      title="تحصيل دفعة"
+                                    >
+                                      <Coins size={14} />
+                                      <span>تحصيل</span>
+                                    </button>
+                                  )}
+
+                                  {/* زر التعديل: يظهر لكل دين غير ملغى */}
+                                  {!isCancelled && (
+                                    <button
+                                      type="button"
+                                      onClick={() => openEditModal(d)}
+                                      className="p-1.5 rounded-lg text-slate-600 hover:bg-slate-100 transition-colors"
+                                      title={collected > 0 ? 'تعديل الملاحظات (تم التحصيل)' : 'تعديل بيانات الدَّين'}
+                                    >
+                                      <Edit2 size={15} />
+                                    </button>
+                                  )}
+
+                                  {/* زر الإلغاء: مفعّل فقط إذا لم يتم تحصيل أي مبلغ */}
+                                  {!isCancelled && (
+                                    collected === 0 ? (
+                                      <button
+                                        type="button"
+                                        onClick={() => openCancelEmpModal(d)}
+                                        className="p-1.5 rounded-lg text-rose-600 hover:bg-rose-50 transition-colors"
+                                        title="إلغاء الدَّين"
+                                      >
+                                        <Ban size={15} />
+                                      </button>
+                                    ) : (
+                                      <button
+                                        type="button"
+                                        disabled
+                                        className="p-1.5 rounded-lg text-slate-300 cursor-not-allowed"
+                                        title="لا يمكن إلغاء دين حُصّلت منه مبالغ"
+                                      >
+                                        <Ban size={15} />
+                                      </button>
+                                    )
+                                  )}
+
+                                  {isCancelled && <span className="text-xs" style={{ color: C.muted }}>ملغى</span>}
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            </>
+          )}
         </div>
       </PageShell>
 
+      {/* ══════════ النافذة المنبثقة 1: تحصيل دين إطار ══════════ */}
+      {collectTarget ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ backgroundColor: 'rgba(31,38,28,0.45)' }}>
+          <div className="bg-white rounded-2xl w-full max-w-md p-6 shadow-2xl" dir="rtl">
+            <div className="flex items-center justify-between mb-4 border-b pb-3" style={{ borderColor: C.line }}>
+              <div className="flex items-center gap-2">
+                <Coins size={20} color={C.forest} />
+                <h3 className="font-bold text-base" style={{ color: C.deep }}>تحصيل دفعة دَين إطار</h3>
+              </div>
+              <button onClick={() => setCollectTarget(null)} type="button">
+                <X size={18} color={C.muted} />
+              </button>
+            </div>
+
+            {collectError ? (
+              <div className="mb-4 px-3 py-2 rounded-xl text-xs" style={{ backgroundColor: C.errorBg, color: C.error }}>
+                {collectError}
+              </div>
+            ) : null}
+
+            <div className="mb-4 p-3 rounded-xl bg-slate-50 space-y-1 text-xs" style={{ border: '1px solid ' + C.line }}>
+              <p><span style={{ color: C.muted }}>الإطار: </span><strong style={{ color: C.ink }}>{collectTarget.employee?.first_name} {collectTarget.employee?.last_name}</strong></p>
+              <p><span style={{ color: C.muted }}>المبلغ الأصلي: </span><strong style={{ color: C.ink }}>{money(collectTarget.original_amount)}</strong></p>
+              <p><span style={{ color: C.muted }}>المحصّل سابقاً: </span><strong style={{ color: C.muted }}>{money(collectTarget.collected_amount ?? 0)}</strong></p>
+              <p><span style={{ color: C.muted }}>المتبقّي للدفع: </span><strong className="text-emerald-700 font-bold">{money(collectTarget.outstanding_amount ?? 0)}</strong></p>
+            </div>
+
+            <div className="space-y-3">
+              <div>
+                <label className="block text-xs mb-1 font-medium" style={{ color: C.ink }}>مبلغ الدفعة (د.ت) *</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0.01"
+                  max={collectTarget.outstanding_amount ?? undefined}
+                  value={collectAmount}
+                  onChange={(e) => setCollectAmount(e.target.value)}
+                  className={fieldCls}
+                  style={{ ...fieldStyle, direction: 'ltr' }}
+                  placeholder="0.00"
+                  autoFocus
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs mb-1 font-medium" style={{ color: C.ink }}>تاريخ القبض *</label>
+                <input
+                  type="date"
+                  value={collectDate}
+                  onChange={(e) => setCollectDate(e.target.value)}
+                  className={fieldCls}
+                  style={fieldStyle}
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs mb-1 font-medium" style={{ color: C.ink }}>طريقة الدفع *</label>
+                <select
+                  value={collectMethod}
+                  onChange={(e) => setCollectMethod(e.target.value)}
+                  className={fieldCls}
+                  style={fieldStyle}
+                >
+                  {METHOD_OPTIONS.map((opt) => (
+                    <option key={opt.value} value={opt.value}>{opt.label}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs mb-1 font-medium" style={{ color: C.ink }}>ملاحظات الدفعة</label>
+                <input
+                  value={collectNotes}
+                  onChange={(e) => setCollectNotes(e.target.value)}
+                  className={fieldCls}
+                  style={fieldStyle}
+                  placeholder="مثال: وصل قبض رقم…"
+                />
+              </div>
+            </div>
+
+            <div className="flex gap-3 mt-6">
+              <button
+                type="button"
+                onClick={() => void submitCollect()}
+                disabled={collecting}
+                className="flex-1 py-2.5 rounded-xl text-white text-sm font-medium disabled:opacity-50"
+                style={{ backgroundColor: C.forest }}
+              >
+                {collecting ? 'جارٍ التحصيل…' : 'تأكيد التحصيل'}
+              </button>
+              <button
+                type="button"
+                onClick={() => setCollectTarget(null)}
+                className="px-5 py-2.5 rounded-xl text-sm"
+                style={{ border: '1px solid ' + C.line, color: C.muted }}
+              >
+                إلغاء
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {/* ══════════ النافذة المنبثقة 2: تعديل دين إطار ══════════ */}
+      {editTarget ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ backgroundColor: 'rgba(31,38,28,0.45)' }}>
+          <div className="bg-white rounded-2xl w-full max-w-lg p-6 shadow-2xl" dir="rtl">
+            <div className="flex items-center justify-between mb-4 border-b pb-3" style={{ borderColor: C.line }}>
+              <div className="flex items-center gap-2">
+                <Edit2 size={20} color={C.deep} />
+                <h3 className="font-bold text-base" style={{ color: C.deep }}>تعديل دَين الإطار</h3>
+              </div>
+              <button onClick={() => setEditTarget(null)} type="button">
+                <X size={18} color={C.muted} />
+              </button>
+            </div>
+
+            {editError ? (
+              <div className="mb-4 px-3 py-2 rounded-xl text-xs" style={{ backgroundColor: C.errorBg, color: C.error }}>
+                {editError}
+              </div>
+            ) : null}
+
+            {(editTarget.collected_amount ?? 0) > 0 ? (
+              <div className="mb-4 px-3 py-2.5 rounded-xl text-xs bg-amber-50 text-amber-900 border border-amber-200">
+                بعد التحصيل يمكن تعديل الملاحظات فقط.
+              </div>
+            ) : null}
+
+            <div className="space-y-3">
+              <div className="grid sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs mb-1 font-medium" style={{ color: C.muted }}>السنة الأصلية</label>
+                  <input
+                    value={editYearLabel}
+                    disabled={(editTarget.collected_amount ?? 0) > 0}
+                    onChange={(e) => setEditYearLabel(e.target.value)}
+                    className={fieldCls}
+                    style={{ ...fieldStyle, opacity: (editTarget.collected_amount ?? 0) > 0 ? 0.6 : 1 }}
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs mb-1 font-medium" style={{ color: C.muted }}>نوع الدَّين</label>
+                  <select
+                    value={editDebtType}
+                    disabled={(editTarget.collected_amount ?? 0) > 0}
+                    onChange={(e) => setEditDebtType(e.target.value)}
+                    className={fieldCls}
+                    style={{ ...fieldStyle, opacity: (editTarget.collected_amount ?? 0) > 0 ? 0.6 : 1 }}
+                  >
+                    {Object.entries(EMPLOYEE_DEBT_TYPE_LABELS).map(([v, l]) => (
+                      <option key={v} value={v}>{l}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs mb-1 font-medium" style={{ color: C.muted }}>الوصف</label>
+                <input
+                  value={editDescription}
+                  disabled={(editTarget.collected_amount ?? 0) > 0}
+                  onChange={(e) => setEditDescription(e.target.value)}
+                  className={fieldCls}
+                  style={{ ...fieldStyle, opacity: (editTarget.collected_amount ?? 0) > 0 ? 0.6 : 1 }}
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs mb-1 font-medium" style={{ color: C.muted }}>المبلغ الأصلي (د.ت)</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0.01"
+                  value={editAmount}
+                  disabled={(editTarget.collected_amount ?? 0) > 0}
+                  onChange={(e) => setEditAmount(e.target.value)}
+                  className={fieldCls}
+                  style={{ ...fieldStyle, direction: 'ltr', opacity: (editTarget.collected_amount ?? 0) > 0 ? 0.6 : 1 }}
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs mb-1 font-medium" style={{ color: C.ink }}>الملاحظات</label>
+                <textarea
+                  rows={3}
+                  value={editNotes}
+                  onChange={(e) => setEditNotes(e.target.value)}
+                  className={fieldCls}
+                  style={fieldStyle}
+                  placeholder="ملاحظات إضافية…"
+                />
+              </div>
+            </div>
+
+            <div className="flex gap-3 mt-6">
+              <button
+                type="button"
+                onClick={() => void submitEdit()}
+                disabled={savingEdit}
+                className="flex-1 py-2.5 rounded-xl text-white text-sm font-medium disabled:opacity-50"
+                style={{ backgroundColor: C.forest }}
+              >
+                {savingEdit ? 'جارٍ الحفظ…' : 'حفظ التعديلات'}
+              </button>
+              <button
+                type="button"
+                onClick={() => setEditTarget(null)}
+                className="px-5 py-2.5 rounded-xl text-sm"
+                style={{ border: '1px solid ' + C.line, color: C.muted }}
+              >
+                إلغاء
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {/* ══════════ النافذة المنبثقة 3: إلغاء دين تلميذ ══════════ */}
       {cancelDebtTarget ? (
         <CancelReasonModal
-          title="إلغاء دَين قديم"
+          title="إلغاء دَين قديم لتلميذ"
           description={'سيُلغى الدَّين بمبلغ ' + money(cancelDebtTarget.original_amount) + ' الخاص بـ ' + personName(cancelDebtTarget.student) + '.'}
           busy={cancelBusy}
           onConfirm={(reason) => void confirmCancelDebt(reason)}
           onClose={() => setCancelDebtTarget(null)}
+        />
+      ) : null}
+
+      {/* ══════════ النافذة المنبثقة 4: إلغاء دين إطار ══════════ */}
+      {cancelEmpTarget ? (
+        <CancelReasonModal
+          title="إلغاء دَين إطار قديم"
+          description={'سيُلغى الدَّين الافتتاحي بمبلغ ' + money(cancelEmpTarget.original_amount) + ' الخاص بالإطار ' + (cancelEmpTarget.employee ? `${cancelEmpTarget.employee.first_name} ${cancelEmpTarget.employee.last_name}` : '') + '.'}
+          busy={cancelEmpBusy}
+          onConfirm={(reason) => void confirmCancelEmpDebt(reason)}
+          onClose={() => setCancelEmpTarget(null)}
         />
       ) : null}
     </div>

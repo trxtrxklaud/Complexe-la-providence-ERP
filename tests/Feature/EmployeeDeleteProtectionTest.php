@@ -7,6 +7,7 @@ use App\Models\Employee;
 use App\Models\EmployeeAdvance;
 use App\Models\EmployeeAdvanceRepayment;
 use App\Models\EmployeeDailyHour;
+use App\Models\OldEmployeeDebt;
 use App\Models\Permission;
 use App\Models\Salary;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -328,6 +329,36 @@ class EmployeeDeleteProtectionTest extends TestCase
         $response->assertStatus(422)
             ->assertJson(['message' => 'لا يمكن حذف هذا الإطار لأنه مرتبط بسجلات مالية أو رواتب أو سلف.']);
 
+        $this->assertDatabaseHas('employees', ['id' => $employee->id]);
+    }
+
+    public function test_employee_with_opening_debts_cannot_be_deleted(): void
+    {
+        $this->makeActiveUserWithPermission('manage_employees');
+        $year = $this->makeAcademicYear();
+
+        $employee = Employee::create([
+            'first_name' => 'صابر',
+            'last_name' => 'الحمروني',
+            'is_active' => true,
+        ]);
+
+        OldEmployeeDebt::create([
+            'employee_id' => $employee->id,
+            'academic_year_id' => $year->id,
+            'original_year_label' => '2024/2025',
+            'debt_type' => 'debt',
+            'description' => 'دين قديم سابق',
+            'original_amount' => '250.00',
+            'status' => 'pending',
+        ]);
+
+        $response = $this->deleteJson('/api/employees/' . $employee->id);
+
+        $response->assertStatus(422)
+            ->assertJson(['message' => 'لا يمكن حذف هذا الإطار لأنه مرتبط بسجلات مالية أو رواتب أو سلف.']);
+
+        $response->assertJsonPath('details.opening_debts', 1);
         $this->assertDatabaseHas('employees', ['id' => $employee->id]);
     }
 }

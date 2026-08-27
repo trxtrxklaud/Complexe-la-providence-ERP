@@ -24,6 +24,7 @@ use App\Http\Controllers\FinancialReportController;
 use App\Http\Controllers\LevelController;
 use App\Http\Controllers\ManualDebtController;
 use App\Http\Controllers\MonthlyDiscountController;
+use App\Http\Controllers\OldEmployeeDebtController;
 use App\Http\Controllers\PaymentController;
 use App\Http\Controllers\RosterController;
 use App\Http\Controllers\SalaryController;
@@ -106,6 +107,14 @@ Route::middleware(['auth:sanctum', 'active', 'throttle:120,1'])->group(function 
         Route::post('/manual-debts', [ManualDebtController::class, 'store']);
         Route::get('/manual-debts/{debt}', [ManualDebtController::class, 'show']);
         Route::post('/manual-debts/{debt}/cancel', [ManualDebtController::class, 'cancel']);
+
+        // الأرصدة الافتتاحية التاريخية للإطارات: ديون قديمة مدخلة يدوياً
+        Route::get('/employee-opening-debts', [OldEmployeeDebtController::class, 'index']);
+        Route::post('/employee-opening-debts', [OldEmployeeDebtController::class, 'store']);
+        Route::get('/employee-opening-debts/{debt}', [OldEmployeeDebtController::class, 'show']);
+        Route::put('/employee-opening-debts/{debt}', [OldEmployeeDebtController::class, 'update']);
+        Route::post('/employee-opening-debts/{debt}/cancel', [OldEmployeeDebtController::class, 'cancel']);
+        Route::post('/employee-opening-debts/{debt}/collect', [OldEmployeeDebtController::class, 'collect']);
     });
 
     // التقارير المالية — قراءة فقط، وكلها تُبنى على الدفتر النقدي المركزي

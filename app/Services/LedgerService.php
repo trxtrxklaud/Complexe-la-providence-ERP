@@ -8,6 +8,8 @@ use App\Models\ClubMonthlyFee;
 use App\Models\EmployeeAdvance;
 use App\Models\EmployeeAdvanceRepayment;
 use App\Models\Expense;
+use App\Models\OldEmployeeDebt;
+use App\Models\OldEmployeeDebtCollection;
 use App\Models\Payment;
 use App\Models\Salary;
 use App\Models\StudentFee;
@@ -356,6 +358,38 @@ class LedgerService
             academicYearId: $withdrawal->academic_year_id,
             description: $withdrawal->type ?: 'سحب من الخزينة',
             createdBy: $withdrawal->created_by,
+        );
+    }
+
+    /**
+     * تحصيل دين قديم على إطار → قبض نقدي داخل الخزينة، لا مدخول تشغيلي ولا أجور.
+     *
+     * لا ينشئ Salary ولا Advance — يسجل حركة تحصيل داخلة مباشرة في الخزينة
+     * كـ old_liability_collection، مرتبطة بدفعة التحصيل (OldEmployeeDebtCollection).
+     */
+    public function recordOldEmployeeDebtCollection(OldEmployeeDebtCollection $collection): CashTransaction
+    {
+        $amount = (float) $collection->amount;
+        if ($amount <= 0) {
+            throw new \InvalidArgumentException('مبلغ التحصيل يجب أن يكون أكبر من صفر');
+        }
+
+        $collection->loadMissing('debt.employee');
+        $employeeName = $collection->debt?->employee?->full_name ?? ('إطار #'.($collection->debt?->employee_id ?? ''));
+        $description = 'تحصيل دين إطار قديم: '.$employeeName.($collection->notes ? ' — '.$collection->notes : '');
+
+        $date = $collection->payment_date?->toDateString()
+            ?? (string) $collection->payment_date;
+
+        return $this->post(
+            source: $collection,
+            category: CashTransaction::CATEGORY_OLD_LIABILITY_COLLECTION,
+            direction: CashTransaction::DIRECTION_IN,
+            amount: $amount,
+            date: $date,
+            academicYearId: $collection->debt?->academic_year_id,
+            description: $description,
+            createdBy: $collection->collected_by,
         );
     }
 
