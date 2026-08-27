@@ -6,6 +6,7 @@ use App\Models\AcademicYear;
 use App\Models\CashTransaction;
 use App\Models\EmployeeLiability;
 use App\Models\Enrollment;
+use App\Models\FeeType;
 use App\Models\ManualStudentDebt;
 use App\Models\Payment;
 use Carbon\Carbon;
@@ -110,11 +111,54 @@ class DashboardService
             ->whereNull('enrollments.deleted_at')
             ->sum('student_fees.amount_due');
 
+        $regFeeTypeIds = FeeType::where('is_active', true)
+            ->get()
+            ->filter(fn (FeeType $ft) => $ft->resolveLedgerCategory() === CashTransaction::CATEGORY_REGISTRATION_FEE)
+            ->pluck('id')
+            ->all();
+
+        $yearlyFeePlanIds = DB::table('fee_plans')
+            ->where('academic_year_id', $activeYear->id)
+            ->where('frequency', 'yearly')
+            ->pluck('id')
+            ->all();
+
+        $paidRegistrationCount = (int) DB::table('enrollments')
+            ->where('enrollments.academic_year_id', $activeYear->id)
+            ->where('enrollments.status', 'active')
+            ->whereNull('enrollments.deleted_at')
+            ->whereExists(function ($query) use ($regFeeTypeIds, $yearlyFeePlanIds) {
+                $query->select(DB::raw(1))
+                    ->from('student_fees')
+                    ->join('payment_allocations', 'payment_allocations.student_fee_id', '=', 'student_fees.id')
+                    ->join('payments', 'payments.id', '=', 'payment_allocations.payment_id')
+                    ->whereColumn('student_fees.enrollment_id', 'enrollments.id')
+                    ->whereNull('payments.cancelled_at')
+                    ->where(function ($typeQ) use ($regFeeTypeIds, $yearlyFeePlanIds) {
+                        if (! empty($regFeeTypeIds)) {
+                            $typeQ->whereIn('student_fees.fee_type_id', $regFeeTypeIds);
+                        }
+                        if (! empty($yearlyFeePlanIds)) {
+                            $typeQ->orWhereIn('student_fees.fee_plan_id', $yearlyFeePlanIds);
+                        }
+                    })
+                    ->groupBy('student_fees.id', 'student_fees.amount_due')
+                    ->havingRaw('SUM(payment_allocations.amount_allocated) >= student_fees.amount_due AND student_fees.amount_due > 0');
+            })
+            ->distinct('enrollments.student_id')
+            ->count('enrollments.student_id');
+
+        $unpaidRegistrationCount = max(0, $totalStudents - $paidRegistrationCount);
+        $registrationRate = $totalStudents > 0 ? round(($paidRegistrationCount / $totalStudents) * 100, 1) : 0.0;
+
         $data = [
             'current_date' => $today->toDateString(),
             'academic_year' => $activeYear,
             'total_students' => $totalStudents,
             'total_active_students' => $totalStudents,
+            'paid_registration_count' => $paidRegistrationCount,
+            'unpaid_registration_count' => $unpaidRegistrationCount,
+            'registration_rate' => $registrationRate,
             'new_students_this_year' => $newEnrollments,
             'total_males' => $malesCount,
             'male_students_count' => $malesCount,
@@ -354,6 +398,9 @@ class DashboardService
             'academic_year' => null,
             'total_students' => 0,
             'total_active_students' => 0,
+            'paid_registration_count' => 0,
+            'unpaid_registration_count' => 0,
+            'registration_rate' => 0.0,
             'new_students_this_year' => 0,
             'total_males' => 0,
             'male_students_count' => 0,

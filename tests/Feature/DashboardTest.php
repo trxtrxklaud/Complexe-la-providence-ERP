@@ -530,4 +530,103 @@ class DashboardTest extends TestCase
 
         return $user;
     }
+
+    /** اختبارات نسبة الترسيم وحساب المسددين وغير المسددين */
+    public function test_registration_rate_with_full_partial_and_cancelled_payments(): void
+    {
+        Sanctum::actingAs($this->makeUserWithPermissions('cashier', ['manage_payments', 'manage_students']));
+        $year = $this->makeAcademicYear();
+
+        // 1. نوع رسم ترسيم رسمي
+        $regFeeType = \App\Models\FeeType::create([
+            'name_ar' => 'معلوم التسجيل والترسيم',
+            'price' => 70.00,
+            'ledger_category' => CashTransaction::CATEGORY_REGISTRATION_FEE,
+            'is_active' => true,
+        ]);
+
+        // تلميذ 1: دفع الترسيم كاملاً (70 د.ت)
+        $enrollment1 = $this->makeEnrollment($year);
+        $fee1 = StudentFee::create([
+            'enrollment_id' => $enrollment1->id,
+            'fee_type_id' => $regFeeType->id,
+            'description' => 'معلوم الترسيم',
+            'amount_due' => 70.00,
+            'due_date' => now()->toDateString(),
+            'status' => 'paid',
+        ]);
+        $payment1 = \App\Models\Payment::create([
+            'student_id' => $enrollment1->student_id,
+            'enrollment_id' => $enrollment1->id,
+            'amount' => 70.00,
+            'payment_date' => now()->toDateString(),
+            'method' => 'cash',
+        ]);
+        \App\Models\PaymentAllocation::create([
+            'payment_id' => $payment1->id,
+            'student_fee_id' => $fee1->id,
+            'amount_allocated' => 70.00,
+        ]);
+
+        // تلميذ 2: دفع جزئي (30 من 70) -> لا يُحتسب كخالص
+        $enrollment2 = $this->makeEnrollment($year);
+        $fee2 = StudentFee::create([
+            'enrollment_id' => $enrollment2->id,
+            'fee_type_id' => $regFeeType->id,
+            'description' => 'معلوم الترسيم',
+            'amount_due' => 70.00,
+            'due_date' => now()->toDateString(),
+            'status' => 'partial',
+        ]);
+        $payment2 = \App\Models\Payment::create([
+            'student_id' => $enrollment2->student_id,
+            'enrollment_id' => $enrollment2->id,
+            'amount' => 30.00,
+            'payment_date' => now()->toDateString(),
+            'method' => 'cash',
+        ]);
+        \App\Models\PaymentAllocation::create([
+            'payment_id' => $payment2->id,
+            'student_fee_id' => $fee2->id,
+            'amount_allocated' => 30.00,
+        ]);
+
+        // تلميذ 3: دفع ملغى -> لا يُحتسب
+        $enrollment3 = $this->makeEnrollment($year);
+        $fee3 = StudentFee::create([
+            'enrollment_id' => $enrollment3->id,
+            'fee_type_id' => $regFeeType->id,
+            'description' => 'معلوم الترسيم',
+            'amount_due' => 70.00,
+            'due_date' => now()->toDateString(),
+            'status' => 'pending',
+        ]);
+        $payment3 = \App\Models\Payment::create([
+            'student_id' => $enrollment3->student_id,
+            'enrollment_id' => $enrollment3->id,
+            'amount' => 70.00,
+            'payment_date' => now()->toDateString(),
+            'method' => 'cash',
+            'cancelled_at' => now(),
+        ]);
+        \App\Models\PaymentAllocation::create([
+            'payment_id' => $payment3->id,
+            'student_fee_id' => $fee3->id,
+            'amount_allocated' => 70.00,
+        ]);
+
+        // تلميذ 4: بدون أي دفع
+        $this->makeEnrollment($year);
+
+        $data = $this->getJson('/api/dashboard')->assertOk()->json('data');
+
+        // الإجمالي: 4 تلاميذ
+        $this->assertEquals(4, $data['total_active_students']);
+        // خالص الترسيم: 1 فقط (التلميذ الأول)
+        $this->assertEquals(1, $data['paid_registration_count']);
+        // غير خالص: 3 تلاميذ
+        $this->assertEquals(3, $data['unpaid_registration_count']);
+        // النسبة: 25.0%
+        $this->assertEquals(25.0, (float) $data['registration_rate']);
+    }
 }
