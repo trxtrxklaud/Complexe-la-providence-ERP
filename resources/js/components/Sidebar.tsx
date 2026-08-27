@@ -21,7 +21,7 @@ import {
 } from '../routeLoaders';
 
 export function Sidebar() {
-    const { logout, user, hasPermission } = useAuth();
+    const { logout, user, hasPermission, isCashier } = useAuth();
     const navigate = useNavigate();
     const location = useLocation();
 
@@ -139,12 +139,7 @@ export function Sidebar() {
             {/* User info */}
             {user && (
                 <div className="side-userinfo px-5 py-4 border-b border-white/10">
-                    <p className="text-white/90 text-sm font-medium truncate">
-                        {user.first_name} {user.last_name}
-                    </p>
-                    <p className="text-white/50 text-xs mt-0.5 truncate">
-                        {user.role?.display_name ?? 'غير محدد'}
-                    </p>
+                    <p className="text-white/50 text-xs truncate">متصل الآن</p>
                 </div>
             )}
 
@@ -164,7 +159,7 @@ export function Sidebar() {
                 {hasPermission('manage_students') && (
                     <>
                         <NavLink
-                            to="/students"
+                            to={isCashier ? '/students/enroll' : '/students'}
                             className={() => linkClass(startsWith('/students') && !startsWith('/students/bulk-gender'))}
                         >
                             <GraduationCap size={20} />
@@ -177,13 +172,15 @@ export function Sidebar() {
                             <Users size={20} />
                             <span>العائلات</span>
                         </NavLink>
-                        <NavLink
-                            to="/students/bulk-gender"
-                            className={({ isActive }) => linkClass(isActive || startsWith('/students/bulk-gender'))}
-                        >
-                            <Users2 size={20} />
-                            <span>تحديد الجنس</span>
-                        </NavLink>
+                        {!isCashier && (
+                            <NavLink
+                                to="/students/bulk-gender"
+                                className={({ isActive }) => linkClass(isActive || startsWith('/students/bulk-gender'))}
+                            >
+                                <Users2 size={20} />
+                                <span>تحديد الجنس</span>
+                            </NavLink>
+                        )}
                     </>
                 )}
 
@@ -222,6 +219,14 @@ export function Sidebar() {
                             <Users size={20} />
                             <span>إدارة المستخدمين</span>
                         </NavLink>
+
+                        <NavLink
+                            to="/audit-logs"
+                            className={({ isActive }) => linkClass(isActive || startsWith('/audit-logs'))}
+                        >
+                            <ClipboardList size={20} />
+                            <span>سجل العمليات</span>
+                        </NavLink>
                     </>
                 )}
 
@@ -258,7 +263,18 @@ export function Sidebar() {
                     </NavLink>
                 )}
 
-                {canAny('manage_payments', 'view_reports') && (
+                {/* «ما تم استخلاصه» — سجل استخلاصات المستخدم نفسه؛ يظهر لكل حاملي manage_payments */}
+                {hasPermission('manage_payments') && (
+                    <NavLink
+                        to="/my-collections"
+                        className={({ isActive }) => linkClass(isActive || startsWith('/my-collections'))}
+                    >
+                        <ClipboardList size={20} />
+                        <span>ما تم استخلاصه</span>
+                    </NavLink>
+                )}
+
+                {canAny('manage_payments', 'view_reports') && !isCashier && (
                     <NavLink
                         to="/reports/club-arrears"
                         className={({ isActive }) => linkClass(isActive || startsWith('/reports/club-arrears'))}
@@ -268,7 +284,7 @@ export function Sidebar() {
                     </NavLink>
                 )}
 
-                {canAny('manage_payments', 'view_reports') && (
+                {canAny('manage_payments', 'view_reports') && !isCashier && (
                     <NavLink
                         to="/reports/club-fees"
                         className={({ isActive }) => linkClass(isActive || startsWith('/reports/club-fees'))}
@@ -278,7 +294,7 @@ export function Sidebar() {
                     </NavLink>
                 )}
 
-                {hasPermission('manage_students') && (
+                {hasPermission('manage_students') && !isCashier && (
                     <NavLink
                         to="/clubs"
                         className={({ isActive }) => linkClass(isActive || startsWith('/clubs'))}
@@ -322,7 +338,7 @@ export function Sidebar() {
                     </NavLink>
                 )}
 
-                {hasPermission('manage_payments') && (
+                {hasPermission('manage_payments') && !isCashier && (
                     <NavLink
                         to="/old-debt-collect"
                         className={({ isActive }) => linkClass(isActive || startsWith('/old-debt-collect'))}
@@ -376,7 +392,7 @@ export function Sidebar() {
                     </NavLink>
                 )}
 
-                {hasPermission('manage_payments') && (
+                {hasPermission('manage_payments') && !isCashier && (
                     <NavLink
                         to="/historique"
                         onMouseEnter={prefetch(loadHistoriquePage)}
@@ -398,7 +414,7 @@ export function Sidebar() {
                     </NavLink>
                 )}
 
-                {canAny('waive_fees', 'manage_students', 'manage_payments') && (
+                {canAny('waive_fees', 'manage_students', 'manage_payments') && !isCashier && (
                     <NavLink
                         to="/exemptions"
                         className={({ isActive }) => linkClass(isActive || startsWith('/exemptions'))}

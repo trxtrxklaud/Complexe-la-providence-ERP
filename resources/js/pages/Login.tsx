@@ -173,6 +173,64 @@ function WorkspaceScene({ className = '', uid = 'x' }: { className?: string; uid
   );
 }
 
+/** عنصرا الإشهار: الاسم بالعربية ثم الترحيب بالفرنسية — يتعاقبان عبر الشريط. */
+const AD_ITEMS = [
+  {
+    text: 'مركب العناية للتعليم الخاص',
+    dir: 'rtl' as const,
+    style: { fontFamily: "'Reem Kufi', 'Cairo', sans-serif", fontWeight: 700, letterSpacing: '0.02em' },
+  },
+  {
+    text: 'BIENVENUE AU COMPLEXE LA PROVIDENCE',
+    dir: 'ltr' as const,
+    style: { fontFamily: "'Montserrat', 'Poppins', 'Inter', system-ui, sans-serif", fontWeight: 800, letterSpacing: '0.16em' },
+  },
+];
+
+/** شريط إشهاريّ متواصل بأعلى الصفحة: اسم المركب بالعربية والفرنسية يتعاقبان بحركة
+ *  أفقية دائمة، يفصلهما معينٌ نحاسيّ. المسار نسختان متطابقتان كي يكون الالتفاف بلا
+ *  قطع (قواعد الحركة في app.css: توقّف عند المرور بالمؤشّر، وتعطيل كامل عند تفضيل
+ *  تقليل الحركة). النصّ زخرفيّ متكرّر، فيُخفى عن قارئ الشاشة ويُستبدل بتسمية واحدة. */
+function WelcomeMarquee() {
+  const group = (
+    <div className="flex shrink-0 items-center">
+      {[0, 1, 2, 3, 4, 5].flatMap((rep) =>
+        AD_ITEMS.map((item) => (
+          <span key={`${rep}-${item.text}`} className="flex shrink-0 items-center">
+            <span dir={item.dir} className="whitespace-nowrap text-[13px] text-ivory/90" style={item.style}>
+              {item.text}
+            </span>
+            <span className="mx-6 text-[9px] leading-none text-[#c8a96e]">◆</span>
+          </span>
+        )),
+      )}
+    </div>
+  );
+
+  return (
+    <div
+      role="img"
+      aria-label="مركب العناية للتعليم الخاص — Bienvenue au Complexe La Providence"
+      className="ad-marquee relative flex h-10 shrink-0 select-none items-center overflow-hidden"
+      style={{
+        background: 'linear-gradient(90deg, #0a1628 0%, #0f1e3a 30%, #1a3a5c 70%, #0f1e3a 100%)',
+        borderBottom: '1px solid rgba(200,169,110,0.35)',
+      }}
+    >
+      <div className="ad-marquee__track" aria-hidden="true">
+        {group}
+        {group}
+      </div>
+      {/* تلاشٍ عند الحافتين كي لا ينقطع النصّ بحدٍّ حادّ */}
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-0"
+        style={{ background: 'linear-gradient(90deg, #0a1628 0%, transparent 7%, transparent 93%, #0f1e3a 100%)' }}
+      />
+    </div>
+  );
+}
+
 export function Login() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -206,8 +264,12 @@ export function Login() {
   return (
     <div
       dir="rtl"
-      className="grid min-h-screen font-arabic text-ink lg:grid-cols-[1.1fr_1fr]"
+      className="flex min-h-screen flex-col font-arabic text-ink"
     >
+      {/* ===== شريط الإشهار المتحرّك (يعلو اللوحتين على كل المقاسات) ===== */}
+      <WelcomeMarquee />
+
+      <div className="grid flex-1 lg:grid-cols-[1.1fr_1fr]">
       {/* ===== لوحة الهوية (يمين في RTL) ===== */}
       <aside
         className="relative hidden overflow-hidden text-ivory lg:flex lg:flex-col lg:justify-between"
@@ -393,6 +455,7 @@ export function Login() {
           </p>
         </div>
       </main>
+      </div>
     </div>
   );
 }

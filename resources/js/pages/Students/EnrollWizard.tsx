@@ -1,6 +1,7 @@
 import React from "react";
 import { Link } from "react-router-dom";
 import { UserPlus, UserCheck, ArrowRight } from "lucide-react";
+import { useAuth } from "../../contexts/AuthContext";
 
 const C = {
   forest: "#3B4A36",
@@ -12,16 +13,21 @@ const C = {
 };
 
 export function EnrollWizard() {
+  // القابض يُوجَّه أصلاً إلى هذه الصفحة بدل لوحة التلاميذ، فسهم الرجوع يعيده
+  // إلى /students التي تُحوّله ثانيةً إلى هنا — نخفيه عنه ونُبقيه لبقية الأدوار.
+  const { isCashier } = useAuth();
   return (
     <div className="p-6 md:p-8" dir="rtl">
       <div className="flex items-center gap-4 mb-10">
-        <Link
-          to="/students"
-          className="flex h-10 w-10 items-center justify-center rounded-full bg-white border transition hover:bg-gray-50"
-          style={{ borderColor: C.line, color: C.muted }}
-        >
-          <ArrowRight size={18} />
-        </Link>
+        {!isCashier && (
+          <Link
+            to="/students"
+            className="flex h-10 w-10 items-center justify-center rounded-full bg-white border transition hover:bg-gray-50"
+            style={{ borderColor: C.line, color: C.muted }}
+          >
+            <ArrowRight size={18} />
+          </Link>
+        )}
         <div>
           <h1 className="text-2xl font-bold" style={{ color: C.ink }}>
             ترسيم التلاميذ
