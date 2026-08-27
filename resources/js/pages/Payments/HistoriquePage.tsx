@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from 'react';
-import { History, Loader2, AlertCircle, RefreshCw } from 'lucide-react';
+import { History, Loader2, AlertCircle, RefreshCw, Printer } from 'lucide-react';
 import { paymentsApi } from '../../api/payments';
+import { ReceiptModal, type ReceiptData } from './ReceiptModal';
 import type { Payment, PaginatedResponse, UserBrief } from '../../types';
 
 const C = { forest: '#3B4A36', sage: '#E3EBDB', ink: '#1F261C', muted: '#7C8677', line: '#EDF1E8' };
@@ -44,6 +45,7 @@ export function HistoriquePage() {
   const [page, setPage] = useState(1);
   const [lastPage, setLastPage] = useState(1);
   const [total, setTotal] = useState(0);
+  const [receipt, setReceipt] = useState<ReceiptData | null>(null);
 
   const load = useCallback(async (p: number) => {
     setLoading(true);
@@ -68,6 +70,26 @@ export function HistoriquePage() {
   useEffect(() => {
     load(1);
   }, [load]);
+
+  const handlePrint = async (payment: Payment) => {
+    try {
+      const p: any = await paymentsApi.show(payment.id);
+      setReceipt({
+        payment_id: p.id,
+        student_name: p.student ? `${p.student.first_name} ${p.student.last_name}` : '—',
+        student_code: p.student?.student_code,
+        payment_date: p.payment_date,
+        method: p.method,
+        amount: p.amount,
+        total: p.amount,
+        items: (p.payment_allocations || []).map((a: any) => ({ description: a.student_fee?.description || 'معلوم', amount: a.amount_allocated })),
+        cancelled_at: p.cancelled_at,
+        cancellation_reason: p.cancellation_reason,
+      });
+    } catch (e: any) {
+      alert(e.message || 'تعذر تحميل الوصل');
+    }
+  };
 
   return (
     <div dir="rtl" className="p-6 max-w-6xl mx-auto">
@@ -128,6 +150,7 @@ export function HistoriquePage() {
                 <th className="px-4 py-3 font-semibold">تاريخ الإلغاء</th>
                 <th className="px-4 py-3 font-semibold">نفّذ الإلغاء</th>
                 <th className="px-4 py-3 font-semibold">سبب الإلغاء</th>
+                <th className="px-4 py-3 font-semibold">طباعة</th>
               </tr>
             </thead>
             <tbody>
@@ -164,6 +187,11 @@ export function HistoriquePage() {
                       {p.cancellation_reason || '—'}
                     </span>
                   </td>
+                  <td className="px-4 py-3">
+                    <button type="button" onClick={() => handlePrint(p)} className="p-1.5 rounded-lg border hover:bg-slate-50" style={{ borderColor: C.line, color: C.forest }} title="طباعة">
+                      <Printer size={14} />
+                    </button>
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -193,6 +221,10 @@ export function HistoriquePage() {
             التالي
           </button>
         </div>
+      )}
+
+      {receipt && (
+        <ReceiptModal receipt={receipt} onClose={() => setReceipt(null)} />
       )}
     </div>
   );

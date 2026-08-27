@@ -2,10 +2,14 @@
 
 namespace Tests\Feature;
 
+use App\Models\Club;
+use App\Models\ClubMonthlyFee;
+use App\Models\FeeCategory;
 use App\Models\Payment;
 use App\Models\PaymentAllocation;
 use App\Models\Student;
 use App\Models\StudentFee;
+use App\Services\ClubService;
 use App\Services\CollectionService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -264,6 +268,48 @@ class CollectionServiceTest extends TestCase
         sort($paid);
 
         $this->assertSame(['2025-09', '2025-10', '2025-11'], $paid);
+    }
+
+    public function test_collecting_tuition_creates_unpaid_club_arrearage_and_can_collect_it_in_same_receipt(): void
+    {
+        $user = $this->makeUser();
+        $this->actingAs($user);
+        $enrollment = $this->makeEnrollment();
+        $tuition = $this->makeFeeType('القسط الشهري', 240);
+        $category = FeeCategory::firstOrCreate(['code' => 'CLUB'], ['name' => 'معاليم النوادي', 'is_recurring' => true]);
+        $club = Club::create([
+            'name' => 'نادي الاختبار',
+            'fee_category_id' => $category->id,
+            'monthly_fee' => 50,
+            'is_active' => true,
+        ]);
+        app(ClubService::class)->subscribeStudent($enrollment->student_id, $club->id, $enrollment->academic_year_id);
+
+        $receipt = $this->service->collect($this->payload([
+            'student_id' => $enrollment->student_id,
+            'enrollment_id' => $enrollment->id,
+            'items' => [['fee_type_id' => $tuition->id, 'amount' => 240]],
+        ]), $user->id);
+
+        $clubFee = ClubMonthlyFee::firstOrFail();
+        $clubDebt = StudentFee::whereNotNull('club_monthly_fee_id')->firstOrFail();
+        $this->assertSame(240.0, (float) $receipt['total']);
+        $this->assertSame(0.0, (float) $clubFee->amount_paid);
+        $this->assertSame(50.0, $clubDebt->outstanding());
+
+        $second = $this->service->collect($this->payload([
+            'months' => ['2025-10'],
+            'student_id' => $enrollment->student_id,
+            'enrollment_id' => $enrollment->id,
+            'items' => [['fee_type_id' => $tuition->id, 'amount' => 240]],
+            'club_items' => [['club_monthly_fee_id' => $clubFee->id, 'amount' => 50]],
+        ]), $user->id);
+
+        $clubFee->refresh();
+        $this->assertSame(290.0, (float) $second['total']);
+        $this->assertSame(50.0, (float) $clubFee->amount_paid);
+        $this->assertSame(ClubMonthlyFee::STATUS_PAID, $clubFee->status);
+        $this->assertSame(0.0, StudentFee::whereKey($clubDebt->id)->firstOrFail()->outstanding());
     }
 
     public function test_ledger_groups_payments_by_month(): void

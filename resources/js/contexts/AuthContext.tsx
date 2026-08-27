@@ -9,6 +9,9 @@ interface AuthContextType {
     login: (token: string, user: User) => void;
     logout: () => Promise<void>;
     hasPermission: (permissionName: string) => boolean;
+    // طرحٌ للدور فقط: يُستعمَل لتقليص سطح الواجهة الظاهر للقابض. الحارس الحقيقي
+    // يبقى صلاحيات routes/api.php — هذا لا يمنح ولا يمنع وصولاً، بل يخفي روابط.
+    isCashier: boolean;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -50,13 +53,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
 
     const hasPermission = (permissionName: string): boolean => {
-        if (!user?.role) return false;
-        if (user.role.name === 'admin') return true;
-        return user.role.permissions?.some(p => p.name === permissionName) ?? false;
+        if (!user) return false;
+        if (Array.isArray(user.effective_permissions)) {
+            return user.effective_permissions.includes(permissionName);
+        }
+        return user.role?.permissions?.some(p => p.name === permissionName) ?? false;
     };
 
+    const isCashier = user?.role?.name === 'cashier';
+
     return (
-        <AuthContext.Provider value={{ user, loading, login, logout, hasPermission }}>
+        <AuthContext.Provider value={{ user, loading, login, logout, hasPermission, isCashier }}>
             {children}
         </AuthContext.Provider>
     );

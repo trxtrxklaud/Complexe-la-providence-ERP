@@ -8,6 +8,8 @@ use App\Models\ClubMonthlyFee;
 use App\Models\EmployeeAdvance;
 use App\Models\EmployeeAdvanceRepayment;
 use App\Models\Expense;
+use App\Models\OldEmployeeDebt;
+use App\Models\OldEmployeeDebtCollection;
 use App\Models\Payment;
 use App\Models\Salary;
 use App\Models\StudentFee;
@@ -149,9 +151,17 @@ class LedgerService
             // قبض دين من سنة سابقة ليس مدخولاً للسنة الحالية: يُسجَّل في الخزينة
             // كبند مستقل (prior_year_debt) لا يدخل في الدخل الصافي ولا في المداخيل.
             $feeYearId = $fee?->enrollment?->academic_year_id;
-            $isPriorYearDebt = $feeYearId !== null
-                && $paymentYearId !== null
-                && (int) $feeYearId !== (int) $paymentYearId;
+
+            // الهدف الصريح manual_student_debt_id يحسم التصنيف وحده: تحصيل دَين
+            // قديم مدخل يدوياً — حتى لو كان رسم الجسر تحت تسجيل السنة الحالية
+            // (الإدخال الجماعي بلا تسجيلات سابقة). بلا هدف صريح يبقى التصنيف
+            // سنة التسجيل كما هو، فلا يتحول أي رسم عادي إلى دين قديم.
+            $isManualDebtTarget = (int) ($allocation->manual_student_debt_id ?? 0) > 0;
+
+            $isPriorYearDebt = $isManualDebtTarget
+                || ($feeYearId !== null
+                    && $paymentYearId !== null
+                    && (int) $feeYearId !== (int) $paymentYearId);
 
             $category = $isPriorYearDebt
                 ? CashTransaction::CATEGORY_PRIOR_YEAR_DEBT
@@ -352,6 +362,38 @@ class LedgerService
     }
 
     /**
+     * تحصيل دين قديم على إطار → قبض نقدي داخل الخزينة، لا مدخول تشغيلي ولا أجور.
+     *
+     * لا ينشئ Salary ولا Advance — يسجل حركة تحصيل داخلة مباشرة في الخزينة
+     * كـ old_liability_collection، مرتبطة بدفعة التحصيل (OldEmployeeDebtCollection).
+     */
+    public function recordOldEmployeeDebtCollection(OldEmployeeDebtCollection $collection): CashTransaction
+    {
+        $amount = (float) $collection->amount;
+        if ($amount <= 0) {
+            throw new \InvalidArgumentException('مبلغ التحصيل يجب أن يكون أكبر من صفر');
+        }
+
+        $collection->loadMissing('debt.employee');
+        $employeeName = $collection->debt?->employee?->full_name ?? ('إطار #'.($collection->debt?->employee_id ?? ''));
+        $description = 'تحصيل دين إطار قديم: '.$employeeName.($collection->notes ? ' — '.$collection->notes : '');
+
+        $date = $collection->payment_date?->toDateString()
+            ?? (string) $collection->payment_date;
+
+        return $this->post(
+            source: $collection,
+            category: CashTransaction::CATEGORY_OLD_LIABILITY_COLLECTION,
+            direction: CashTransaction::DIRECTION_IN,
+            amount: $amount,
+            date: $date,
+            academicYearId: $collection->debt?->academic_year_id,
+            description: $description,
+            createdBy: $collection->collected_by,
+        );
+    }
+
+    /**
      * تصنيف رسم التلميذ إلى بند مداخيل، بأولوية بنيوية لا نصّية:
      *   1) خطة الرسوم (fee_plans.frequency) للرسوم المُولّدة تلقائياً
      *   2) نوع الرسم (fee_types.ledger_category) للرسوم المُستخلَصة يدوياً
@@ -359,6 +401,10 @@ class LedgerService
      */
     private function categoryForFee(?StudentFee $fee): string
     {
+        if ($fee?->club_monthly_fee_id !== null) {
+            return CashTransaction::CATEGORY_CLUB_FEE;
+        }
+
         if ($fee?->feePlan) {
             return $fee->feePlan->frequency === 'yearly'
                 ? CashTransaction::CATEGORY_REGISTRATION_FEE

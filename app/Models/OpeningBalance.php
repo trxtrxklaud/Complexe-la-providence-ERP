@@ -69,9 +69,23 @@ class OpeningBalance extends Model
         return $this->belongsTo(User::class, 'created_by');
     }
 
+    /** التوزيعات المالية المخصصة لهذا الرصيد الافتتاحي تحديداً. */
+    public function paymentAllocations(): \Illuminate\Database\Eloquent\Relations\HasMany
+    {
+        return $this->hasMany(PaymentAllocation::class, 'opening_balance_id');
+    }
+
     public function isCancelled(): bool
     {
         return $this->cancelled_at !== null;
+    }
+
+    /** مجموع ما حُصّل فعلاً من الدفعات المخصصة لهذا الرصيد وغير الملغاة. */
+    public function collected(): float
+    {
+        return round((float) $this->paymentAllocations()
+            ->whereHas('payment', fn ($q) => $q->whereNull('cancelled_at'))
+            ->sum('amount_allocated'), 2);
     }
 
     /**

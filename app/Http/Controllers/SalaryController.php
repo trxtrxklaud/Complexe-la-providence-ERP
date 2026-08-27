@@ -385,6 +385,7 @@ class SalaryController extends Controller
                 $repayment->advance?->recalculateSettlement();
             }
 
+            // تنظيف أي إسقاط قديم كان يستخدم الراتب نفسه كمصدر للحركة.
             $this->ledger->cancelFor($salary, $userId, $data['reason']);
         });
 

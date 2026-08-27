@@ -14,10 +14,19 @@ export interface PaymentFilters {
   date_to?: string;
   per_page?: number;
   page?: number;
-  // إرجاع الوصولات الملغاة فقط (صفحة Historique)
+  // جلب المقابيض الملغاة فقط (شاشة Historique)
   cancelled?: boolean;
-  // استبعاد الملغاة من النتائج
+  // استبعاد المقابيض الملغاة من القائمة
   exclude_cancelled?: boolean;
+}
+
+// مرشّحات صفحة «ما تم استخلاصه» — بلا created_by؛ الخادم يشتقّ المستخدم من التوكن.
+export interface MyCollectionsFilters {
+  date_from?: string;
+  date_to?: string;
+  exclude_cancelled?: boolean;
+  per_page?: number;
+  page?: number;
 }
 
 export const paymentsApi = {
@@ -31,7 +40,22 @@ export const paymentsApi = {
     const q = params.toString();
     const url = API_BASE + '/payments' + (q ? '?' + q : '');
     const res = await fetch(url, { headers: getHeaders() });
-    if (!res.ok) throw new Error('فشل جلب المدفوعات');
+    if (!res.ok) throw new Error('تعذر جلب المقابيض');
+    return res.json();
+  },
+
+  // «ما تم استخلاصه» — ذاتيّ النطاق: لا نرسل معرّف مستخدم؛ الخادم يحدّده من التوكن.
+  async myCollections(filters?: MyCollectionsFilters): Promise<PaginatedResponse<Payment>> {
+    const params = new URLSearchParams();
+    if (filters) {
+      Object.entries(filters).forEach(([k, v]) => {
+        if (v !== undefined && v !== null && v !== '') params.append(k, String(v));
+      });
+    }
+    const q = params.toString();
+    const url = API_BASE + '/payments/my-collections' + (q ? '?' + q : '');
+    const res = await fetch(url, { headers: getHeaders() });
+    if (!res.ok) throw new Error('تعذر جلب الاستخلاصات');
     return res.json();
   },
 
@@ -43,18 +67,18 @@ export const paymentsApi = {
     });
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
-      throw new Error(err.message || 'فشل تسجيل الدفعة');
+      throw new Error(err.message || 'تعذر تسجيل المقبوض');
     }
     return res.json();
   },
 
   async show(id: number): Promise<Payment> {
     const res = await fetch(API_BASE + '/payments/' + id, { headers: getHeaders() });
-    if (!res.ok) throw new Error('فشل جلب الدفعة');
+    if (!res.ok) throw new Error('تعذر جلب المقبوض');
     return res.json();
   },
 
-  // إلغاء موثّق بدل الحذف النهائي: يشترط سبباً ويُبقي السجل للمراجعة.
+  // إلغاء مقبوض مالي مع السبب الإلزامي: يرجع الرصيد للدين ويعكس القيد في الخزينة.
   async cancel(id: number, reason: string): Promise<Payment> {
     const res = await fetch(API_BASE + '/payments/' + id + '/cancel', {
       method: 'POST',
@@ -63,7 +87,19 @@ export const paymentsApi = {
     });
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
-      throw new Error(err.message || 'فشل إلغاء الدفعة');
+      throw new Error(err.message || 'تعذر إلغاء المقبوض');
+    }
+    return res.json();
+  },
+
+  async reprint(id: number): Promise<Payment> {
+    const res = await fetch(API_BASE + '/payments/' + id + '/reprint', {
+      method: 'POST',
+      headers: getHeaders(),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.message || 'تعذر إعادة طباعة الوصل');
     }
     return res.json();
   },
@@ -74,7 +110,7 @@ export const studentFeesApi = {
     const res = await fetch(API_BASE + '/students/' + studentId + '/balance', {
       headers: getHeaders(),
     });
-    if (!res.ok) throw new Error('فشل جلب الرصيد');
+    if (!res.ok) throw new Error('تعذر جلب الرصيد');
     return res.json();
   },
 
@@ -83,7 +119,7 @@ export const studentFeesApi = {
     const res = await fetch(API_BASE + '/students/' + studentId + '/fees' + q, {
       headers: getHeaders(),
     });
-    if (!res.ok) throw new Error('فشل جلب رسوم التلميذ');
+    if (!res.ok) throw new Error('تعذر جلب ديون التلميذ');
     return res.json();
   },
 };
@@ -97,7 +133,8 @@ export async function collectPayment(data: {
   reference?: string | null;
   notes?: string | null;
   items: { fee_type_id: number; amount: number }[];
-  // توزيع صريح على متخلّدات السنوات السابقة (اختياري).
+  club_items?: { club_monthly_fee_id: number; amount: number }[];
+  // تخصيص مباشر على المتخلدات السابقة للتلميذ (الأرصدة الافتتاحية).
   prior_allocations?: { student_fee_id: number; amount: number }[];
 }) {
   const res = await fetch(API_BASE + '/payments/collect', {
@@ -107,7 +144,7 @@ export async function collectPayment(data: {
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    throw new Error(err.message || 'فشل الاستخلاص');
+    throw new Error(err.message || 'تعذر الاستخلاص');
   }
   return res.json();
 }
@@ -116,25 +153,25 @@ export async function getEnrollmentLedger(enrollmentId: number) {
   const res = await fetch(API_BASE + '/enrollments/' + enrollmentId + '/ledger', {
     headers: getHeaders(),
   });
-  if (!res.ok) throw new Error('فشل جلب سجل الأشهر');
+  if (!res.ok) throw new Error('تعذر جلب دفتر الترسيم');
   return res.json();
 }
 
 export async function getCollectionYears() {
   const res = await fetch(API_BASE + '/collection/years', { headers: getHeaders() });
-  if (!res.ok) throw new Error('فشل جلب السنوات');
+  if (!res.ok) throw new Error('تعذر جلب السنوات الدراسية');
   return res.json();
 }
 
 export async function getSectionsByYear(yearId: number) {
   const res = await fetch(API_BASE + '/collection/years/' + yearId + '/sections', { headers: getHeaders() });
-  if (!res.ok) throw new Error('فشل جلب الأقسام');
+  if (!res.ok) throw new Error('تعذر جلب الأقسام');
   return res.json();
 }
 
 export async function getStudentsBySection(sectionId: number, yearId: number) {
   const res = await fetch(API_BASE + '/collection/sections/' + sectionId + '/students?year_id=' + yearId, { headers: getHeaders() });
-  if (!res.ok) throw new Error('فشل جلب التلاميذ');
+  if (!res.ok) throw new Error('تعذر جلب التلاميذ');
   return res.json();
 }
 
@@ -162,6 +199,17 @@ export type CollectionPreview = {
     is_fully_waived: boolean;
     discount_reason: string | null;
   }>;
+  club_items: Array<{
+    club_monthly_fee_id: number;
+    student_fee_id: number | null;
+    month: string;
+    club_name: string;
+    amount_due: number;
+    amount_paid: number;
+    remaining_amount: number;
+    status: string;
+  }>;
+  club_remaining_amount: number;
 };
 
 export async function getCollectionPreview(enrollmentId: number, months: string[], feeTypeId?: number): Promise<CollectionPreview> {
@@ -173,7 +221,7 @@ export async function getCollectionPreview(enrollmentId: number, months: string[
   const res = await fetch(API_BASE + '/payments/collect/preview?' + params.toString(), { headers: getHeaders() });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    let msg = err.message || 'فشل معاينة الاستخلاص والتخفيضات';
+    let msg = err.message || 'تعذر معاينة الاستخلاص والتخفيضات';
     if (err.errors && typeof err.errors === 'object') {
       const firstKey = Object.keys(err.errors)[0];
       if (firstKey && Array.isArray(err.errors[firstKey]) && err.errors[firstKey][0]) {
@@ -181,16 +229,15 @@ export async function getCollectionPreview(enrollmentId: number, months: string[
       }
     }
     if (typeof msg === 'string' && (msg.includes('SQLSTATE') || msg.includes('no such table'))) {
-      msg = 'حدث خطأ غير متوقع في قاعدة البيانات أثناء معاينة التخفيضات';
+      msg = 'حدث خطأ أثناء الاتصال بقاعدة البيانات يرجى تحديث الصفحة';
     }
     throw new Error(msg);
   }
   return res.json();
-
 }
 
 /**
- * الرصيد الافتتاحي: متخلّدات السنوات السابقة المنقولة للسنة النشطة.
+ * الأرصدة الافتتاحية: المتخلدات السابقة الموثقة بصفة متخلدات قديمة.
  */
 export interface OpeningBalanceItem {
   opening_balance_id: number;
@@ -207,23 +254,32 @@ export async function getStudentOpeningBalances(studentId: number, academicYearI
   const res = await fetch(API_BASE + '/collection/students/' + studentId + '/opening-balances' + q, {
     headers: getHeaders(),
   });
-  if (!res.ok) throw new Error('فشل جلب متخلّدات السنوات السابقة');
+  if (!res.ok) throw new Error('تعذر جلب المتخلدات السابقة للتلميذ');
   return res.json() as Promise<{
     student_id: number;
     academic_year_id: number | null;
     summary: { count: number; total: number; outstanding: number; paid: number };
     items: OpeningBalanceItem[];
+    manual_debts?: Array<{
+      id: number;
+      description: string;
+      original_year_label: string;
+      debt_type: string;
+      original_amount: number | string;
+      collected_amount?: number;
+      outstanding_amount?: number;
+    }>;
   }>;
 }
 
 /**
- * معاينة توزيع الدفعة وفق الترتيب الافتراضي (الأقدم أولاً) — يراها المحاسب
- * قبل التثبيت ويعدّلها يدوياً عبر prior_allocations في شاشة الاستخلاص.
+ * معاينة توزيع المبلغ على الديون المستحقة (الأرصدة القديمة) - الإسقاط التلقائي
+ * على الديون بالترتيب الزمني وتمرير prior_allocations إلى نقطة الاستخلاص.
  */
 export async function getAllocationPreview(studentId: number, amount: number) {
   const res = await fetch(API_BASE + '/collection/students/' + studentId + '/allocation-preview?amount=' + amount, {
     headers: getHeaders(),
   });
-  if (!res.ok) throw new Error('فشل معاينة توزيع الدفعة');
+  if (!res.ok) throw new Error('تعذر معاينة توزيع المبلغ');
   return res.json();
 }

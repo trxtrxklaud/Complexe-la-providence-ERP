@@ -133,11 +133,31 @@ export function ClassroomRosterPage() {
         whitespace-nowrap، وإلغاء overflow لأنّ شريط التمرير على الشاشة يصير قصّاً على الورق.
       */}
       <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;700;800&display=swap');
         @media print {
-          @page { size: A4 landscape; margin: 0; }
+          @page { size: A4 landscape; margin: 8mm; }
           * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
 
-          #net-print-area { padding: 8mm !important; }
+          body * { visibility: hidden !important; }
+          #net-print-area, #net-print-area * { visibility: visible !important; }
+          #net-print-area {
+            position: absolute !important;
+            top: 0 !important; left: 0 !important; right: 0 !important;
+            width: 100% !important;
+            min-height: 88vh !important;
+            height: auto !important;
+            margin: 0 !important;
+            padding: 8mm !important;
+            box-sizing: border-box !important;
+            background: #fff !important;
+            border: 1px solid #2a9d8f !important;
+            border-radius: 0 !important;
+            display: block !important;
+            font-family: 'Cairo', sans-serif !important;
+            font-size: 14px !important;
+            font-weight: 600 !important;
+            overflow: visible !important;
+          }
 
           #net-print-area .overflow-x-auto,
           #net-print-area .overflow-hidden {
@@ -145,26 +165,57 @@ export function ClassroomRosterPage() {
           }
 
           #net-print-area table {
-            font-size: 8pt !important;
+            font-size: 10.5pt !important;
             width: 100% !important;
             max-width: 100% !important;
             table-layout: fixed !important;
             border-collapse: collapse !important;
+            height: auto !important;
           }
 
-          #net-print-area td,
           #net-print-area th {
-            padding: 2px 3px !important;
+            background: #2a9d8f !important;
+            color: #fff !important;
+            font-size: 10pt !important;
+            font-weight: 700 !important;
+            padding: 6px 8px !important;
+            border: 1px solid #2a9d8f !important;
+          }
+          #net-print-area td {
+            font-size: 10pt !important;
+            font-weight: 600 !important;
+            padding: 5px 6px !important;
             white-space: normal !important;
             word-break: break-word !important;
             overflow-wrap: break-word !important;
+            border: 1px solid #ccc !important;
+          }
+
+          /* ترويسة مدمجة في الأعلى لا تأخذ مساحة كبيرة — العنوان في أعلى الصفحة */
+          #net-print-area .hidden.print\:block { margin-bottom: 4px !important; padding-bottom: 4px !important; border-width: 1px !important; }
+          #net-print-area .hidden.print\:block div { font-size: 9pt !important; }
+          #net-print-area h3 { font-size: 11pt !important; margin: 3px 0 2px !important; }
+          #net-print-area p { font-size: 8pt !important; margin: 1px 0 !important; }
+          #net-print-area .flex-wrap { margin-bottom: 3px !important; gap: 4px !important; }
+          #net-print-area .grid { gap: 4px !important; margin-bottom: 6px !important; }
+          #net-print-area .grid > div { padding: 4px 6px !important; }
+          #net-print-area .grid p { font-size: 8pt !important; }
+          #net-print-area .grid .text-xl { font-size: 11pt !important; }
+
+          /* تملأ الصفحة حسب عدد التلاميذ: صفوف قليلة تكبر لتملأ، كثيرة تبقى طبيعية وتقسّم على صفحات */
+          #net-print-area tbody tr {
+            height: calc((88vh - 220px) / var(--print-rows, 20)) !important;
+            min-height: 28px !important;
+            max-height: 48px !important;
           }
 
           #net-print-area tr { page-break-inside: avoid; break-inside: avoid; }
           #net-print-area thead { display: table-header-group; }
+          #net-print-area tfoot { display: table-footer-group; }
 
-          /* بطاقات الملخّص أربع في سطر واحد حتّى لا تأكل نصف الورقة */
           #net-print-area .grid { gap: 6px !important; }
+          #net-print-area .grid > div { border: 1px solid #2a9d8f !important; }
+          .no-print { display: none !important; }
         }
       `}</style>
 
@@ -406,7 +457,7 @@ export function ClassroomRosterPage() {
 
           <div className="bg-white rounded-2xl overflow-hidden" style={{ border: `1px solid ${C.line}` }}>
             <div className="overflow-x-auto">
-              <table className="w-full text-sm" style={{ borderCollapse: 'collapse' }}>
+              <table className="w-full text-sm" style={{ borderCollapse: 'collapse', ['--print-rows' as any]: Math.max(data.rows.length, 1) } as React.CSSProperties}>
                 <thead style={{ backgroundColor: C.sage }}>
                   <tr>
                     <th className="text-right px-3 py-2 font-semibold" style={{ ...cell, color: C.ink }}>#</th>

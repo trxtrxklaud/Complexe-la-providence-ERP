@@ -12,14 +12,17 @@ class StudentFee extends Model
         'enrollment_id',
         'fee_plan_id',
         'fee_type_id',
+        'club_monthly_fee_id',
         'description',
         'amount_due',
+        'direct_paid_amount',
         'due_date',
         'status',
     ];
 
     protected $casts = [
         'amount_due' => 'decimal:2',
+        'direct_paid_amount' => 'decimal:2',
         'due_date' => 'date',
     ];
 
@@ -46,6 +49,11 @@ class StudentFee extends Model
         return $this->hasMany(PaymentAllocation::class);
     }
 
+    public function clubMonthlyFee(): BelongsTo
+    {
+        return $this->belongsTo(ClubMonthlyFee::class, 'club_monthly_fee_id');
+    }
+
     public function waivers(): HasMany
     {
         return $this->hasMany(FeeWaiver::class);
@@ -59,6 +67,11 @@ class StudentFee extends Model
         return round((float) $this->paymentAllocations()
             ->whereHas('payment', fn ($query) => $query->whereNull('cancelled_at'))
             ->sum('amount_allocated'), 2);
+    }
+
+    public function directPaidAmount(): float
+    {
+        return round((float) ($this->direct_paid_amount ?? 0), 2);
     }
 
     /**
@@ -77,6 +90,6 @@ class StudentFee extends Model
      */
     public function outstanding(): float
     {
-        return round(max(0.0, (float) $this->amount_due - $this->allocatedAmount() - $this->waivedAmount()), 2);
+        return round(max(0.0, (float) $this->amount_due - $this->allocatedAmount() - $this->directPaidAmount() - $this->waivedAmount()), 2);
     }
 }

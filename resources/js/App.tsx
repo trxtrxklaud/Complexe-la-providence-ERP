@@ -1,9 +1,11 @@
 import React, { lazy, Suspense } from 'react';
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
+import { motion, MotionConfig } from 'motion/react';
 import { Sidebar } from './components/Sidebar';
 import { Login } from './pages/Login';
-import { AuthProvider } from './contexts/AuthContext';
+import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { ProtectedRoute } from './components/ProtectedRoute';
+import { ToastProvider } from './components/ui/Toast';
 import { StudentsDashboard } from './pages/Students/StudentsDashboard';
 import { EnrollWizard } from './pages/Students/EnrollWizard';
 import Dashboard from './pages/Dashboard/Dashboard';
@@ -27,21 +29,27 @@ import {
 const UsersList = lazy(() => loadUsersList().then((module) => ({ default: module.UsersList })));
 const DiscountsPage = lazy(() => import('./pages/Discounts/DiscountsPage').then((module) => ({ default: module.DiscountsPage })));
 const MonthlyDiscountsPage = lazy(() => import('./pages/Discounts/MonthlyDiscountsPage').then((module) => ({ default: module.MonthlyDiscountsPage })));
+const ExemptionsPage = lazy(() => import('./pages/Exemptions/ExemptionsPage').then((module) => ({ default: module.ExemptionsPage })));
 
 const ClubFeesReportPage = lazy(() => import('./pages/Reports/ClubFeesReportPage'));
+const ClubArrearsDashboardPage = lazy(() => import('./pages/Reports/ClubArrearsDashboardPage'));
 const ClubsPage = lazy(() => import('./pages/Clubs/ClubsPage'));
 const UserForm = lazy(() => import('./pages/Users/UserForm').then((module) => ({ default: module.UserForm })));
+const AuditLogPage = lazy(() => import('./pages/Users/AuditLogPage').then((module) => ({ default: module.AuditLogPage })));
 const NewStudentWizard = lazy(() => import('./pages/Students/NewStudentWizard').then((module) => ({ default: module.NewStudentWizard })));
 const OldStudentReenroll = lazy(() => import('./pages/Students/OldStudentReenroll').then((module) => ({ default: module.OldStudentReenroll })));
 const StudentSearchPage = lazy(() => import('./pages/Students/StudentSearchPage').then((module) => ({ default: module.StudentSearchPage })));
 const StudentDetailsPage = lazy(() => import('./pages/Students/StudentDetailsPage').then((module) => ({ default: module.StudentDetailsPage })));
 const StudentTransferPage = lazy(() => import('./pages/Students/StudentTransferPage').then((module) => ({ default: module.StudentTransferPage })));
+const BulkGenderPage = lazy(() => import('./pages/Students/BulkGenderPage').then((module) => ({ default: module.BulkGenderPage })));
 const FeeTypesPage = lazy(() => loadFeeTypesPage().then((module) => ({ default: module.FeeTypesPage })));
 const EmployeesPage = lazy(() => loadEmployeesPage().then((module) => ({ default: module.EmployeesPage })));
 const CollectionPage = lazy(() => loadCollectionPage().then((module) => ({ default: module.CollectionPage })));
 const FamiliesListPage = lazy(() => import('./pages/Families/FamiliesListPage').then((m) => ({ default: m.FamiliesListPage })));
 const FamilyDetailPage = lazy(() => import('./pages/Families/FamilyDetailPage').then((m) => ({ default: m.FamilyDetailPage })));
 const HistoriquePage = lazy(() => loadHistoriquePage().then((module) => ({ default: module.HistoriquePage })));
+// «ما تم استخلاصه» — صفحة القابض الذاتية النطاق (payments?created_by=)
+const MyCollectionsPage = lazy(() => import('./pages/Payments/MyCollectionsPage').then((module) => ({ default: module.MyCollectionsPage })));
 const ClassroomsPage = lazy(() => loadClassroomsPage().then((module) => ({ default: module.ClassroomsPage })));
 const RosterPage = lazy(() => loadRosterPage().then((module) => ({ default: module.RosterPage })));
 const IncomeByDatePage = lazy(() => import('./pages/Income/IncomeByDatePage').then((module) => ({ default: module.IncomeByDatePage })));
@@ -62,6 +70,9 @@ const TreasuryWithdrawalsPage = lazy(() => import('./pages/Treasury/TreasuryWith
 const NetIncomeDailyPage = lazy(() => loadNetIncomeDailyPage().then((module) => ({ default: module.NetIncomeDailyPage })));
 const NetRevenueMonthlyPage = lazy(() => import('./pages/NetIncome/NetRevenueMonthlyPage').then((module) => ({ default: module.NetRevenueMonthlyPage })));
 const NetRevenueYearlyPage = lazy(() => import('./pages/NetIncome/NetRevenueYearlyPage').then((module) => ({ default: module.NetRevenueYearlyPage })));
+const OpeningBalancesPage = lazy(() => import('./pages/Finance/OpeningBalancesPage').then((module) => ({ default: module.OpeningBalancesPage })));
+const OldDebtCollectPage = lazy(() => import('./pages/Finance/OldDebtCollectPage').then((module) => ({ default: module.OldDebtCollectPage })));
+const OldDebtReportPage = lazy(() => import('./pages/Finance/OldDebtReportPage').then((module) => ({ default: module.OldDebtReportPage })));
 
 function RouteContentSkeleton() {
     return (
@@ -86,14 +97,38 @@ function RouteContentSkeleton() {
 }
 
 function Layout({ children }: { children: React.ReactNode }) {
+    const location = useLocation();
+    // مفتاح الانتقال = القطاع الأوّل من المسار. هكذا يتحرّك التنقّل بين الموديولات،
+    // دون إعادة تركيب التخطيطات المتداخلة (المداخيل/الخزينة…) عند تبديل تبويباتها.
+    const segment = location.pathname.split('/')[1] || 'root';
     return (
-        <div className="flex min-h-screen" style={{ backgroundColor: '#E9EEE3' }}>
+        <div className="flex min-h-screen" style={{ backgroundColor: '#F7F5EF' }}>
             <Sidebar />
             <main className="flex-1 overflow-x-hidden">
-                <Suspense fallback={<RouteContentSkeleton />}>{children}</Suspense>
+                <Suspense fallback={<RouteContentSkeleton />}>
+                    <motion.div
+                        key={segment}
+                        initial={{ opacity: 0, y: 8 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
+                    >
+                        {children}
+                    </motion.div>
+                </Suspense>
             </main>
         </div>
     );
+}
+
+/**
+ * حارس عرضٍ للدور فقط: يُخفي عن القابض المسارات التي لا يريدها المالك له،
+ * موجّهاً إيّاه إلى وجهةٍ بديلة. ليس طبقة أمان — الحارس الحقيقي يبقى صلاحيات
+ * routes/api.php — بل تقليصٌ لسطح الواجهة الظاهر لحساب القابض تحديداً؛ استثناءٌ
+ * واعٍ لقاعدة «الواجهة تطابق الحراسة حرفاً»: الطرح للدور، والإظهار يبقى بالصلاحية.
+ */
+function CashierHidden({ to = '/', children }: { to?: string; children: React.ReactNode }) {
+    const { isCashier } = useAuth();
+    return isCashier ? <Navigate to={to} replace /> : <>{children}</>;
 }
 
 /**
@@ -104,9 +139,11 @@ function Layout({ children }: { children: React.ReactNode }) {
 export default function App() {
     return (
         <AuthProvider>
-            <BrowserRouter>
-                <Routes>
-                    <Route path="/login" element={<Login />} />
+            <MotionConfig reducedMotion="user">
+                <ToastProvider>
+                    <BrowserRouter>
+                        <Routes>
+                            <Route path="/login" element={<Login />} />
 
                     <Route path="/" element={
                         <ProtectedRoute>
@@ -118,9 +155,11 @@ export default function App() {
                         صلاحية enroll_student موجودة في قاعدة البيانات لكنها لا تحرس أي مسار،
                         فكان من يملكها وحدها يرى معالج التسجيل ثم يُرفض عند الحفظ. */}
                     <Route path="/students" element={
-                        <ProtectedRoute permission="manage_students">
-                            <Layout><StudentsDashboard /></Layout>
-                        </ProtectedRoute>
+                        <CashierHidden to="/students/enroll">
+                            <ProtectedRoute permission="manage_students">
+                                <Layout><StudentsDashboard /></Layout>
+                            </ProtectedRoute>
+                        </CashierHidden>
                     } />
                     <Route path="/students/enroll" element={
                         <ProtectedRoute permission="manage_students">
@@ -138,19 +177,32 @@ export default function App() {
                         </ProtectedRoute>
                     } />
                     <Route path="/students/search" element={
-                        <ProtectedRoute permission="manage_students">
-                            <Layout><StudentSearchPage /></Layout>
-                        </ProtectedRoute>
+                        <CashierHidden>
+                            <ProtectedRoute permission="manage_students">
+                                <Layout><StudentSearchPage /></Layout>
+                            </ProtectedRoute>
+                        </CashierHidden>
                     } />
                     <Route path="/students/search/:studentId" element={
-                        <ProtectedRoute permission="manage_students">
-                            <Layout><StudentDetailsPage /></Layout>
-                        </ProtectedRoute>
+                        <CashierHidden>
+                            <ProtectedRoute permission="manage_students">
+                                <Layout><StudentDetailsPage /></Layout>
+                            </ProtectedRoute>
+                        </CashierHidden>
                     } />
                     <Route path="/students/transfer" element={
-                        <ProtectedRoute permission="manage_students">
-                            <Layout><StudentTransferPage /></Layout>
-                        </ProtectedRoute>
+                        <CashierHidden>
+                            <ProtectedRoute permission="manage_students">
+                                <Layout><StudentTransferPage /></Layout>
+                            </ProtectedRoute>
+                        </CashierHidden>
+                    } />
+                    <Route path="/students/bulk-gender" element={
+                        <CashierHidden>
+                            <ProtectedRoute permission="manage_students">
+                                <Layout><BulkGenderPage /></Layout>
+                            </ProtectedRoute>
+                        </CashierHidden>
                     } />
 
                     {/* العائلات — التحصيل الجماعي */}
@@ -193,12 +245,19 @@ export default function App() {
                             <Layout><UserForm /></Layout>
                         </ProtectedRoute>
                     } />
+                    <Route path="/audit-logs" element={
+                        <ProtectedRoute permission="manage_users">
+                            <Layout><AuditLogPage /></Layout>
+                        </ProtectedRoute>
+                    } />
 
                     {/* أنواع المعاليم — apiResource('/fee-types') داخل manage_payments لا manage_users */}
                     <Route path="/fee-types" element={
-                        <ProtectedRoute permission="manage_payments">
-                            <Layout><FeeTypesPage /></Layout>
-                        </ProtectedRoute>
+                        <CashierHidden>
+                            <ProtectedRoute permission="manage_payments">
+                                <Layout><FeeTypesPage /></Layout>
+                            </ProtectedRoute>
+                        </CashierHidden>
                     } />
 
                     {/* ═══ المداخيل ═══
@@ -211,30 +270,42 @@ export default function App() {
                     }>
                         <Route index element={<Navigate to="billing" replace />} />
                         <Route path="billing" element={<CollectionPage />} />
-                        <Route path="by-date" element={<IncomeByDatePage />} />
-                        <Route path="revenue" element={<StudentRevenuePage />} />
+                        <Route path="by-date" element={<CashierHidden to="/income/billing"><IncomeByDatePage /></CashierHidden>} />
+                        <Route path="revenue" element={<CashierHidden to="/income/billing"><StudentRevenuePage /></CashierHidden>} />
                         {/* صفحة تلميذ واحد — حفر من جدول مداخيل التلاميذ */}
-                        <Route path="revenue/:studentId" element={<StudentDetailPage />} />
-                        <Route path="by-classroom" element={<RevenueByClassroomPage />} />
+                        <Route path="revenue/:studentId" element={<CashierHidden to="/income/billing"><StudentDetailPage /></CashierHidden>} />
+                        <Route path="by-classroom" element={<CashierHidden to="/income/billing"><RevenueByClassroomPage /></CashierHidden>} />
                         {/* كشف القسم التفصيلي: قائمة منسدلة لكل الأقسام + جدول تلاميذ قابل للطباعة.
                             يُعلَن قبل by-classroom/:sectionId وإلا ابتلعه المسار ذو المعامِل. */}
-                        <Route path="by-classroom/roster" element={<ClassroomRosterPage />} />
+                        <Route path="by-classroom/roster" element={<CashierHidden to="/income/billing"><ClassroomRosterPage /></CashierHidden>} />
                         {/* صفحة قسم واحد — حفر من جدول الأقسام */}
-                        <Route path="by-classroom/:sectionId" element={<ClassroomDetailPage />} />
-                        <Route path="by-year" element={<RevenueByYearPage />} />
-                        <Route path="unpaid-monthly" element={<ProtectedRoute permission="view_reports"><UnpaidMonthlyReportPage /></ProtectedRoute>} />
+                        <Route path="by-classroom/:sectionId" element={<CashierHidden to="/income/billing"><ClassroomDetailPage /></CashierHidden>} />
+                        <Route path="by-year" element={<CashierHidden to="/income/billing"><RevenueByYearPage /></CashierHidden>} />
+                        <Route path="unpaid-monthly" element={<CashierHidden to="/income/billing"><ProtectedRoute permission="view_reports"><UnpaidMonthlyReportPage /></ProtectedRoute></CashierHidden>} />
                     </Route>
 
+                    <Route path="/reports/club-arrears" element={
+                        <CashierHidden>
+                            <ProtectedRoute anyOf={['manage_payments', 'view_reports']}>
+                                <Layout><ClubArrearsDashboardPage /></Layout>
+                            </ProtectedRoute>
+                        </CashierHidden>
+                    } />
+
                     <Route path="/reports/club-fees" element={
-                        <ProtectedRoute anyOf={['manage_payments', 'view_reports']}>
-                            <Layout><ClubFeesReportPage /></Layout>
-                        </ProtectedRoute>
+                        <CashierHidden>
+                            <ProtectedRoute anyOf={['manage_payments', 'view_reports']}>
+                                <Layout><ClubFeesReportPage /></Layout>
+                            </ProtectedRoute>
+                        </CashierHidden>
                     } />
 
                     <Route path="/clubs" element={
-                        <ProtectedRoute anyOf={['manage_students', 'manage_payments']}>
-                            <Layout><ClubsPage /></Layout>
-                        </ProtectedRoute>
+                        <CashierHidden>
+                            <ProtectedRoute anyOf={['manage_students', 'manage_payments']}>
+                                <Layout><ClubsPage /></Layout>
+                            </ProtectedRoute>
+                        </CashierHidden>
                     } />
 
                     {/* ═══ المصاريف ═══
@@ -284,21 +355,62 @@ export default function App() {
                     <Route path="/collection" element={<Navigate to="/income/billing" replace />} />
 
                     {/* التخفيضات السنوية — الخادم يحرسها بصلاحية waive_fees حصراً */}
-<Route path='/discounts' element={
-<ProtectedRoute permission='waive_fees'>
-<Layout><DiscountsPage /></Layout>
-</ProtectedRoute>
-} />
-<Route path='/discounts/monthly' element={
-<ProtectedRoute permission='waive_fees'>
-<Layout><MonthlyDiscountsPage /></Layout>
-</ProtectedRoute>
-} />
+                    <Route path='/discounts' element={
+                        <ProtectedRoute permission='waive_fees'>
+                            <Layout><DiscountsPage /></Layout>
+                        </ProtectedRoute>
+                    } />
+                    <Route path='/discounts/monthly' element={
+                        <ProtectedRoute permission='waive_fees'>
+                            <Layout><MonthlyDiscountsPage /></Layout>
+                        </ProtectedRoute>
+                    } />
+
+                    {/* إدارة الإعفاءات والتخفيضات للتلاميذ — موديول رئيسي مستقل */}
+                    <Route path="/exemptions" element={
+                        <CashierHidden>
+                            <ProtectedRoute anyOf={['waive_fees', 'manage_students', 'manage_payments']}>
+                                <Layout><ExemptionsPage /></Layout>
+                            </ProtectedRoute>
+                        </CashierHidden>
+                    } />
 
 {/* Historique — سجل الوصولات الملغاة، يقرأ من /payments */}
                     <Route path="/historique" element={
+                        <CashierHidden>
+                            <ProtectedRoute permission="manage_payments">
+                                <Layout><HistoriquePage /></Layout>
+                            </ProtectedRoute>
+                        </CashierHidden>
+                    } />
+
+                    {/* «ما تم استخلاصه» — صفحة القابض الذاتية؛ بلا CashierHidden فهي وجهته */}
+                    <Route path="/my-collections" element={
                         <ProtectedRoute permission="manage_payments">
-                            <Layout><HistoriquePage /></Layout>
+                            <Layout><MyCollectionsPage /></Layout>
+                        </ProtectedRoute>
+                    } />
+
+                    {/* ═══ الأرصدة الافتتاحية اليدوية ═══
+                        الإدخال والقائمة والخروج كلها manage_treasury حصراً —
+                        الحارس يطابق routes/api.php حرفاً. */}
+                    <Route path="/opening-balances" element={
+                        <ProtectedRoute anyOf={['manage_treasury', 'view_reports']}>
+                            <Layout><OpeningBalancesPage /></Layout>
+                        </ProtectedRoute>
+                    } />
+                    <Route path="/old-debt-collect" element={
+                        <CashierHidden>
+                            <ProtectedRoute permission="manage_payments">
+                                <Layout><OldDebtCollectPage /></Layout>
+                            </ProtectedRoute>
+                        </CashierHidden>
+                    } />
+
+                    {/* تقارير الأرصدة الافتتاحية — قراءة بحتة */}
+                    <Route path="/reports/old-debts" element={
+                        <ProtectedRoute permission="view_reports">
+                            <Layout><OldDebtReportPage /></Layout>
                         </ProtectedRoute>
                     } />
 
@@ -310,8 +422,10 @@ export default function App() {
                     } />
 
                     <Route path="*" element={<Navigate to="/" replace />} />
-                </Routes>
-            </BrowserRouter>
+                        </Routes>
+                    </BrowserRouter>
+                </ToastProvider>
+            </MotionConfig>
         </AuthProvider>
     );
 }

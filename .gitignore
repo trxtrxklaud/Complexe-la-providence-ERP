@@ -39,6 +39,14 @@ auth.json
 *.sqlite-journal
 *.sqlite-wal
 *.sqlite-shm
+*.sqlite.bak
+*.sqlite.backup_*
+# نسخ ذات لاحقة بشرطة/تاريخ لا يلتقطها ما سبق (bak-…, backup, sqlite-…)
+*.sqlite-*
+*.sqlite.bak-*
+*.sqlite.backup
+database/*.bak*
+database/*.sqlite*
 /database/database.sqlite
 /database/backup-*.sqlite
 /providence

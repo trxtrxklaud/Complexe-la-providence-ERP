@@ -43,6 +43,19 @@ class OpeningBalanceService
         }
 
         return DB::transaction(function () use ($closingYear, $targetYear, $userId) {
+            // قفل السنتين يمنع إقفالًا متزامنًا أو إنشاء أرصدة افتتاحية متكررة.
+            $closingYear = AcademicYear::query()->whereKey($closingYear->id)->lockForUpdate()->firstOrFail();
+            $targetYear = AcademicYear::query()->whereKey($targetYear->id)->lockForUpdate()->firstOrFail();
+
+            // إعادة فحص الحواجز بعد القفل، لأن الحالة قد تكون تغيرت أثناء انتظار القفل.
+            if ($closingYear->isClosed()) {
+                throw new \InvalidArgumentException('السنة الدراسية الماضية مغلقة مسبقاً، والترحيل محمي من الازدواج');
+            }
+
+            if ($closingYear->is_active) {
+                throw new \InvalidArgumentException('لا يمكن إقفال السنة الدراسية النشطة؛ فعّل السنة الجديدة أولاً');
+            }
+
             $fees = StudentFee::query()
                 ->whereHas('enrollment', fn ($q) => $q
                     ->where('academic_year_id', $closingYear->id)

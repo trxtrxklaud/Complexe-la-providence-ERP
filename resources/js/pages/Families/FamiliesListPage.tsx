@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Users, Search, Eye, RefreshCw, AlertCircle, Loader2 } from 'lucide-react';
 import { fetchFamilies, type FamilySummary } from '../../api/families';
+import { EmptyState } from '../../components/EmptyState';
 
 const C = { forest: '#3B4A36', sage: '#E3EBDB', ink: '#1F261C', muted: '#7C8677', line: '#EDF1E8' };
 
@@ -95,9 +96,7 @@ export function FamiliesListPage() {
             <Loader2 className="animate-spin" size={28} />
           </div>
         ) : families.length === 0 ? (
-          <div className="text-center py-20 text-slate-500 text-sm">
-            لا توجد عائلات مطابقة للبحث.
-          </div>
+          <EmptyState title="لا توجد عائلات مطابقة للبحث." icon={Users} />
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm text-right">

@@ -20,25 +20,7 @@ class CheckPermission
             return response()->json(['message' => 'حسابك معطَّل. تواصل مع المشرف.'], 403);
         }
 
-        if (! $user->relationLoaded('role') || ! $user->role?->relationLoaded('permissions')) {
-            $user->load('role.permissions');
-        }
-
-        $role = $user->role;
-
-        if (! $role) {
-            return response()->json(['message' => 'عذراً، لا تملك صلاحية للوصول'], 403);
-        }
-
-        // المسار الأساسي: الصلاحية ممنوحة صراحةً في جدول الصلاحيات.
-        if ($role->permissions->contains('name', $permission)) {
-            return $next($request);
-        }
-
-        // شبكة أمان قابلة للضبط عبر PERMISSION_SUPER_ROLES بدل تثبيت الاسم 'admin' في الكود.
-        $superRoles = (array) config('permissions.super_roles', []);
-
-        if (in_array($role->name, $superRoles, true)) {
+        if ($user->hasPermissionTo($permission)) {
             return $next($request);
         }
 

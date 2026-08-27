@@ -116,6 +116,7 @@ export type DaybookDetail = {
 
 export type DaybookRunning = {
   net_income: number;
+  prior_year_debt: number;
   withdrawals: number;
   balance: number;
 };
@@ -125,12 +126,14 @@ export type DaybookDay = {
   income: { lines: DaybookLine[]; total: number };
   expenses: { lines: DaybookLine[]; total: number };
   net_income: number;
+  prior_year_debt: number;
   withdrawals: number;
   balance: number;
   has_activity: boolean;
   details: {
     income: DaybookDetail[];
     expenses: DaybookDetail[];
+    prior_debt: DaybookDetail[];
     withdrawals: DaybookDetail[];
   } | null;
   /** من بداية السجل لا من بداية الفترة المعروضة. */
@@ -149,6 +152,7 @@ export type DaybookReport = {
     income: { lines: DaybookLine[]; total: number };
     expenses: { lines: DaybookLine[]; total: number };
     net_income: number;
+    prior_year_debt: number;
     withdrawals: number;
     balance: number;
   };

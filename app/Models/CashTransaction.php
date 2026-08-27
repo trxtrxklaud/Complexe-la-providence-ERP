@@ -44,6 +44,12 @@ class CashTransaction extends Model
 
     public const CATEGORY_EXPENSE = 'expense';            // المصاريف
 
+    // خلاص مستحقّات الإطارات القديمة (legacy): خروج نقدي — لا يُستخدم في الحسابات الجديدة
+    public const CATEGORY_OLD_LIABILITY_PAYMENT = 'old_liability_payment';  // legacy — خلاص مستحقّات قديمة (out)
+
+    // تحصيل دين عامل/إطار قديم مستحق للمؤسسة: قبض نقدي داخل، لا مدخول للسنة الحالية
+    public const CATEGORY_OLD_LIABILITY_COLLECTION = 'old_liability_collection';  // تحصيل دين عامل قديم
+
     // حركة مستقلة: لا تدخل في الدخل الصافي
     public const CATEGORY_WITHDRAWAL = 'withdrawal';         // سحب من الخزينة
 
@@ -57,18 +63,29 @@ class CashTransaction extends Model
         self::CATEGORY_OTHER_INCOME,
     ];
 
-    /** بنود قبض ديون السنوات السابقة: نقد داخل، لا مدخول. */
+    /** بند دين التلميذ القديم فقط (للتلميذ). */
     public const PRIOR_YEAR_DEBT_CATEGORIES = [
         self::CATEGORY_PRIOR_YEAR_DEBT,
     ];
 
+    /** كل بنود تحصيل الديون القديمة الداخلة (تلميذ + عامل): نقد داخل (IN) لا مدخول. */
+    public const OLD_DEBT_COLLECTION_CATEGORIES = [
+        self::CATEGORY_PRIOR_YEAR_DEBT,
+        self::CATEGORY_OLD_LIABILITY_COLLECTION,
+    ];
+
+    /** بنود صرف مستحقّات الإطارات القديمة: نقد خارج (legacy OUT) لا يدخل في المقبوضات ولا في مصاريف السنة. */
+    public const OLD_LIABILITY_PAYMENT_CATEGORIES = [
+        self::CATEGORY_OLD_LIABILITY_PAYMENT,
+    ];
+
     /**
      * كل بنود الدخول النقدي (للملفّات التي تعرض قبض التلميذ بالكامل):
-     * المداخيل + تحصيل ديون السنوات السابقة.
+     * المداخيل + تحصيل ديون السنوات السابقة (تلميذ + عامل).
      */
     public const CASH_INFLOW_CATEGORIES = [
         ...self::INCOME_CATEGORIES,
-        ...self::PRIOR_YEAR_DEBT_CATEGORIES,
+        ...self::OLD_DEBT_COLLECTION_CATEGORIES,
     ];
 
     public const EXPENSE_CATEGORIES = [
@@ -87,9 +104,11 @@ class CashTransaction extends Model
         self::CATEGORY_ADVANCE_REPAYMENT => 'خلاص سلفة',
         self::CATEGORY_OTHER_INCOME => 'مداخيل أخرى',
         self::CATEGORY_PRIOR_YEAR_DEBT => 'تحصيل متخلّدات سنوات سابقة',
+        self::CATEGORY_OLD_LIABILITY_COLLECTION => 'تحصيل دين عامل قديم',
         self::CATEGORY_SALARY => 'الأجور',
         self::CATEGORY_EMPLOYEE_ADVANCE => 'سلفة',
         self::CATEGORY_EXPENSE => 'المصاريف',
+        self::CATEGORY_OLD_LIABILITY_PAYMENT => 'خلاص مستحقّات قديمة (legacy)',
         self::CATEGORY_WITHDRAWAL => 'سحب من الخزينة',
     ];
 

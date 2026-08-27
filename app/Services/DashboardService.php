@@ -5,6 +5,9 @@ namespace App\Services;
 use App\Models\AcademicYear;
 use App\Models\CashTransaction;
 use App\Models\Enrollment;
+use App\Models\FeeType;
+use App\Models\ManualStudentDebt;
+use App\Models\OldEmployeeDebt;
 use App\Models\Payment;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -38,13 +41,17 @@ class DashboardService
             ->where('enrollments.academic_year_id', $activeYear->id)
             ->where('enrollments.status', 'active')
             ->whereNull('enrollments.deleted_at')
-            ->select('students.id', 'students.gender')
+            ->select('students.id', 'students.first_name', 'students.gender')
             ->get()
             ->unique('id');
 
         $malesCount = 0;
         $femalesCount = 0;
         $unknownCount = 0;
+
+        $studentService = app(StudentService::class);
+        $inferGenderFromName = new \ReflectionMethod(StudentService::class, 'inferGenderFromName');
+        $inferGenderFromName->setAccessible(true);
 
         foreach ($activeStudents as $student) {
             $g = strtolower(trim((string) $student->gender));
@@ -53,7 +60,14 @@ class DashboardService
             } elseif (in_array($g, ['female', 'f', 'أنثى'], true)) {
                 $femalesCount++;
             } else {
-                $unknownCount++;
+                $inferredGender = $inferGenderFromName->invoke($studentService, $student->first_name);
+                if ($inferredGender === 'male') {
+                    $malesCount++;
+                } elseif ($inferredGender === 'female') {
+                    $femalesCount++;
+                } else {
+                    $unknownCount++;
+                }
             }
         }
 
@@ -81,6 +95,8 @@ class DashboardService
             ->where('enrollments.status', 'active')
             ->whereNull('enrollments.deleted_at')
             ->whereIn('student_fees.status', ['pending', 'partial', 'overdue'])
+            // القاعدة الذهبية: المتخلد = شهر حان استحقاقه ولم يُدفع؛ المستقبل ليس ديناً.
+            ->whereDate('student_fees.due_date', '<=', now())
             ->selectRaw('COALESCE(SUM(CASE WHEN student_fees.amount_due - COALESCE(pa.total_allocated, 0) > 0 THEN student_fees.amount_due - COALESCE(pa.total_allocated, 0) ELSE 0 END), 0) AS balance')
             ->value('balance') ?? 0;
 
@@ -95,11 +111,54 @@ class DashboardService
             ->whereNull('enrollments.deleted_at')
             ->sum('student_fees.amount_due');
 
+        $regFeeTypeIds = FeeType::where('is_active', true)
+            ->get()
+            ->filter(fn (FeeType $ft) => $ft->resolveLedgerCategory() === CashTransaction::CATEGORY_REGISTRATION_FEE)
+            ->pluck('id')
+            ->all();
+
+        $yearlyFeePlanIds = DB::table('fee_plans')
+            ->where('academic_year_id', $activeYear->id)
+            ->where('frequency', 'yearly')
+            ->pluck('id')
+            ->all();
+
+        $paidRegistrationCount = (int) DB::table('enrollments')
+            ->where('enrollments.academic_year_id', $activeYear->id)
+            ->where('enrollments.status', 'active')
+            ->whereNull('enrollments.deleted_at')
+            ->whereExists(function ($query) use ($regFeeTypeIds, $yearlyFeePlanIds) {
+                $query->select(DB::raw(1))
+                    ->from('student_fees')
+                    ->join('payment_allocations', 'payment_allocations.student_fee_id', '=', 'student_fees.id')
+                    ->join('payments', 'payments.id', '=', 'payment_allocations.payment_id')
+                    ->whereColumn('student_fees.enrollment_id', 'enrollments.id')
+                    ->whereNull('payments.cancelled_at')
+                    ->where(function ($typeQ) use ($regFeeTypeIds, $yearlyFeePlanIds) {
+                        if (! empty($regFeeTypeIds)) {
+                            $typeQ->whereIn('student_fees.fee_type_id', $regFeeTypeIds);
+                        }
+                        if (! empty($yearlyFeePlanIds)) {
+                            $typeQ->orWhereIn('student_fees.fee_plan_id', $yearlyFeePlanIds);
+                        }
+                    })
+                    ->groupBy('student_fees.id', 'student_fees.amount_due')
+                    ->havingRaw('SUM(payment_allocations.amount_allocated) >= student_fees.amount_due AND student_fees.amount_due > 0');
+            })
+            ->distinct('enrollments.student_id')
+            ->count('enrollments.student_id');
+
+        $unpaidRegistrationCount = max(0, $totalStudents - $paidRegistrationCount);
+        $registrationRate = $totalStudents > 0 ? round(($paidRegistrationCount / $totalStudents) * 100, 1) : 0.0;
+
         $data = [
             'current_date' => $today->toDateString(),
             'academic_year' => $activeYear,
             'total_students' => $totalStudents,
             'total_active_students' => $totalStudents,
+            'paid_registration_count' => $paidRegistrationCount,
+            'unpaid_registration_count' => $unpaidRegistrationCount,
+            'registration_rate' => $registrationRate,
             'new_students_this_year' => $newEnrollments,
             'total_males' => $malesCount,
             'male_students_count' => $malesCount,
@@ -172,9 +231,102 @@ class DashboardService
             // الجرد النقدي المحيّن: اليوم، الشهر الجاري، ومن بداية السجلّ.
             $data['cash'] = $cash;
             $data['treasury_balance'] = $cash['all_time']['balance'];
+
+            // تحصيل الديون السابقة: قبض متخلّدات التلاميذ وخلاص مستحقّات
+            // الإطارات من الدفتر النقدي، وما بقي عليها من أرصدة.
+            $data['prior_debt_summary'] = $this->priorDebtSummary((int) $activeYear->id);
         }
 
         return $data;
+    }
+
+    /**
+     * بطاقة «تحصيل الديون السابقة» — للخزينة وعرض التقارير فقط.
+     *
+     * المحصّل يُقرأ من الدفتر النقدي المركزي حصراً (prior_year_debt +
+     * old_liability_collection) فلا ينفصل رقم اللوحة عن كشوف الخزينة. أمّا
+     * المتبقّي فيُشتقّ من سجلات الأرصدة اليدوية نفسها (توزيعات الدفع
+     * الفعلية / التحصيلات المرتبطة) لا من أي عمود مخزَّن.
+     *
+     * @return array<string,mixed>
+     */
+    private function priorDebtSummary(int $activeYearId): array
+    {
+        $totalCollected = (float) CashTransaction::query()
+            ->whereNull('cancelled_at')
+            ->where('direction', CashTransaction::DIRECTION_IN)
+            ->whereIn('category', CashTransaction::OLD_DEBT_COLLECTION_CATEGORIES)
+            ->where('academic_year_id', $activeYearId)
+            ->sum('amount');
+
+        $manualDebts = ManualStudentDebt::query()
+            ->with('student:id,first_name,last_name')
+            ->whereNull('cancelled_at')
+            ->where('original_amount', '>', 0)
+            ->orderByDesc('id')
+            ->get();
+
+        $studentDetails = $manualDebts->map(function (ManualStudentDebt $debt): array {
+            $outstanding = $debt->outstanding();
+            $paid = $debt->collected();
+            $original = round((float) $debt->original_amount, 2);
+            return [
+                'id' => $debt->id,
+                'type' => 'student',
+                'debt_type' => $debt->debt_type,
+                'student_name' => trim(($debt->student?->first_name ?? '').' '.($debt->student?->last_name ?? '')) ?: '—',
+                'original_year_label' => $debt->original_year_label,
+                'created_at' => $debt->created_at?->toIso8601String(),
+                'original_amount' => $original,
+                'original' => $original,
+                'paid_amount' => $paid,
+                'paid' => $paid,
+                'outstanding_amount' => $outstanding,
+                'outstanding' => $outstanding,
+                'remaining' => $outstanding,
+            ];
+        })->values();
+
+        $employeeDebts = OldEmployeeDebt::query()
+            ->with('employee:id,first_name,last_name,job_title')
+            ->whereNull('cancelled_at')
+            ->where('original_amount', '>', 0)
+            ->orderByDesc('id')
+            ->get();
+
+        $employeeDetails = $employeeDebts->map(function (OldEmployeeDebt $debt): array {
+            $outstanding = $debt->outstandingAmount();
+            $paid = $debt->collectedAmount();
+            $original = round((float) $debt->original_amount, 2);
+            $empName = trim(($debt->employee?->first_name ?? '').' '.($debt->employee?->last_name ?? '')) ?: '—';
+            return [
+                'id' => $debt->id,
+                'type' => 'employee',
+                'debt_type' => $debt->debt_type,
+                'employee_name' => $empName,
+                'job_title' => $debt->employee?->job_title,
+                'original_year_label' => $debt->original_year_label,
+                'created_at' => $debt->created_at?->toIso8601String(),
+                'original_amount' => $original,
+                'original' => $original,
+                'paid_amount' => $paid,
+                'paid' => $paid,
+                'outstanding_amount' => $outstanding,
+                'outstanding' => $outstanding,
+                'remaining' => $outstanding,
+            ];
+        })->values();
+
+        $totalRemaining = (float) $manualDebts->sum(fn (ManualStudentDebt $d) => $d->outstanding())
+            + (float) $employeeDebts->sum(fn (OldEmployeeDebt $d) => $d->outstandingAmount());
+
+        return [
+            'total_collected' => round($totalCollected, 2),
+            // المتبقّي على كل السجلات السارية بلا ترشيح سنة — كما هو محدَّد للمواصفة.
+            'total_remaining' => round($totalRemaining, 2),
+            'student_details' => $studentDetails,
+            'employee_details' => $employeeDetails,
+        ];
     }
 
     /**
@@ -194,30 +346,46 @@ class DashboardService
             ->whereDate('transaction_date', '<=', $to);
 
         $income = (float) (clone $base)
+            ->where('direction', CashTransaction::DIRECTION_IN)
             ->whereIn('category', CashTransaction::INCOME_CATEGORIES)
             ->sum('amount');
 
-        $priorYearDebt = (float) (clone $base)
-            ->whereIn('category', CashTransaction::PRIOR_YEAR_DEBT_CATEGORIES)
+        $oldDebtCollections = (float) (clone $base)
+            ->where('direction', CashTransaction::DIRECTION_IN)
+            ->whereIn('category', CashTransaction::OLD_DEBT_COLLECTION_CATEGORIES)
             ->sum('amount');
 
         $expenses = (float) (clone $base)
+            ->where('direction', CashTransaction::DIRECTION_OUT)
             ->whereIn('category', CashTransaction::EXPENSE_CATEGORIES)
+            ->sum('amount');
+
+        $oldLiabilityPayments = (float) (clone $base)
+            ->where('direction', CashTransaction::DIRECTION_OUT)
+            ->whereIn('category', CashTransaction::OLD_LIABILITY_PAYMENT_CATEGORIES)
             ->sum('amount');
 
         $withdrawals = (float) (clone $base)
             ->where('category', CashTransaction::CATEGORY_WITHDRAWAL)
             ->sum('amount');
 
+        $cashIn = round($income + $oldDebtCollections, 2);
+        $cashOut = round($expenses + $oldLiabilityPayments, 2);
+        $netIncome = round($income - $expenses, 2);
+        $balance = round($cashIn - $cashOut - $withdrawals, 2);
+
         return [
             'income' => round($income, 2),
-            // تحصيل ديون السنوات السابقة: نقد دخل الصندوق، لكنه ليس مدخولاً —
-            // يزيد الرصيد ولا يدخل في الدخل الصافي.
-            'prior_year_debt' => round($priorYearDebt, 2),
+            'current_year_income' => round($income, 2),
+            'old_debt_collections' => round($oldDebtCollections, 2),
+            'cash_in' => $cashIn,
+            // حقل قديم للتوافق — يعادل old_debt_collections الآن
+            'prior_year_debt' => round($oldDebtCollections, 2),
             'expenses' => round($expenses, 2),
-            'net_income' => round($income - $expenses, 2),
+            'old_liability_payments' => round($oldLiabilityPayments, 2),
+            'net_income' => $netIncome,
             'withdrawals' => round($withdrawals, 2),
-            'balance' => round($income + $priorYearDebt - $expenses - $withdrawals, 2),
+            'balance' => $balance,
         ];
     }
 
@@ -231,6 +399,9 @@ class DashboardService
             'academic_year' => null,
             'total_students' => 0,
             'total_active_students' => 0,
+            'paid_registration_count' => 0,
+            'unpaid_registration_count' => 0,
+            'registration_rate' => 0.0,
             'new_students_this_year' => 0,
             'total_males' => 0,
             'male_students_count' => 0,
@@ -253,6 +424,12 @@ class DashboardService
             // حتّى بلا سنة نشطة، حركة الصندوق تبقى ظاهرة لمن يملك رؤيتها.
             $data['cash'] = $cash;
             $data['treasury_balance'] = $cash['all_time']['balance'];
+            $data['prior_debt_summary'] = [
+                'total_collected' => 0,
+                'total_remaining' => 0,
+                'student_details' => [],
+                'employee_details' => [],
+            ];
         }
 
         return $data;

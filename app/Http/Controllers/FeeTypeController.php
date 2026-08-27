@@ -48,11 +48,20 @@ class FeeTypeController extends Controller
         return response()->json(FeeType::create($data), 201);
     }
 
-    public function update(Request $request, FeeType $feeType)
+    public function update(Request $request, FeeType $feeType, \App\Services\ClubService $clubService)
     {
         $data = $request->validate($this->rules());
 
         $feeType->update($data);
+
+        $normalizedFeeTypeName = FeeType::normalize($feeType->name_ar);
+        \App\Models\Club::where('is_active', true)->get()->each(function ($club) use ($normalizedFeeTypeName, $feeType, $clubService) {
+            if (FeeType::normalize($club->name) === $normalizedFeeTypeName) {
+                $club->update(['monthly_fee' => $feeType->price]);
+                $clubService->syncUnpaidFeesForClub($club);
+            }
+        });
+
         return response()->json($feeType);
     }
 

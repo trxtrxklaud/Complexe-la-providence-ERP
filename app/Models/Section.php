@@ -24,4 +24,9 @@ class Section extends Model
     {
         return $this->hasMany(Enrollment::class);
     }
+
+    public function clubs(): \Illuminate\Database\Eloquent\Relations\BelongsToMany
+    {
+        return $this->belongsToMany(Club::class, 'club_sections');
+    }
 }
