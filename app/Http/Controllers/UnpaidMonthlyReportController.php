@@ -125,7 +125,7 @@ class UnpaidMonthlyReportController extends Controller
             ->pluck('enrollment_id')
             ->all();
 
-        $excludedEnrollmentIds = array_unique(array_merge($paidEnrollmentIds->all(), $fullWaiverEnrollmentIds));
+        $excludedEnrollmentIds = $paidEnrollmentIds->all();
 
         $enrollments = Enrollment::query()
             ->where('academic_year_id', $year->id)
@@ -162,22 +162,34 @@ class UnpaidMonthlyReportController extends Controller
                     ->where('frequency', 'monthly')
                     ->sum('amount');
 
-
+                $fullWaiver = $enrollment->monthlyDiscounts
+                    ->first(fn ($d) => $d->discount_type === \App\Models\MonthlyDiscount::TYPE_FULL_WAIVER);
                 $monthlyDisc = $enrollment->monthlyDiscounts
                     ->first(fn ($d) => in_array($d->discount_type, [\App\Models\MonthlyDiscount::TYPE_HUMANITARIAN_FIXED, \App\Models\MonthlyDiscount::TYPE_NORMAL_MONTHLY], true));
 
-                $annualDisc = null;
-                if ($monthlyDisc) {
+                if ($fullWaiver) {
+                    $discountAmount = $monthlyFee;
+                    $discountType = 'full_waiver';
+                    $discountReason = $fullWaiver->reason;
+                    $status = 'waived';
+                    $statusLabel = 'معفى';
+                    $netDue = 0.0;
+                } elseif ($monthlyDisc) {
                     $discountAmount = (float) $monthlyDisc->monthly_amount;
                     $discountType = $monthlyDisc->discount_type;
                     $discountReason = $monthlyDisc->reason;
+                    $status = 'discounted';
+                    $statusLabel = 'تخفيض جزئي';
+                    $netDue = max(0.0, round($monthlyFee - $discountAmount, 2));
                 } else {
                     $annualDisc = $enrollment->activeDiscount($year->id);
                     $discountAmount = $annualDisc ? (float) $annualDisc->amount : 0.0;
                     $discountType = $annualDisc ? 'normal' : null;
                     $discountReason = $annualDisc ? $annualDisc->reason : null;
+                    $status = 'unpaid';
+                    $statusLabel = 'غير خالص';
+                    $netDue = max(0.0, round($monthlyFee - $discountAmount, 2));
                 }
-                $netDue = max(0.0, round($monthlyFee - $discountAmount, 2));
 
                 return [
                     'enrollment_id'   => $enrollment->id,
@@ -197,8 +209,10 @@ class UnpaidMonthlyReportController extends Controller
                     'remaining_amount'=> $netDue,
                     'discount_type'   => $discountType,
                     'discount_reason' => $discountReason,
+                    'is_waived'       => $discountType === 'full_waiver',
+                    'status'          => $status,
+                    'status_label'    => $statusLabel,
                 ];
-
             });
 
         $generatedAt = now();
@@ -218,7 +232,11 @@ class UnpaidMonthlyReportController extends Controller
             'report_date' => $generatedAt->toDateString(),
             'report_time' => $generatedAt->format('H:i:s'),
             'rows' => $enrollments,
-            'summary' => ['unpaid_students_count' => $enrollments->count()],
+            'summary' => [
+                'unpaid_students_count' => $enrollments->where('status', '!==', 'waived')->count(),
+                'waived_students_count' => $enrollments->where('status', '===', 'waived')->count(),
+                'total_students_count'  => $enrollments->count(),
+            ],
         ]);
     }
 

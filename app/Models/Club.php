@@ -37,4 +37,9 @@ class Club extends Model
     {
         return $this->belongsToMany(Level::class, 'club_levels');
     }
+
+    public function sections(): BelongsToMany
+    {
+        return $this->belongsToMany(Section::class, 'club_sections');
+    }
 }

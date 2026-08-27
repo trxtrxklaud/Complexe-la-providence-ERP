@@ -83,44 +83,51 @@ export function TreasuryHistoryPage() {
 
   return (
     <div className="px-6 pb-10 max-w-6xl mx-auto" dir="rtl">
-      {/* Print Styles */}
+      {/* Print Styles — احترافي مثل وصولات الاستخلاص: يملأ كامل الورقة */}
       <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;700;800&display=swap');
         @media print {
-          @page { size: A4 landscape; margin: 10mm 8mm; }
-          body { background: white !important; font-size: 10pt !important; color: black !important; }
-          .no-print, header, nav, aside, sidebar, button, form, input, select { display: none !important; }
-          .print-only { display: block !important; }
-          .print-container { width: 100% !important; max-width: none !important; margin: 0 !important; padding: 0 !important; box-shadow: none !important; border: none !important; }
-          table { width: 100% !important; border-collapse: collapse !important; margin-top: 15px !important; direction: rtl !important; }
-          thead { display: table-header-group !important; }
-          tr, th, td { break-inside: avoid !important; page-break-inside: avoid !important; }
-          th, td { border: 1px solid #000000 !important; padding: 5px 6px !important; font-size: 9.5pt !important; text-align: right !important; color: black !important; }
-          th { background-color: #F2F2F2 !important; font-weight: bold !important; }
-          .treasury-print-summary {
+          @page { size: A4 portrait; margin: 8mm; }
+          body * { visibility: hidden !important; }
+          .print-only, .print-only * { visibility: visible !important; }
+          .print-only {
+            position: static !important;
+            width: 100% !important;
+            min-height: 88vh !important;
+            height: auto !important;
+            margin: 0 !important;
+            padding: 8mm !important;
+            box-sizing: border-box !important;
+            background: #fff !important;
             display: block !important;
-            visibility: visible !important;
-            break-inside: avoid !important;
-            page-break-inside: avoid !important;
-            margin-top: 15px !important;
-            border: 1px solid #000000 !important;
-            padding: 10px 14px !important;
-            background: #ffffff !important;
-            color: #000000 !important;
+            font-family: 'Cairo', sans-serif !important;
+            font-size: 14px !important;
+            font-weight: 600 !important;
+            border: 1px solid #2a9d8f !important;
+            border-radius: 0 !important;
           }
+          .no-print, header, nav, aside, button, form, input, select { display: none !important; visibility: hidden !important; }
+          table { width: 100% !important; border-collapse: collapse !important; }
+          thead th { background: #2a9d8f !important; color: #fff !important; font-size: 13px !important; font-weight: 700 !important; padding: 8px 10px !important; }
+          td { font-size: 13px !important; font-weight: 600 !important; padding: 8px 10px !important; }
+          .treasury-print-summary { font-size: 14px !important; font-weight: 700 !important; border: 1px solid #2a9d8f !important; background: #E0F0EE !important; margin-top: auto !important; }
+          * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
         }
         .print-only { display: none; }
       `}</style>
 
-      {/* Printable Official Header */}
-      <div className="print-only mb-4 p-4 border border-slate-900 rounded-xl bg-white text-slate-900">
-        <div className="flex items-center justify-between border-b border-slate-300 pb-3">
+      {/* Printable Official Header — تصميم احترافي مثل وصل الاستخلاص */}
+      <div className="print-only mb-4 p-4 border rounded-xl bg-white text-slate-900" style={{ borderColor: '#2a9d8f' }}>
+        <div style={{ textAlign: 'center', fontWeight: 800, fontSize: 15, color: '#c8a96e', letterSpacing: 0.5, lineHeight: 1.3 }}>Complexe La Providence</div>
+        <div style={{ textAlign: 'center', fontSize: 9, fontWeight: 600, color: '#7d93a8', direction: 'ltr' }}>Tel: 95420350 / 76624400</div>
+        <div className="flex items-center justify-between border-b pb-3 mt-3" style={{ borderColor: '#2a9d8f' }}>
           <div>
-            <h1 className="text-xl font-bold">مدرسة العناية — كشف حركات الخزينة الرسمية</h1>
-            <p className="text-xs text-slate-600 mt-1">
-              الفترة: من <strong>{dateFrom || 'بداية السجل'}</strong> إلى <strong>{dateTo || 'اليوم'}</strong>
+            <h1 className="text-xl font-bold" style={{ color: '#1a3a5c' }}>مدرسة العناية — كشف حركات الخزينة الرسمية</h1>
+            <p className="text-sm mt-1" style={{ color: '#7d93a8', fontWeight: 600 }}>
+              الفترة: من <strong style={{ color: '#1a3a5c' }}>{dateFrom || 'بداية السجل'}</strong> إلى <strong style={{ color: '#1a3a5c' }}>{dateTo || 'اليوم'}</strong>
             </p>
           </div>
-          <div className="text-left text-xs text-slate-500">
+          <div className="text-left text-sm" style={{ color: '#7d93a8', fontWeight: 600 }}>
             <p>تاريخ الطباعة: {new Date().toLocaleDateString('ar-TN')}</p>
           </div>
         </div>

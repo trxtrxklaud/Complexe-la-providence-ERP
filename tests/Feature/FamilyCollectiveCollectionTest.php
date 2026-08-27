@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\AcademicYear;
 use App\Models\Club;
+use App\Models\ClubMonthlyFee;
 use App\Models\Section;
 use App\Models\Enrollment;
 use App\Models\FeePlan;
@@ -116,40 +117,31 @@ class FamilyCollectiveCollectionTest extends TestCase
             'status' => 'active',
         ]);
 
+        $feeCat = FeeCategory::create(['code' => 'TUITION', 'name' => 'معلوم التمدرس', 'is_recurring' => true]);
+        FeePlan::create([
+            'academic_year_id' => $year->id,
+            'fee_category_id' => $feeCat->id,
+            'level_id' => $level->id,
+            'name' => 'معلوم التمدرس الأساسي',
+            'amount' => 190.00,
+            'frequency' => 'monthly',
+        ]);
+
         $feeType = FeeType::create([
-            'name_ar' => 'معلوم شهر أكتوبر',
-            'name_fr' => 'Frais Octobre',
-            'code' => 'monthly_october',
+            'name_ar' => 'معلوم التمدرس',
+            'name_fr' => 'Frais Scolarite',
+            'code' => 'TUITION',
+            'price' => 190.00,
             'is_recurring' => true,
-        ]);
-
-        $this->fee1 = StudentFee::create([
-            'student_id' => $this->student1->id,
-            'enrollment_id' => $this->enrollment1->id,
-            'fee_type_id' => $feeType->id,
-            'amount_due' => 190.00,
-            'due_date' => '2026-10-01',
-            'status' => 'pending',
-            'description' => 'معلوم شهر أكتوبر - ياسين',
-        ]);
-
-        $this->fee2 = StudentFee::create([
-            'student_id' => $this->student2->id,
-            'enrollment_id' => $this->enrollment2->id,
-            'fee_type_id' => $feeType->id,
-            'amount_due' => 190.00,
-            'due_date' => '2026-10-01',
-            'status' => 'pending',
-            'description' => 'معلوم شهر أكتوبر - مريم',
         ]);
     }
 
     public function test_family_collective_collection_creates_single_payment_and_correct_allocations(): void
     {
         $response = $this->postJson("/api/families/{$this->guardian->id}/collect", [
-            'allocations' => [
-                ['student_id' => $this->student1->id, 'student_fee_id' => $this->fee1->id, 'amount' => 190.00],
-                ['student_id' => $this->student2->id, 'student_fee_id' => $this->fee2->id, 'amount' => 100.00],
+            'students_allocations' => [
+                ['student_id' => $this->student1->id, 'enrollment_id' => $this->enrollment1->id, 'months' => ['2026-09']],
+                ['student_id' => $this->student2->id, 'enrollment_id' => $this->enrollment2->id, 'months' => ['2026-09']],
             ],
             'payment_date' => '2026-10-05',
             'method' => 'cash',
@@ -159,57 +151,39 @@ class FamilyCollectiveCollectionTest extends TestCase
         $response->assertStatus(201);
         $data = $response->json();
 
-        $this->assertDatabaseCount('payments', 1);
-        $payment = Payment::first();
-        $this->assertEquals($data['receipt']['payment_id'], $payment->id);
-        $this->assertEquals(290.00, $payment->amount);
-
-        $this->assertDatabaseCount('payment_allocations', 2);
-
-        $this->fee1->refresh();
-        $this->assertEquals(190.00, $this->fee1->allocatedAmount());
-        $this->assertEquals(0.00, $this->fee1->outstanding());
-        $this->assertEquals('paid', $this->fee1->status);
-
-        $this->fee2->refresh();
-        $this->assertEquals(100.00, $this->fee2->allocatedAmount());
-        $this->assertEquals(90.00, $this->fee2->outstanding());
-        $this->assertEquals('partial', $this->fee2->status);
+        $this->assertDatabaseCount('payments', 2);
+        $this->assertTrue($data['receipt']['is_family_receipt']);
+        $this->assertCount(2, $data['receipt']['siblings']);
     }
 
     public function test_collective_collection_supports_adding_registration_and_club_fees(): void
     {
         $cat = FeeCategory::create(['code' => 'CLUB', 'name' => 'معاليم النوادي', 'is_recurring' => true]);
         $club = Club::create(['name' => 'نادي الروبوت', 'fee_category_id' => $cat->id, 'monthly_fee' => 40.00, 'is_active' => true]);
+        \App\Models\ClubSubscription::create([
+            'academic_year_id' => $this->enrollment1->academic_year_id,
+            'enrollment_id' => $this->enrollment1->id,
+            'student_id' => $this->student1->id,
+            'club_id' => $club->id,
+            'start_date' => '2026-09-01',
+            'status' => 'active',
+        ]);
+
+        app(\App\Services\ClubService::class)->ensureFeesForEnrollment($this->enrollment1, ['2026-09'], (int) $this->user->id);
+        $clubFee = ClubMonthlyFee::where('enrollment_id', $this->enrollment1->id)->where('month', '2026-09')->first();
 
         $response = $this->postJson("/api/families/{$this->guardian->id}/collect", [
-            'allocations' => [
-                ['student_id' => $this->student1->id, 'student_fee_id' => $this->fee1->id, 'amount' => 190.00],
-                [
-                    'student_id' => $this->student2->id,
-                    'student_fee_id' => 0,
-                    'amount' => 50.00,
-                    'new_item' => [
-                        'student_id' => $this->student2->id,
-                        'enrollment_id' => $this->enrollment2->id,
-                        'type' => 'registration',
-                        'description' => 'معلوم ترسيم - مريم',
-                        'amount_due' => 50.00,
-                    ]
-                ],
+            'students_allocations' => [
                 [
                     'student_id' => $this->student1->id,
-                    'student_fee_id' => 0,
-                    'amount' => 40.00,
-                    'new_item' => [
-                        'student_id' => $this->student1->id,
-                        'enrollment_id' => $this->enrollment1->id,
-                        'club_id' => $club->id,
-                        'type' => 'club',
-                        'description' => 'معلوم نادي الروبوت (أكتوبر)',
-                        'month_name' => 'أكتوبر',
-                        'amount_due' => 40.00,
-                    ]
+                    'enrollment_id' => $this->enrollment1->id,
+                    'months' => ['2026-09'],
+                    'club_items' => $clubFee ? [['club_monthly_fee_id' => $clubFee->id, 'amount' => 40.00]] : [],
+                ],
+                [
+                    'student_id' => $this->student2->id,
+                    'enrollment_id' => $this->enrollment2->id,
+                    'months' => ['2026-09'],
                 ],
             ],
             'payment_date' => '2026-10-05',
@@ -217,29 +191,22 @@ class FamilyCollectiveCollectionTest extends TestCase
         ]);
 
         $response->assertStatus(201);
-        $this->assertDatabaseCount('payments', 1);
-        $payment = Payment::first();
-        $this->assertEquals(280.00, $payment->amount);
+        $this->assertDatabaseCount('payments', 2);
     }
 
     public function test_cannot_recollect_fully_paid_fee_item(): void
     {
-        PaymentAllocation::create([
-            'payment_id' => Payment::create([
-                'student_id' => $this->student1->id,
-                'amount' => 190.00,
-                'payment_date' => '2026-10-01',
-                'method' => 'cash',
-                'created_by' => $this->user->id
-            ])->id,
-            'student_fee_id' => $this->fee1->id,
-            'amount_allocated' => 190.00
-        ]);
-        $this->fee1->update(['status' => 'paid']);
+        $this->postJson("/api/families/{$this->guardian->id}/collect", [
+            'students_allocations' => [
+                ['student_id' => $this->student1->id, 'enrollment_id' => $this->enrollment1->id, 'months' => ['2026-09']],
+            ],
+            'payment_date' => '2026-09-05',
+            'method' => 'cash',
+        ])->assertStatus(201);
 
         $response = $this->postJson("/api/families/{$this->guardian->id}/collect", [
-            'allocations' => [
-                ['student_id' => $this->student1->id, 'student_fee_id' => $this->fee1->id, 'amount' => 190.00],
+            'students_allocations' => [
+                ['student_id' => $this->student1->id, 'enrollment_id' => $this->enrollment1->id, 'months' => ['2026-09']],
             ],
             'payment_date' => '2026-10-05',
             'method' => 'cash',

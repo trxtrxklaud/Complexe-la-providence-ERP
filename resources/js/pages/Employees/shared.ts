@@ -19,7 +19,7 @@ export const C = {
   dangerBtn: '#DC2626',
 };
 
-export type Tab = 'salaries' | 'advances' | 'staff';
+export type Tab = 'salaries' | 'advances' | 'staff' | 'schedule';
 
 export interface AcademicYearOption {
   id: number;

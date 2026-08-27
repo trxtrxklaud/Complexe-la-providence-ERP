@@ -3,8 +3,12 @@
 namespace Tests\Feature;
 
 use App\Models\AcademicYear;
+use App\Models\CashTransaction;
+use App\Models\Employee;
+use App\Models\EmployeeLiability;
 use App\Models\Enrollment;
 use App\Models\Level;
+use App\Models\ManualStudentDebt;
 use App\Models\Permission;
 use App\Models\Section;
 use App\Models\Student;
@@ -35,6 +39,7 @@ class DashboardTest extends TestCase
         $this->assertArrayNotHasKey('cash', $data);
         $this->assertArrayNotHasKey('treasury_balance', $data);
         $this->assertArrayNotHasKey('financial_summary', $data);
+        $this->assertArrayNotHasKey('prior_debt_summary', $data);
     }
 
     public function test_report_viewer_receives_financial_data(): void
@@ -60,6 +65,86 @@ class DashboardTest extends TestCase
         $this->assertArrayHasKey('cash', $data);
         $this->assertArrayHasKey('treasury_balance', $data);
         $this->assertArrayHasKey('financial_summary', $data);
+        $this->assertArrayHasKey('prior_debt_summary', $data);
+    }
+
+    public function test_prior_debt_summary_figures_match_ledger_and_manual_records(): void
+    {
+        Sanctum::actingAs($this->makeUserWithPermissions('treasurer', ['manage_treasury']));
+        $year = $this->makeAcademicYear();
+
+        // دَين تلميذ قديم: 10000 حُصّل منها 3000 (سطر في الدفتر النقدي).
+        $student = Student::create([
+            'student_code' => 'STU-PD-'.uniqid(),
+            'first_name' => 'أحمد',
+            'last_name' => 'بن صالح',
+            'gender' => 'male',
+            'status' => 'active',
+        ]);
+        ManualStudentDebt::create([
+            'student_id' => $student->id,
+            'academic_year_id' => $year->id,
+            'original_year_label' => '2024/2025',
+            'debt_type' => 'tuition',
+            'description' => 'متخلّدات سابقة',
+            'original_amount' => 10000,
+            'status' => ManualStudentDebt::STATUS_PENDING,
+        ]);
+        CashTransaction::create([
+            'source_type' => 'payment',
+            'source_id' => 99001,
+            'category' => CashTransaction::CATEGORY_PRIOR_YEAR_DEBT,
+            'direction' => CashTransaction::DIRECTION_IN,
+            'amount' => 3000,
+            'transaction_date' => now()->toDateString(),
+            'academic_year_id' => $year->id,
+        ]);
+
+        // استحقاق إطار قديم: 500 لم يُخلَّص منه شيء.
+        $employee = Employee::create([
+            'first_name' => 'سناء',
+            'last_name' => 'المرابط',
+            'staff_type' => 'monthly_teacher',
+            'is_active' => true,
+        ]);
+        EmployeeLiability::create([
+            'employee_id' => $employee->id,
+            'academic_year_id' => $year->id,
+            'original_year_label' => '2024/2025',
+            'liability_type' => 'debt',
+            'description' => 'أجور غير مدفوعة',
+            'original_amount' => 500,
+            'status' => EmployeeLiability::STATUS_PENDING,
+        ]);
+        // تحصيل دين إطار آخر (مصدر بلا سجلّ مقابل): يدخل في المحصّل الكلّي
+        // دون أن يمسّ متبقّي الاستحقاق المُدخل أعلاه.
+        CashTransaction::create([
+            'source_type' => EmployeeLiability::class,
+            'source_id' => 999,
+            'category' => CashTransaction::CATEGORY_OLD_LIABILITY_COLLECTION,
+            'direction' => CashTransaction::DIRECTION_IN,
+            'amount' => 200,
+            'transaction_date' => now()->toDateString(),
+            'academic_year_id' => $year->id,
+        ]);
+
+        $summary = $this->getJson('/api/dashboard')->assertOk()->json('data.prior_debt_summary');
+
+        // المحصّل من الدفتر النقدي (بندا المتخلّدات وخلاص المستحقّات القديمة معاً).
+        $this->assertEquals(3200, (float) $summary['total_collected']);
+        // المتبقّي = 10000 (تلميذ، لا توزيعات هنا) + 500 (إطار).
+        $this->assertEquals(10500, (float) $summary['total_remaining']);
+
+        $this->assertCount(1, $summary['student_details']);
+        $this->assertSame('أحمد بن صالح', $summary['student_details'][0]['student_name']);
+        $this->assertEquals(10000, (float) $summary['student_details'][0]['original_amount']);
+        $this->assertEquals(0, (float) $summary['student_details'][0]['paid_amount']);
+        $this->assertEquals(10000, (float) $summary['student_details'][0]['outstanding_amount']);
+
+        $this->assertCount(1, $summary['employee_details']);
+        $this->assertSame('سناء المرابط', $summary['employee_details'][0]['employee_name']);
+        $this->assertSame('debt', $summary['employee_details'][0]['liability_type']);
+        $this->assertEquals(500, (float) $summary['employee_details'][0]['outstanding_amount']);
     }
 
     public function test_admin_super_role_receives_financial_data(): void
@@ -80,18 +165,18 @@ class DashboardTest extends TestCase
         Sanctum::actingAs($this->makeUserWithPermissions('admin', ['manage_students']));
         $year = $this->makeAcademicYear();
 
-        $level = \App\Models\Level::firstOrCreate(['id' => 1], ['name' => 'السنة الأولى', 'code' => 'L1']);
-        $sec1 = \App\Models\Section::firstOrCreate(['id' => 881], ['level_id' => $level->id, 'name' => 'قسم 1', 'code' => 'S881']);
-        $sec2 = \App\Models\Section::firstOrCreate(['id' => 882], ['level_id' => $level->id, 'name' => 'قسم 2', 'code' => 'S882']);
+        $level = Level::firstOrCreate(['id' => 1], ['name' => 'السنة الأولى', 'code' => 'L1']);
+        $sec1 = Section::firstOrCreate(['id' => 881], ['level_id' => $level->id, 'name' => 'قسم 1', 'code' => 'S881']);
+        $sec2 = Section::firstOrCreate(['id' => 882], ['level_id' => $level->id, 'name' => 'قسم 2', 'code' => 'S882']);
 
         // Student 1: Male
-        $maleStudent = \App\Models\Student::create([
+        $maleStudent = Student::create([
             'student_code' => 'ST_MALE_1',
             'first_name' => 'أحمد',
             'last_name' => 'علي',
             'gender' => 'male',
         ]);
-        \App\Models\Enrollment::create([
+        Enrollment::create([
             'student_id' => $maleStudent->id,
             'academic_year_id' => $year->id,
             'level_id' => $level->id,
@@ -101,13 +186,13 @@ class DashboardTest extends TestCase
         ]);
 
         // Student 2: Female with duplicate enrollment row in same active year
-        $femaleStudent = \App\Models\Student::create([
+        $femaleStudent = Student::create([
             'student_code' => 'ST_FEMALE_1',
             'first_name' => 'مريم',
             'last_name' => 'بن طالب',
             'gender' => 'female',
         ]);
-        \App\Models\Enrollment::create([
+        Enrollment::create([
             'student_id' => $femaleStudent->id,
             'academic_year_id' => $year->id,
             'level_id' => $level->id,
@@ -115,7 +200,7 @@ class DashboardTest extends TestCase
             'status' => 'active',
             'enrollment_date' => now()->toDateString(),
         ]);
-        \App\Models\Enrollment::create([
+        Enrollment::create([
             'student_id' => $femaleStudent->id,
             'academic_year_id' => $year->id,
             'level_id' => $level->id,
@@ -125,13 +210,13 @@ class DashboardTest extends TestCase
         ]);
 
         // Student 3: Null/Unspecified gender with generic name
-        $unspecifiedStudent = \App\Models\Student::create([
+        $unspecifiedStudent = Student::create([
             'student_code' => 'ST_UNK_1',
             'first_name' => 'غير_معروف_123',
             'last_name' => 'مستورد',
             'gender' => null,
         ]);
-        \App\Models\Enrollment::create([
+        Enrollment::create([
             'student_id' => $unspecifiedStudent->id,
             'academic_year_id' => $year->id,
             'level_id' => $level->id,
@@ -141,13 +226,13 @@ class DashboardTest extends TestCase
         ]);
 
         // Student 4: Null/Unspecified gender with male Arabic first name 'محمد'
-        $unspecifiedArabicName = \App\Models\Student::create([
+        $unspecifiedArabicName = Student::create([
             'student_code' => 'ST_UNK_2',
             'first_name' => 'محمد',
             'last_name' => 'التونسي',
             'gender' => null,
         ]);
-        \App\Models\Enrollment::create([
+        Enrollment::create([
             'student_id' => $unspecifiedArabicName->id,
             'academic_year_id' => $year->id,
             'level_id' => $level->id,
@@ -160,12 +245,12 @@ class DashboardTest extends TestCase
 
         $this->assertEquals(4, $data['total_students']);
         $this->assertEquals(4, $data['total_active_students']);
-        $this->assertEquals(1, $data['male_students_count']);
-        $this->assertEquals(1, $data['total_males']);
+        $this->assertEquals(2, $data['male_students_count']);
+        $this->assertEquals(2, $data['total_males']);
         $this->assertEquals(1, $data['female_students_count']);
         $this->assertEquals(1, $data['total_females']);
-        $this->assertEquals(2, $data['unknown_gender_count']);
-        $this->assertEquals(2, $data['total_unspecified_gender']);
+        $this->assertEquals(1, $data['unknown_gender_count']);
+        $this->assertEquals(1, $data['total_unspecified_gender']);
 
         // Reconciliation Assertion
         $this->assertEquals(
@@ -174,8 +259,8 @@ class DashboardTest extends TestCase
         );
     }
 
-    /** التوزيعات المنتمية لدفعات ملغاة لا تُخصم من متخلّد السنة الحالية. */
-    public function test_dashboard_current_year_outstanding_excludes_cancelled_payment_allocations(): void
+    /** إلغاء استخلاص = مسح كلي: الرسوم المؤقتة التي أنشأها تُحذف فلا يبقى شيء في المتخلّد. */
+    public function test_dashboard_current_year_outstanding_erased_when_collection_payment_cancelled(): void
     {
         // admin دور خارق يتجاوز فحص الصلاحيات (تسجيل واستقبال وإلغاء ولوحة مالية).
         $user = $this->makeUserWithPermissions('admin', []);
@@ -186,11 +271,11 @@ class DashboardTest extends TestCase
 
         $fee = StudentFee::create([
             'enrollment_id' => $enrollment->id,
-            'fee_plan_id'   => null,
-            'description'   => 'قسط شهري',
-            'amount_due'    => 300,
-            'due_date'      => '2025-09-05',
-            'status'        => 'pending',
+            'fee_plan_id' => null,
+            'description' => 'قسط شهري',
+            'amount_due' => 300,
+            'due_date' => '2025-09-05',
+            'status' => 'pending',
         ]);
 
         // قبل السداد: كل المتخلَّد (300) على العام.
@@ -198,21 +283,23 @@ class DashboardTest extends TestCase
 
         // سداد جزئي 200 → يتبقّى 100.
         $payment = app(PaymentService::class)->recordPayment([
-            'student_id'    => $enrollment->student_id,
+            'student_id' => $enrollment->student_id,
             'enrollment_id' => $enrollment->id,
-            'amount'        => 200,
-            'payment_date'  => '2025-09-10',
-            'method'        => 'cash',
-            'allocations'   => [['student_fee_id' => $fee->id, 'amount' => 200]],
+            'amount' => 200,
+            'payment_date' => '2025-09-10',
+            'method' => 'cash',
+            'allocations' => [['student_fee_id' => $fee->id, 'amount' => 200]],
         ], $user->id);
 
         $this->assertEquals(100, $this->dashboardPendingAmount());
 
-        // إلغاء الدفعة: توزيعاتها لا تُحتسب في المتبقّي → يعود المتخلَّد 300.
+        // إلغاء الدفعة: بصمة العملية تُمحى كلياً — الرسم المؤقت يُحذف
+        // فلا يظهر المبلغ في المتخلّد إطلاقاً.
         $this->postJson("/api/payments/{$payment->id}/cancel", ['reason' => 'تدقيق داخلي'])
             ->assertOk();
 
-        $this->assertEquals(300, $this->dashboardPendingAmount());
+        $this->assertEquals(0, $this->dashboardPendingAmount());
+        $this->assertDatabaseMissing('student_fees', ['id' => $fee->id]);
     }
 
     /** التوزيعات المنتمية لدفعات ملغاة لا تُخصم من متخلّد السنوات السابقة. */
@@ -222,17 +309,17 @@ class DashboardTest extends TestCase
         Sanctum::actingAs($user);
 
         $old = AcademicYear::create([
-            'name'       => '2025-2026',
+            'name' => '2025-2026',
             'start_date' => '2025-09-01',
-            'end_date'   => '2026-06-30',
-            'is_active'  => false,
+            'end_date' => '2026-06-30',
+            'is_active' => false,
         ]);
 
         $new = AcademicYear::create([
-            'name'       => '2026-2027',
+            'name' => '2026-2027',
             'start_date' => '2026-09-01',
-            'end_date'   => '2027-06-30',
-            'is_active'  => true,
+            'end_date' => '2027-06-30',
+            'is_active' => true,
         ]);
 
         $level = Level::firstOrCreate(
@@ -246,28 +333,28 @@ class DashboardTest extends TestCase
 
         $student = Student::create([
             'student_code' => 'ST-PRIOR-YEAR',
-            'first_name'   => 'ليلى',
-            'last_name'    => 'بن عامر',
-            'gender'       => 'female',
-            'status'       => 'active',
+            'first_name' => 'ليلى',
+            'last_name' => 'بن عامر',
+            'gender' => 'female',
+            'status' => 'active',
         ]);
 
         $oldEnrollment = Enrollment::create([
-            'student_id'       => $student->id,
+            'student_id' => $student->id,
             'academic_year_id' => $old->id,
-            'level_id'         => $level->id,
-            'section_id'       => $section->id,
-            'enrollment_date'  => '2025-09-01',
-            'status'           => 'active',
+            'level_id' => $level->id,
+            'section_id' => $section->id,
+            'enrollment_date' => '2025-09-01',
+            'status' => 'active',
         ]);
 
         $oldFee = StudentFee::create([
             'enrollment_id' => $oldEnrollment->id,
-            'fee_plan_id'   => null,
-            'description'   => 'القسط الشهري — سبتمبر 2025',
-            'amount_due'    => 200,
-            'due_date'      => '2025-09-05',
-            'status'        => 'pending',
+            'fee_plan_id' => null,
+            'description' => 'القسط الشهري — سبتمبر 2025',
+            'amount_due' => 200,
+            'due_date' => '2025-09-05',
+            'status' => 'pending',
         ]);
 
         // إقفال السنة القديمة يرفع الرصيد الافتتاحي 200 إلى السنة النشطة.
@@ -276,12 +363,12 @@ class DashboardTest extends TestCase
 
         // قبض الدَّين القديم بالكامل → متخلَّد السنوات السابقة = 0.
         $payment = app(PaymentService::class)->recordPayment([
-            'student_id'    => $student->id,
+            'student_id' => $student->id,
             'enrollment_id' => $oldEnrollment->id,
-            'amount'        => 200,
-            'payment_date'  => '2026-09-15',
-            'method'        => 'cash',
-            'allocations'   => [['student_fee_id' => $oldFee->id, 'amount' => 200]],
+            'amount' => 200,
+            'payment_date' => '2026-09-15',
+            'method' => 'cash',
+            'allocations' => [['student_fee_id' => $oldFee->id, 'amount' => 200]],
         ], $user->id);
 
         $this->assertEquals(0, $this->dashboardPriorYearOutstanding());
@@ -291,6 +378,128 @@ class DashboardTest extends TestCase
             ->assertOk();
 
         $this->assertEquals(200, $this->dashboardPriorYearOutstanding());
+    }
+
+    /**
+     * الحالة الأولى: دخل سنة (1000) + تحصيل دين قديم (300) + مصاريف (400) + خلاص مستحق قديم (100).
+     */
+    public function test_cash_figures_calculation_with_current_income_old_debt_expenses_and_old_liability_payments(): void
+    {
+        Sanctum::actingAs($this->makeUserWithPermissions('admin', ['manage_treasury']));
+        $year = $this->makeAcademicYear();
+
+        // 1. دخل السنة الحالية = 1000
+        CashTransaction::create([
+            'source_type' => 'payment',
+            'source_id' => 101,
+            'category' => CashTransaction::CATEGORY_MONTHLY_FEE,
+            'direction' => CashTransaction::DIRECTION_IN,
+            'amount' => 1000,
+            'transaction_date' => now()->toDateString(),
+            'academic_year_id' => $year->id,
+        ]);
+
+        // 2. تحصيل دين قديم = 300
+        CashTransaction::create([
+            'source_type' => 'payment',
+            'source_id' => 102,
+            'category' => CashTransaction::CATEGORY_PRIOR_YEAR_DEBT,
+            'direction' => CashTransaction::DIRECTION_IN,
+            'amount' => 300,
+            'transaction_date' => now()->toDateString(),
+            'academic_year_id' => $year->id,
+        ]);
+
+        // 3. مصاريف السنة الحالية = 400
+        CashTransaction::create([
+            'source_type' => 'expense',
+            'source_id' => 103,
+            'category' => CashTransaction::CATEGORY_EXPENSE,
+            'direction' => CashTransaction::DIRECTION_OUT,
+            'amount' => 400,
+            'transaction_date' => now()->toDateString(),
+            'academic_year_id' => $year->id,
+        ]);
+
+        // 4. خلاص مستحق قديم = 100
+        CashTransaction::create([
+            'source_type' => EmployeeLiability::class,
+            'source_id' => 104,
+            'category' => CashTransaction::CATEGORY_OLD_LIABILITY_PAYMENT,
+            'direction' => CashTransaction::DIRECTION_OUT,
+            'amount' => 100,
+            'transaction_date' => now()->toDateString(),
+            'academic_year_id' => $year->id,
+        ]);
+
+        $cash = $this->getJson('/api/dashboard')->assertOk()->json('data.cash.all_time');
+
+        $this->assertEquals(1000, (float) $cash['current_year_income']);
+        $this->assertEquals(300, (float) $cash['old_debt_collections']);
+        $this->assertEquals(1300, (float) $cash['cash_in']);
+        $this->assertEquals(400, (float) $cash['expenses']);
+        $this->assertEquals(100, (float) $cash['old_liability_payments']);
+        $this->assertEquals(600, (float) $cash['net_income']);
+        $this->assertEquals(800, (float) $cash['balance']);
+    }
+
+    /**
+     * الحالة الثانية: حركة old_liability_payment بقيمة 100 تخرج من الصندوق ولا تُعد تدفقاً داخلاً.
+     */
+    public function test_old_liability_payment_is_cash_out_not_cash_in(): void
+    {
+        Sanctum::actingAs($this->makeUserWithPermissions('admin', ['manage_treasury']));
+        $year = $this->makeAcademicYear();
+
+        CashTransaction::create([
+            'source_type' => EmployeeLiability::class,
+            'source_id' => 201,
+            'category' => CashTransaction::CATEGORY_OLD_LIABILITY_PAYMENT,
+            'direction' => CashTransaction::DIRECTION_OUT,
+            'amount' => 100,
+            'transaction_date' => now()->toDateString(),
+            'academic_year_id' => $year->id,
+        ]);
+
+        $data = $this->getJson('/api/dashboard')->assertOk()->json('data');
+        $cash = $data['cash']['all_time'];
+        $prior = $data['prior_debt_summary'];
+
+        $this->assertEquals(0, (float) $cash['cash_in']);
+        $this->assertEquals(0, (float) $cash['old_debt_collections']);
+        $this->assertEquals(0, (float) $prior['total_collected']);
+        $this->assertEquals(100, (float) $cash['old_liability_payments']);
+        $this->assertEquals(-100, (float) $cash['balance']);
+        $this->assertEquals(0, (float) $cash['net_income']);
+    }
+
+    /**
+     * الحالة الثالثة: حركة old_liability_collection بقيمة 300 تدخل الصندوق وتزيد الرصيد دون أن تغير net_income.
+     */
+    public function test_old_liability_collection_is_cash_in_not_net_income(): void
+    {
+        Sanctum::actingAs($this->makeUserWithPermissions('admin', ['manage_treasury']));
+        $year = $this->makeAcademicYear();
+
+        CashTransaction::create([
+            'source_type' => EmployeeLiability::class,
+            'source_id' => 301,
+            'category' => CashTransaction::CATEGORY_OLD_LIABILITY_COLLECTION,
+            'direction' => CashTransaction::DIRECTION_IN,
+            'amount' => 300,
+            'transaction_date' => now()->toDateString(),
+            'academic_year_id' => $year->id,
+        ]);
+
+        $data = $this->getJson('/api/dashboard')->assertOk()->json('data');
+        $cash = $data['cash']['all_time'];
+        $prior = $data['prior_debt_summary'];
+
+        $this->assertEquals(300, (float) $cash['cash_in']);
+        $this->assertEquals(300, (float) $cash['old_debt_collections']);
+        $this->assertEquals(300, (float) $prior['total_collected']);
+        $this->assertEquals(0, (float) $cash['net_income']);
+        $this->assertEquals(300, (float) $cash['balance']);
     }
 
     private function dashboardPendingAmount(): int
@@ -320,5 +529,104 @@ class DashboardTest extends TestCase
         }
 
         return $user;
+    }
+
+    /** اختبارات نسبة الترسيم وحساب المسددين وغير المسددين */
+    public function test_registration_rate_with_full_partial_and_cancelled_payments(): void
+    {
+        Sanctum::actingAs($this->makeUserWithPermissions('cashier', ['manage_payments', 'manage_students']));
+        $year = $this->makeAcademicYear();
+
+        // 1. نوع رسم ترسيم رسمي
+        $regFeeType = \App\Models\FeeType::create([
+            'name_ar' => 'معلوم التسجيل والترسيم',
+            'price' => 70.00,
+            'ledger_category' => CashTransaction::CATEGORY_REGISTRATION_FEE,
+            'is_active' => true,
+        ]);
+
+        // تلميذ 1: دفع الترسيم كاملاً (70 د.ت)
+        $enrollment1 = $this->makeEnrollment($year);
+        $fee1 = StudentFee::create([
+            'enrollment_id' => $enrollment1->id,
+            'fee_type_id' => $regFeeType->id,
+            'description' => 'معلوم الترسيم',
+            'amount_due' => 70.00,
+            'due_date' => now()->toDateString(),
+            'status' => 'paid',
+        ]);
+        $payment1 = \App\Models\Payment::create([
+            'student_id' => $enrollment1->student_id,
+            'enrollment_id' => $enrollment1->id,
+            'amount' => 70.00,
+            'payment_date' => now()->toDateString(),
+            'method' => 'cash',
+        ]);
+        \App\Models\PaymentAllocation::create([
+            'payment_id' => $payment1->id,
+            'student_fee_id' => $fee1->id,
+            'amount_allocated' => 70.00,
+        ]);
+
+        // تلميذ 2: دفع جزئي (30 من 70) -> لا يُحتسب كخالص
+        $enrollment2 = $this->makeEnrollment($year);
+        $fee2 = StudentFee::create([
+            'enrollment_id' => $enrollment2->id,
+            'fee_type_id' => $regFeeType->id,
+            'description' => 'معلوم الترسيم',
+            'amount_due' => 70.00,
+            'due_date' => now()->toDateString(),
+            'status' => 'partial',
+        ]);
+        $payment2 = \App\Models\Payment::create([
+            'student_id' => $enrollment2->student_id,
+            'enrollment_id' => $enrollment2->id,
+            'amount' => 30.00,
+            'payment_date' => now()->toDateString(),
+            'method' => 'cash',
+        ]);
+        \App\Models\PaymentAllocation::create([
+            'payment_id' => $payment2->id,
+            'student_fee_id' => $fee2->id,
+            'amount_allocated' => 30.00,
+        ]);
+
+        // تلميذ 3: دفع ملغى -> لا يُحتسب
+        $enrollment3 = $this->makeEnrollment($year);
+        $fee3 = StudentFee::create([
+            'enrollment_id' => $enrollment3->id,
+            'fee_type_id' => $regFeeType->id,
+            'description' => 'معلوم الترسيم',
+            'amount_due' => 70.00,
+            'due_date' => now()->toDateString(),
+            'status' => 'pending',
+        ]);
+        $payment3 = \App\Models\Payment::create([
+            'student_id' => $enrollment3->student_id,
+            'enrollment_id' => $enrollment3->id,
+            'amount' => 70.00,
+            'payment_date' => now()->toDateString(),
+            'method' => 'cash',
+            'cancelled_at' => now(),
+        ]);
+        \App\Models\PaymentAllocation::create([
+            'payment_id' => $payment3->id,
+            'student_fee_id' => $fee3->id,
+            'amount_allocated' => 70.00,
+        ]);
+
+        // تلميذ 4: بدون أي دفع
+        $this->makeEnrollment($year);
+
+        $data = $this->getJson('/api/dashboard')->assertOk()->json('data');
+
+        // الإجمالي: 4 تلاميذ
+        $this->assertEquals(4, $data['total_active_students']);
+        // خالص الترسيم: 1 فقط (التلميذ الأول)
+        $this->assertEquals(1, $data['paid_registration_count']);
+        // غير خالص: 3 تلاميذ
+        $this->assertEquals(3, $data['unpaid_registration_count']);
+        // النسبة: 25.0%
+        $this->assertEquals(25.0, (float) $data['registration_rate']);
     }
 }

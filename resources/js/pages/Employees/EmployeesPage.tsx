@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Users } from 'lucide-react';
 import {
-  getEmployees, createEmployee, deleteEmployee,
+  getEmployees, createEmployee, updateEmployee, deleteEmployee,
   getSalaries, createSalary, cancelSalary,
   getAdvances, createAdvance, settleAdvance, cancelAdvance,
   getRepayments, cancelRepayment,
@@ -15,6 +15,7 @@ import {
 import { SalariesTab } from './SalariesTab';
 import { AdvancesTab } from './AdvancesTab';
 import { StaffTab } from './StaffTab';
+import { ScheduleTab } from './ScheduleTab';
 import { EmployeeFormModal, type EmployeeFormValues } from './EmployeeFormModal';
 import { AdvanceFormModal, type AdvanceFormValues } from './AdvanceFormModal';
 import { SettleAdvanceModal, type SettleFormValues } from './SettleAdvanceModal';
@@ -24,6 +25,7 @@ const TABS: Array<{ key: Tab; label: string }> = [
   { key: 'salaries', label: 'الرواتب' },
   { key: 'advances', label: 'التسبقات والسلف' },
   { key: 'staff', label: 'قائمة الإطارات' },
+  { key: 'schedule', label: 'جدول الحصص' },
 ];
 
 /**
@@ -35,6 +37,7 @@ const TABS: Array<{ key: Tab; label: string }> = [
 export function EmployeesPage() {
   const [tab, setTab] = useState<Tab>('salaries');
   const [error, setError] = useState('');
+  const [flashMessage, setFlashMessage] = useState('');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
@@ -54,6 +57,7 @@ export function EmployeesPage() {
   const [repayLoading, setRepayLoading] = useState(false);
 
   const [showEmpForm, setShowEmpForm] = useState(false);
+  const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null);
   const [showAdvForm, setShowAdvForm] = useState(false);
   const [showSalForm, setShowSalForm] = useState(false);
 
@@ -118,18 +122,39 @@ export function EmployeesPage() {
   useEffect(() => { if (tab === 'salaries') loadSalaries(); }, [tab, yearId, empFilter]);
   useEffect(() => { if (tab === 'advances') loadAdvances(); }, [tab, empFilter]);
 
-  async function onCreateEmployee(values: EmployeeFormValues) {
-    setSaving(true); setError('');
+  async function onSaveEmployee(values: EmployeeFormValues) {
+    setSaving(true);
+    setError('');
+    setFlashMessage('');
     try {
-      await createEmployee({
-        first_name: values.first_name,
-        last_name: values.last_name,
-        phone: values.phone || null,
-        job_title: values.job_title || null,
+      const payload: Partial<Employee> = {
+        first_name: values.first_name.trim(),
+        last_name: values.last_name.trim(),
+        phone: values.phone.trim() || null,
+        email: values.email.trim() || null,
+        job_title: values.job_title.trim() || null,
+        staff_type: values.staff_type,
+        salary_type: values.salary_type,
+        hourly_rate: values.salary_type === 'hourly' && values.hourly_rate ? Number(values.hourly_rate) : null,
+        monthly_salary: values.salary_type === 'monthly' && values.monthly_salary ? Number(values.monthly_salary) : null,
         default_salary: values.default_salary ? Number(values.default_salary) : null,
-        is_active: true,
-      });
+        hire_date: values.hire_date || null,
+        notes: values.notes.trim() || null,
+      };
+
+      if (editingEmployee) {
+        await updateEmployee(editingEmployee.id, payload);
+        setFlashMessage('تم تعديل بيانات الإطار بنجاح');
+      } else {
+        await createEmployee({
+          ...payload,
+          is_active: true,
+        });
+        setFlashMessage('تمت إضافة الإطار بنجاح');
+      }
+
       setShowEmpForm(false);
+      setEditingEmployee(null);
       await loadBase();
       setTab('staff');
     } catch (err: any) {
@@ -147,7 +172,19 @@ export function EmployeesPage() {
       await deleteEmployee(employee.id);
       await loadBase();
     } catch (err: any) {
-      setError(err.message || 'فشل الحذف');
+      let msg = err.message || 'فشل الحذف';
+      const d = (err as any)?.details;
+      if (d && typeof d === 'object') {
+        const parts: string[] = [];
+        if (d.salaries) parts.push(`رواتب: ${d.salaries}`);
+        if (d.advances) parts.push(`سلف: ${d.advances}`);
+        if (d.liabilities) parts.push(`ديون: ${d.liabilities}`);
+        if (d.repayments) parts.push(`رديات: ${d.repayments}`);
+        if (d.daily_hours) parts.push(`ساعات: ${d.daily_hours}`);
+        if (d.cash_transactions) parts.push(`قيود نقدية: ${d.cash_transactions}`);
+        if (parts.length) msg += ' — ' + parts.join('، ');
+      }
+      setError(msg);
     }
   }
 
@@ -280,6 +317,12 @@ export function EmployeesPage() {
         <div className="rounded-xl px-3 py-2 text-sm" style={{ background: '#FEE2E2', color: '#991B1B' }}>{error}</div>
       )}
 
+      {flashMessage && (
+        <div className="rounded-xl px-3 py-2 text-sm bg-emerald-50 border border-emerald-200 text-emerald-800 font-medium">
+          {flashMessage}
+        </div>
+      )}
+
       {tab === 'salaries' && (
         <SalariesTab
           years={years}
@@ -320,16 +363,29 @@ export function EmployeesPage() {
       {tab === 'staff' && (
         <StaffTab
           employees={employees}
-          onNewEmployee={() => setShowEmpForm(true)}
+          onNewEmployee={() => { setEditingEmployee(null); setShowEmpForm(true); }}
+          onEditEmployee={(emp) => { setEditingEmployee(emp); setShowEmpForm(true); }}
           onDeleteEmployee={onDeleteEmployee}
+        />
+      )}
+
+      {tab === 'schedule' && (
+        <ScheduleTab
+          employees={employees}
+          years={years}
+          defaultYearId={yearId}
+          onCreateSalary={onCreateSalary}
+          salarySaving={saving}
+          onError={(message) => setError(message)}
         />
       )}
 
       {showEmpForm && (
         <EmployeeFormModal
+          initialData={editingEmployee}
           saving={saving}
-          onClose={() => setShowEmpForm(false)}
-          onSubmit={onCreateEmployee}
+          onClose={() => { setShowEmpForm(false); setEditingEmployee(null); }}
+          onSubmit={onSaveEmployee}
         />
       )}
 

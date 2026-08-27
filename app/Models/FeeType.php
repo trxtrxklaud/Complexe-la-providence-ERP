@@ -47,7 +47,12 @@ class FeeType extends Model
     {
         $name = self::normalize((string) $this->name_ar);
 
-        if (str_contains($name, 'شهر')) {
+        if (
+            str_contains($name, 'شهر') ||
+            str_contains($name, 'تمدرس') ||
+            str_contains($name, 'تعليم') ||
+            str_contains($name, 'دراسي')
+        ) {
             return CashTransaction::CATEGORY_MONTHLY_FEE;
         }
 

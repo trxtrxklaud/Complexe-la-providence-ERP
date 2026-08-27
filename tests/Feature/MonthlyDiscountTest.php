@@ -134,8 +134,10 @@ class MonthlyDiscountTest extends TestCase
         ]));
 
         $response->assertOk();
-        // Fully waived student must NOT be in unpaid report
-        $response->assertJsonMissing(['enrollment_id' => $enrollment->id]);
+        // Fully waived student appears as waived with 0 net_due and not counted in unpaid count
+        $response->assertJsonFragment(['enrollment_id' => $enrollment->id, 'status' => 'waived', 'net_due' => 0]);
+        $this->assertEquals(0, $response->json('summary.unpaid_students_count'));
+        $this->assertEquals(1, $response->json('summary.waived_students_count'));
     }
 
     /**
@@ -400,7 +402,9 @@ class MonthlyDiscountTest extends TestCase
             'month'            => '2025-09',
             'section_id'       => $enrollment->section_id,
         ]));
-        $resBefore->assertOk()->assertJsonMissing(['enrollment_id' => $enrollment->id]);
+        $resBefore->assertOk()->assertJsonFragment(['enrollment_id' => $enrollment->id, 'status' => 'waived']);
+        $this->assertEquals(0, $resBefore->json('summary.unpaid_students_count'));
+        $this->assertEquals(1, $resBefore->json('summary.waived_students_count'));
 
         // Cancel discount via API
         $response = $this->postJson("/api/monthly-discounts/{$discount->id}/cancel", [

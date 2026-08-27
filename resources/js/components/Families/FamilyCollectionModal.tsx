@@ -1,11 +1,16 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
-  X, CheckSquare, Square, DollarSign, Loader2, AlertCircle, PlusCircle, Award, CheckCircle2
+  X, CheckSquare, Square, DollarSign, Loader2, AlertCircle, Award, CheckCircle2,
+  Calendar, Shield, User, Sparkles, AlertTriangle
 } from 'lucide-react';
 import {
   type FamilyFullDetails,
-  type UnpaidFeeItem,
-  collectFamilyPayment
+  type FamilyStudentDetail,
+  type StudentAllocationInput,
+  type FamilyOldDebtsResponse,
+  type FamilyOldDebtStudent,
+  collectFamilyPayment,
+  fetchFamilyOldDebts
 } from '../../api/families';
 import type { ReceiptData } from '../../pages/Payments/ReceiptModal';
 
@@ -21,27 +26,17 @@ function money(v: number): string {
   return (v || 0).toFixed(2);
 }
 
-const MONTHS_LIST = [
-  'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر', 'جانفي', 'فيفري', 'مارس', 'أفريل', 'ماي', 'جوان'
-];
-
 export function FamilyCollectionModal({ family, onClose, onSuccess }: Props) {
-  // القوائم الديناميكية المضافة (ترسيم / نادي)
-  const [customFeeItems, setCustomFeeItems] = useState<Record<number, UnpaidFeeItem[]>>({});
+  // تتبع الأشهر المختارة لكل تلميذ: { [studentId]: string[] (e.g. ['2026-09', '2026-10']) }
+  const [selectedMonthsByStudent, setSelectedMonthsByStudent] = useState<Record<number, string[]>>({});
 
-  // حالة الاختيار والمبالغ: { [uniqueKey]: { selected: boolean, amount: number, student_id: number, fee_id: number, item: any } }
-  interface SelectedItem {
-    selected: boolean;
-    amount: number;
-    student_id: number;
-    student_fee_id: number;
-    gross: number;
-    remaining: number;
-    newItemData?: any;
-  }
-  const [selectedItems, setSelectedItems] = useState<Record<string, SelectedItem>>({});
+  // تتبع النوادي المختارة لكل تلميذ: { [studentId]: { [clubMonthlyFeeId]: number (amount) } }
+  const [selectedClubsByStudent, setSelectedClubsByStudent] = useState<Record<number, Record<number, number>>>({});
 
-  // حقول العملية المالية
+  // تتبع المتخلدات المختارة ومبالغها: { [studentId]: { [studentFeeId]: number (amount to pay) } }
+  const [selectedArrearsByStudent, setSelectedArrearsByStudent] = useState<Record<number, Record<number, number>>>({});
+
+  // بيانات عملية القبض
   const [paymentDate, setPaymentDate] = useState<string>(new Date().toISOString().slice(0, 10));
   const [method, setMethod] = useState<string>('cash');
   const [reference, setReference] = useState<string>('');
@@ -49,578 +44,581 @@ export function FamilyCollectionModal({ family, onClose, onSuccess }: Props) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // حوار إضافة ترسيم
-  const [showAddRegistrationModal, setShowAddRegistrationModal] = useState(false);
-  const [selectedStudentForReg, setSelectedStudentForReg] = useState<number>(family.students[0]?.id || 0);
-  const [regFeeAmount, setRegFeeAmount] = useState<number>(50);
+  // تنبيه الديون القديمة (قراءة فقط): يُجلب مرة واحدة عند فتح النافذة أو تغيّر
+  // العائلة، ولا يُعاد مع كل تعديل مبلغ. فشله لا يعطّل الاستخلاص إطلاقاً.
+  const [oldDebts, setOldDebts] = useState<FamilyOldDebtsResponse | null>(null);
 
-  // حوار إضافة نادي
-  const [showAddClubModal, setShowAddClubModal] = useState(false);
-  const [selectedStudentForClub, setSelectedStudentForClub] = useState<number>(family.students[0]?.id || 0);
-  const [selectedClubId, setSelectedClubId] = useState<number>(family.available_clubs?.[0]?.id || 0);
-  const [selectedClubMonth, setSelectedClubMonth] = useState<string>('أكتوبر');
+  useEffect(() => {
+    let active = true;
+    fetchFamilyOldDebts(family.id)
+      .then((res) => { if (active) setOldDebts(res); })
+      .catch((err) => {
+        console.error('family old-debts warning failed', err);
+        if (active) setOldDebts(null);
+      });
+    return () => { active = false; };
+  }, [family.id]);
 
-  // حساب التخصيصات المختارة
-  const selectedList = (Object.values(selectedItems) as SelectedItem[])
-    .filter((item) => item.selected && item.amount > 0)
-    .map((item) => ({
-      student_id: item.student_id,
-      student_fee_id: item.student_fee_id,
-      amount: item.amount,
-      new_item: item.newItemData,
+  // تبديل اختيار شهر دراسي لتلميذ
+  const toggleStudentMonth = (student: FamilyStudentDetail, monthKey: string) => {
+    const current = selectedMonthsByStudent[student.id] || [];
+    const isSelected = current.includes(monthKey);
+
+    if (isSelected) {
+      // عند إلغاء تحديد شهر، أزل هذا الشهر وكل ما بعده
+      setSelectedMonthsByStudent((prev) => ({
+        ...prev,
+        [student.id]: current.filter((m) => m < monthKey),
+      }));
+      return;
+    }
+
+    // منع تجاوز الأشهر: يجب أن يكون الشهر السابق مدفوعاً أو مختاراً
+    const unpaidMonths = student.months_grid
+      .filter((m) => m.status !== 'paid' && m.status !== 'waived')
+      .map((m) => m.month)
+      .sort();
+
+    const firstUnpaid = unpaidMonths[0];
+    if (firstUnpaid && monthKey > firstUnpaid && !current.includes(firstUnpaid)) {
+      // الشهر الأول غير المدفوع لم يُختر بعد — لا يمكن تجاوزه
+      alert(`يجب استخلاص ${student.months_grid.find(m => m.month === firstUnpaid)?.name_ar ?? firstUnpaid} أولاً قبل اختيار شهر لاحق`);
+      return;
+    }
+
+    // تأكد أن كل الأشهر السابقة غير المدفوعة مختارة قبل هذا الشهر
+    const monthsBefore = unpaidMonths.filter((m) => m < monthKey && !current.includes(m));
+    if (monthsBefore.length > 0) {
+      alert(`يجب اختيار الأشهر السابقة أولاً قبل اختيار هذا الشهر`);
+      return;
+    }
+
+    setSelectedMonthsByStudent((prev) => ({
+      ...prev,
+      [student.id]: [...current, monthKey].sort(),
     }));
+  };
 
-  const totalToPay = selectedList.reduce((sum, item) => sum + item.amount, 0);
-  const hasAnyUnpaidOrCustomFee = family.students.some((st) => (st.unpaid_fees.length > 0 || (customFeeItems[st.id] || []).length > 0));
-
-  // تبديل اختيار عنصر مفرد
-  const toggleItem = (key: string, studentId: number, feeId: number, maxAmount: number, gross: number, newItemData?: any) => {
-    setSelectedItems((prev) => {
-      const current = prev[key];
-      if (current?.selected) {
-        const next = { ...prev };
-        delete next[key];
-        return next;
+  // تبديل اختيار شهر نادي لتلميذ
+  const toggleStudentClub = (studentId: number, clubMonthlyFeeId: number, feeAmount: number) => {
+    setSelectedClubsByStudent((prev) => {
+      const studentClubs = { ...(prev[studentId] || {}) };
+      if (studentClubs[clubMonthlyFeeId]) {
+        delete studentClubs[clubMonthlyFeeId];
+      } else {
+        studentClubs[clubMonthlyFeeId] = feeAmount;
       }
       return {
         ...prev,
-        [key]: {
-          selected: true,
-          amount: maxAmount,
-          student_id: studentId,
-          student_fee_id: feeId,
-          gross,
-          remaining: maxAmount,
-          newItemData
-        },
+        [studentId]: studentClubs,
       };
     });
   };
 
-  // تحديث مبلغ الاستخلاص الجزئي/الكامل
-  const updateItemAmount = (key: string, newAmount: number, maxAmount: number) => {
-    const validAmount = Math.max(0.01, Math.min(newAmount, maxAmount));
-    setSelectedItems((prev) => ({
-      ...prev,
-      [key]: {
-        ...(prev[key]),
-        selected: true,
-        amount: validAmount,
-      },
-    }));
-  };
-
-  // تبديل نوع الدفع كامل / جزئي
-  const toggleFullOrPartial = (key: string, maxAmount: number) => {
-    const current = selectedItems[key];
-    if (!current) return;
-    const isFull = Math.abs(current.amount - maxAmount) < 0.001;
-    updateItemAmount(key, isFull ? Math.round((maxAmount / 2) * 100) / 100 : maxAmount, maxAmount);
-  };
-
-  // إضافة بند معلوم ترسيم ديناميكي
-  const handleAddRegistrationFee = (e: React.FormEvent) => {
-    e.preventDefault();
-    const st = family.students.find((s) => s.id === Number(selectedStudentForReg));
-    if (!st || !st.enrollment_id) return;
-
-    const fakeId = -Date.now();
-    const newFeeItem: UnpaidFeeItem = {
-      id: fakeId,
-      fee_type_id: 0,
-      description: `معلوم الترسيم — ${st.name}`,
-      gross_amount: regFeeAmount,
-      discount_amount: 0,
-      paid_amount: 0,
-      remaining_amount: regFeeAmount,
-      status: 'unpaid',
-      is_new: true,
-      item_type: 'registration',
-    };
-
-    setCustomFeeItems((prev) => ({
-      ...prev,
-      [st.id]: [...(prev[st.id] || []), newFeeItem],
-    }));
-
-    const key = `new_reg_${fakeId}`;
-    toggleItem(key, st.id, 0, regFeeAmount, regFeeAmount, {
-      student_id: st.id,
-      enrollment_id: st.enrollment_id,
-      type: 'registration',
-      description: `معلوم الترسيم — ${st.name}`,
-      amount_due: regFeeAmount,
+  // تبديل اختيار متخلد سابق
+  const toggleStudentArrear = (studentId: number, feeId: number, remaining: number) => {
+    setSelectedArrearsByStudent((prev) => {
+      const studentArrears = { ...(prev[studentId] || {}) };
+      if (studentArrears[feeId] !== undefined) {
+        delete studentArrears[feeId];
+      } else {
+        studentArrears[feeId] = remaining;
+      }
+      return {
+        ...prev,
+        [studentId]: studentArrears,
+      };
     });
-
-    setShowAddRegistrationModal(false);
   };
 
-  // إضافة بند نادي ديناميكي
-  const handleAddClubFee = (e: React.FormEvent) => {
-    e.preventDefault();
-    const st = family.students.find((s) => s.id === Number(selectedStudentForClub));
-    const club = family.available_clubs?.find((c) => c.id === Number(selectedClubId));
-    if (!st || !st.enrollment_id || !club) return;
-
-    const fakeId = -Date.now();
-    const feeAmount = Number(club.monthly_fee) || 30;
-    const desc = `معلوم نادي ${club.name} (${selectedClubMonth}) — ${st.name}`;
-
-    const newFeeItem: UnpaidFeeItem = {
-      id: fakeId,
-      fee_type_id: 0,
-      description: desc,
-      month_name: selectedClubMonth,
-      gross_amount: feeAmount,
-      discount_amount: 0,
-      paid_amount: 0,
-      remaining_amount: feeAmount,
-      status: 'unpaid',
-      is_new: true,
-      item_type: 'club',
-    };
-
-    setCustomFeeItems((prev) => ({
-      ...prev,
-      [st.id]: [...(prev[st.id] || []), newFeeItem],
-    }));
-
-    const key = `new_club_${fakeId}`;
-    toggleItem(key, st.id, 0, feeAmount, feeAmount, {
-      student_id: st.id,
-      enrollment_id: st.enrollment_id,
-      club_id: club.id,
-      type: 'club',
-      description: desc,
-      month_name: selectedClubMonth,
-      amount_due: feeAmount,
+  // تعديل مبلغ الدفع الجزئي للمتخلد
+  const updateArrearAmount = (studentId: number, feeId: number, amount: number, maxAmount: number) => {
+    const validAmount = Math.max(0, Math.min(amount, maxAmount));
+    setSelectedArrearsByStudent((prev) => {
+      const studentArrears = { ...(prev[studentId] || {}) };
+      if (validAmount > 0) {
+        studentArrears[feeId] = validAmount;
+      } else {
+        delete studentArrears[feeId];
+      }
+      return {
+        ...prev,
+        [studentId]: studentArrears,
+      };
     });
-
-    setShowAddClubModal(false);
   };
 
+  // حساب المجموع لكل تلميذ
+  const calculateStudentSubtotal = (student: FamilyStudentDetail): number => {
+    let subtotal = 0;
+
+    // 1. الأشهر الدراسية المختارة
+    const months = selectedMonthsByStudent[student.id] || [];
+    for (const mKey of months) {
+      const mObj = student.months_grid.find((m) => m.month === mKey);
+      if (mObj) {
+        subtotal += Number(mObj.net_amount || 0);
+      }
+    }
+
+    // 2. النوادي المختارة
+    const clubs = selectedClubsByStudent[student.id] || {};
+    for (const amt of Object.values(clubs)) {
+      subtotal += Number(amt || 0);
+    }
+
+    // 3. المتخلدات المختارة
+    const arrears = selectedArrearsByStudent[student.id] || {};
+    for (const amt of Object.values(arrears)) {
+      subtotal += Number(amt || 0);
+    }
+
+    return roundMoney(subtotal);
+  };
+
+  function roundMoney(v: number): number {
+    return Math.round((v + Number.EPSILON) * 100) / 100;
+  }
+
+  // إجمالي العملية العائلية
+  const grandTotal = family.students.reduce((sum, st) => sum + calculateStudentSubtotal(st), 0);
+
+  // إرسال عملية الاستخلاص العائلي
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (selectedList.length === 0) {
-      setError('لا توجد مستحقات غير مدفوعة لهذه العائلة (يرجى تحديد بند واحد على الأقل للتحصيل)');
+    if (grandTotal <= 0) {
+      setError('يرجى اختيار شهر أو خدمة أو متخلد واحد على الأقل للاستخلاص');
       return;
     }
 
     setSaving(true);
     setError(null);
+
+    const studentsAllocations: StudentAllocationInput[] = [];
+
+    for (const student of family.students) {
+      const months = selectedMonthsByStudent[student.id] || [];
+      const clubsObj = selectedClubsByStudent[student.id] || {};
+      const arrearsObj = selectedArrearsByStudent[student.id] || {};
+
+      const clubItems = Object.entries(clubsObj).map(([id, amount]) => ({
+        club_monthly_fee_id: Number(id),
+        amount: Number(amount),
+      }));
+
+      const priorAllocations = Object.entries(arrearsObj).map(([id, amount]) => ({
+        student_fee_id: Number(id),
+        amount: Number(amount),
+      }));
+
+      if (months.length > 0 || clubItems.length > 0 || priorAllocations.length > 0) {
+        studentsAllocations.push({
+          student_id: student.id,
+          enrollment_id: student.enrollment_id,
+          months,
+          club_items: clubItems,
+          prior_allocations: priorAllocations,
+        });
+      }
+    }
+
     try {
       const res = await collectFamilyPayment(family.id, {
-        allocations: selectedList,
         payment_date: paymentDate,
         method,
         reference: reference || null,
         notes: notes || null,
+        students_allocations: studentsAllocations,
       });
 
       onSuccess(res.receipt);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'فشل تنفيذ الاستخلاص الجماعي');
+      setError(err instanceof Error ? err.message : 'فشل تنفيذ الاستخلاص العائلي');
     } finally {
       setSaving(false);
     }
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-3 no-print" dir="rtl">
-      <div className="bg-white rounded-2xl w-full max-w-5xl max-h-[94vh] flex flex-col shadow-2xl overflow-hidden">
-        {/* Modal Header Bar */}
-        <div className="flex items-center justify-between p-4 border-b shrink-0" style={{ borderColor: C.line, backgroundColor: C.sage }}>
-          <div>
-            <h2 className="text-lg font-bold flex items-center gap-2" style={{ color: C.ink }}>
-              <DollarSign size={20} style={{ color: C.forest }} />
-              استخلاص جماعي للعائلة — {family.guardian_name}
-            </h2>
-            <p className="text-xs" style={{ color: C.muted }}>
-              تحصيل موحد برقم وصل واحد لجميع أبناء العائلة ({family.students_count} أبناء) | الهاتف: {family.phone || '—'}
-            </p>
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-3 sm:p-5 overflow-y-auto"
+      dir="rtl"
+      onClick={(e) => e.target === e.currentTarget && onClose()}
+    >
+      <div className="bg-white rounded-3xl w-full max-w-5xl max-h-[92vh] flex flex-col shadow-2xl border border-slate-100 overflow-hidden">
+        {/* Top Header */}
+        <div className="p-5 border-b flex items-center justify-between flex-wrap gap-3 bg-slate-50/70" style={{ borderColor: C.line }}>
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-2xl flex items-center justify-center shadow-xs" style={{ backgroundColor: C.sage }}>
+              <Shield size={20} style={{ color: C.forest }} />
+            </div>
+            <div>
+              <h2 className="text-lg font-bold" style={{ color: C.ink }}>
+                الاستخلاص العائلي الموحد — {family.guardian_name}
+              </h2>
+              <p className="text-xs text-slate-500">
+                هاتف الولي: {family.phone} • عدد الأبناء المسجلين: {family.students.length}
+              </p>
+            </div>
           </div>
           <button
             type="button"
             onClick={onClose}
-            className="p-2 rounded-xl hover:bg-black/5 transition"
-            style={{ color: C.ink }}
+            className="p-2 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-200 transition"
           >
-            <X size={18} />
+            <X size={20} />
           </button>
         </div>
 
-        {error && (
-          <div className="m-4 p-3.5 rounded-xl bg-red-50 text-red-700 text-sm flex items-center gap-2 border border-red-200 shrink-0">
-            <AlertCircle size={18} /> {error}
-          </div>
-        )}
+        {/* Form Body */}
+        <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-5 space-y-6">
+          {error && (
+            <div className="p-4 rounded-2xl bg-red-50 text-red-700 text-xs sm:text-sm flex items-center gap-3 border border-red-200 shadow-xs">
+              <AlertCircle size={20} className="shrink-0" />
+              <span>{error}</span>
+            </div>
+          )}
 
-        {!hasAnyUnpaidOrCustomFee && (
-          <div className="mx-5 mt-4 p-3.5 rounded-xl bg-emerald-50 text-emerald-800 border border-emerald-200 text-xs font-bold flex items-center gap-2 shrink-0">
-            <CheckCircle2 size={18} className="text-emerald-600 shrink-0" />
-            <span>لا توجد مستحقات غير مدفوعة لهذه العائلة — يمكنك إضافة معلوم ترسيم جديد أو نادي من الأزرار أعلاه إذا لزم الأمر.</span>
-          </div>
-        )}
+          {/* تنبيه غير حاجب للديون القديمة — معلوماتي فقط، لا يغيّر مبلغ الاستخلاص ولا يعطّله */}
+          {oldDebts && oldDebts.count > 0 && (
+            <div className="p-4 rounded-2xl bg-amber-50 text-amber-900 text-xs sm:text-sm border border-amber-300 shadow-xs">
+              <div className="flex items-start gap-3">
+                <AlertTriangle size={20} className="shrink-0 text-amber-600 mt-0.5" />
+                <div className="space-y-1.5 flex-1">
+                  <div className="font-bold">تنبيه: على بعض التلاميذ ديون قديمة.</div>
+                  <div>
+                    الإجمالي المتبقي: <span dir="ltr" className="font-bold">{money(oldDebts.total)} د.ت</span> • عدد التلاميذ: {oldDebts.count}
+                  </div>
+                  <ul className="space-y-0.5">
+                    {(Object.values(oldDebts.students) as FamilyOldDebtStudent[]).map((s) => (
+                      <li key={s.student_id}>
+                        • {s.student_name}{s.student_code ? ` (${s.student_code})` : ''} — المتبقي: <span dir="ltr">{money(s.amount)} د.ت</span> ({s.debts_count} دين)
+                      </li>
+                    ))}
+                  </ul>
+                  <p className="text-amber-700">هذا التنبيه للمعلومات فقط ولا يُضاف إلى مبلغ الاستخلاص الحالي.</p>
+                </div>
+              </div>
+            </div>
+          )}
 
-        {/* Action Toolbar for Adding Fees */}
-        <div className="px-5 py-3 border-b bg-slate-50 flex items-center justify-between flex-wrap gap-2 shrink-0" style={{ borderColor: C.line }}>
-          <span className="text-xs font-bold text-slate-700">جدول استخلاص مستحقات العائلة:</span>
-          <div className="flex gap-2">
-            <button
-              type="button"
-              onClick={() => setShowAddRegistrationModal(true)}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-white border border-slate-300 text-slate-800 hover:bg-slate-100 transition shadow-sm"
-            >
-              <PlusCircle size={14} className="text-emerald-600" /> إضافة معلوم ترسيم
-            </button>
-            <button
-              type="button"
-              onClick={() => setShowAddClubModal(true)}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-white border border-slate-300 text-slate-800 hover:bg-slate-100 transition shadow-sm"
-            >
-              <Award size={14} className="text-indigo-600" /> إضافة نادي
-            </button>
-          </div>
-        </div>
+          {/* Children Sections Grid */}
+          <div className="space-y-6">
+            {family.students.map((student, idx) => {
+              const studentSubtotal = calculateStudentSubtotal(student);
+              const selectedMonths = selectedMonthsByStudent[student.id] || [];
+              const selectedClubs = selectedClubsByStudent[student.id] || {};
+              const selectedArrears = selectedArrearsByStudent[student.id] || {};
 
-        <form onSubmit={handleSubmit} className="flex-1 overflow-auto p-5 space-y-6">
-          {/* Main Grid Table */}
-          <div className="overflow-x-auto border rounded-2xl shadow-sm" style={{ borderColor: C.line }}>
-            <table className="w-full text-xs text-right border-collapse">
-              <thead>
-                <tr className="border-b text-slate-700 font-bold" style={{ backgroundColor: C.sage }}>
-                  <th className="p-3 w-10 text-center">اختيار</th>
-                  <th className="p-3">التلميذ</th>
-                  <th className="p-3">القسم والمستوى</th>
-                  <th className="p-3">نوع البند والتفاصيل</th>
-                  <th className="p-3 text-center">المطلبوب</th>
-                  <th className="p-3 text-center">التخفيض</th>
-                  <th className="p-3 text-center">المدفوع سابقاً</th>
-                  <th className="p-3 text-center">المتبقي</th>
-                  <th className="p-3 text-center w-32">المبلغ المراد استخلاصه</th>
-                  <th className="p-3 text-center w-24">نوع الدفع</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-200">
-                {family.students.map((st) => {
-                  const allStudentFees = [
-                    ...st.unpaid_fees,
-                    ...(customFeeItems[st.id] || [])
-                  ];
+              return (
+                <div
+                  key={student.id}
+                  className="rounded-2xl border border-slate-200 bg-white p-5 space-y-5 shadow-xs transition hover:border-slate-300"
+                >
+                  {/* Student Title Banner */}
+                  <div className="flex items-center justify-between flex-wrap gap-2 pb-3 border-b border-slate-100">
+                    <div className="flex items-center gap-3">
+                      <span className="w-7 h-7 rounded-xl bg-slate-100 text-slate-700 text-xs font-bold flex items-center justify-center">
+                        {idx + 1}
+                      </span>
+                      <div>
+                        <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                          {student.name || student.full_name}
+                          {student.student_code && (
+                            <span className="text-[11px] font-normal px-2 py-0.5 rounded-md bg-slate-100 text-slate-600">
+                              {student.student_code}
+                            </span>
+                          )}
+                        </h3>
+                        <p className="text-xs text-slate-500">
+                          المستوى: {student.level_name} • القسم: {student.section_name} • المعلوم الأساسي: {money(student.base_monthly_fee)} د.ت
+                        </p>
+                      </div>
+                    </div>
 
-                  if (allStudentFees.length === 0) {
-                    return (
-                      <tr key={st.id} className="bg-emerald-50/40">
-                        <td className="p-3 text-center text-slate-400">—</td>
-                        <td className="p-3 font-bold">{st.name}</td>
-                        <td className="p-3 text-slate-600">{st.section_name}</td>
-                        <td colSpan={7} className="p-3 text-emerald-700 font-bold">
-                          لا توجد مستحقات غير مدفوعة لهذا التلميذ (مستوفى بالكامل)
-                        </td>
-                      </tr>
-                    );
-                  }
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-slate-500 font-medium">مستحقات مختارة:</span>
+                      <span className="text-sm font-bold px-3 py-1 rounded-xl bg-emerald-50 text-emerald-800 border border-emerald-200">
+                        {money(studentSubtotal)} د.ت
+                      </span>
+                    </div>
+                  </div>
 
-                  return allStudentFees.map((fee) => {
-                    const key = fee.is_new ? `new_${fee.item_type}_${fee.id}` : `fee_${fee.id}`;
-                    const itemState = selectedItems[key];
-                    const isSelected = Boolean(itemState?.selected);
-                    const isFull = itemState ? Math.abs(itemState.amount - fee.remaining_amount) < 0.001 : true;
+                  {/* 1. Tuition Months Grid (September -> June) */}
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                        <Calendar size={14} className="text-slate-400" />
+                        معلوم الدراسة الشهري (من سبتمبر إلى جوان):
+                      </span>
+                    </div>
 
-                    return (
-                      <tr
-                        key={key}
-                        className={`transition ${isSelected ? 'bg-emerald-50/70 font-semibold' : 'hover:bg-slate-50'}`}
-                      >
-                        <td className="p-3 text-center">
-                          <button
-                            type="button"
-                            onClick={() => toggleItem(key, st.id, fee.id > 0 ? fee.id : 0, fee.remaining_amount, fee.gross_amount, (fee as any).newItemData)}
-                            className="p-1 rounded hover:bg-slate-200 transition"
+                    <div className="grid grid-cols-2 sm:grid-cols-5 md:grid-cols-10 gap-2">
+                      {student.months_grid.map((m) => {
+                        const isPaid = m.status === 'paid';
+                        const isWaived = m.status === 'waived';
+                        const isSelected = selectedMonths.includes(m.month);
+
+                        let cardBg = 'bg-white border-slate-200 hover:border-slate-300';
+                        let badgeBg = 'bg-slate-100 text-slate-600';
+                        let badgeText = `${money(m.net_amount)} د.ت`;
+
+                        if (isPaid) {
+                          cardBg = 'bg-emerald-50/60 border-emerald-200 text-emerald-900 cursor-not-allowed';
+                          badgeBg = 'bg-emerald-100 text-emerald-800';
+                          badgeText = 'مدفوع ✓';
+                        } else if (isWaived) {
+                          cardBg = 'bg-slate-50 border-slate-200 text-slate-400 cursor-not-allowed';
+                          badgeBg = 'bg-slate-200 text-slate-600';
+                          badgeText = 'معفى';
+                        } else if (isSelected) {
+                          cardBg = 'bg-emerald-50 border-emerald-500 text-emerald-950 shadow-xs ring-1 ring-emerald-500';
+                          badgeBg = 'bg-emerald-600 text-white font-bold';
+                          badgeText = `${money(m.net_amount)} د.ت`;
+                        }
+
+                        return (
+                          <div
+                            key={m.month}
+                            onClick={() => !isPaid && !isWaived && toggleStudentMonth(student, m.month)}
+                            className={`p-2.5 rounded-xl border flex flex-col items-center justify-between text-center transition select-none ${cardBg} ${
+                              !isPaid && !isWaived ? 'cursor-pointer hover:shadow-xs' : ''
+                            }`}
                           >
-                            {isSelected ? (
-                              <CheckSquare size={18} className="text-emerald-700" />
-                            ) : (
-                              <Square size={18} className="text-slate-400" />
-                            )}
-                          </button>
-                        </td>
+                            <div className="flex items-center justify-between w-full mb-1">
+                              <span className="text-xs font-bold">{m.name_ar}</span>
+                              {!isPaid && !isWaived && (
+                                isSelected ? (
+                                  <CheckSquare size={14} className="text-emerald-600" />
+                                ) : (
+                                  <Square size={14} className="text-slate-300" />
+                                )
+                              )}
+                            </div>
+                            <span className={`text-[10px] px-1.5 py-0.5 rounded-md w-full truncate ${badgeBg}`}>
+                              {badgeText}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
 
-                        <td className="p-3 font-bold" style={{ color: C.ink }}>
-                          {st.name}
-                        </td>
+                  {/* 2. Subscribed Clubs Grid (September -> May) */}
+                  {student.clubs && student.clubs.length > 0 && (
+                    <div className="space-y-2 pt-2 border-t border-slate-100">
+                      <span className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                        <Award size={14} className="text-amber-500" />
+                        اشتراكات النوادي (من سبتمبر إلى ماي):
+                      </span>
 
-                        <td className="p-3 text-slate-600">
-                          {st.section_name}
-                        </td>
+                      <div className="space-y-2">
+                        {student.clubs.map((club) => (
+                          <div key={club.club_id} className="p-3 rounded-xl bg-amber-50/30 border border-amber-200/60 space-y-2">
+                            <div className="flex items-center justify-between">
+                              <span className="text-xs font-bold text-amber-950">
+                                {club.club_name} ({money(club.monthly_fee)} د.ت / شهر)
+                              </span>
+                            </div>
 
-                        <td className="p-3">
-                          <div className="font-bold text-slate-800">{fee.description}</div>
-                          {fee.month_name && (
-                            <span className="text-[10px] text-slate-500">شهر: {fee.month_name}</span>
-                          )}
-                        </td>
+                            <div className="grid grid-cols-3 sm:grid-cols-9 gap-1.5">
+                              {club.months.map((cm) => {
+                                const isClubPaid = cm.status === 'paid';
+                                const isClubSelected = selectedClubs[cm.club_monthly_fee_id] !== undefined;
 
-                        <td className="p-3 text-center font-mono" dir="ltr">
-                          {money(fee.gross_amount)}
-                        </td>
+                                return (
+                                  <div
+                                    key={cm.month}
+                                    onClick={() => !isClubPaid && toggleStudentClub(student.id, cm.club_monthly_fee_id, cm.amount_due)}
+                                    className={`p-1.5 rounded-lg border text-center text-xs transition select-none ${
+                                      isClubPaid
+                                        ? 'bg-emerald-50 border-emerald-200 text-emerald-800 cursor-not-allowed'
+                                        : isClubSelected
+                                        ? 'bg-amber-100 border-amber-500 text-amber-950 font-bold shadow-xs cursor-pointer'
+                                        : 'bg-white border-slate-200 hover:border-slate-300 cursor-pointer'
+                                    }`}
+                                  >
+                                    <div className="text-[11px]">{cm.name_ar}</div>
+                                    <div className="text-[10px] text-slate-500">
+                                      {isClubPaid ? 'مدفوع ✓' : `${money(cm.amount_due)} د.ت`}
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
 
-                        <td className="p-3 text-center font-mono text-emerald-600" dir="ltr">
-                          {money(fee.discount_amount)}
-                        </td>
+                  {/* 3. Arrears & Prior Debt Section */}
+                  {student.arrears && student.arrears.length > 0 && (
+                    <div className="space-y-2 pt-2 border-t border-slate-100">
+                      <span className="text-xs font-bold text-amber-800 flex items-center gap-1.5">
+                        <AlertCircle size={14} />
+                        الديون والمتخلدات السابقة (مع إمكانية الدفع الجزئي):
+                      </span>
 
-                        <td className="p-3 text-center font-mono text-slate-600" dir="ltr">
-                          {money(fee.paid_amount)}
-                        </td>
+                      <div className="space-y-2">
+                        {student.arrears.map((arr) => {
+                          const isSelected = selectedArrears[arr.student_fee_id] !== undefined;
+                          const currentAmount = selectedArrears[arr.student_fee_id] || arr.remaining_amount;
 
-                        <td className="p-3 text-center font-mono font-bold text-red-600" dir="ltr">
-                          {money(fee.remaining_amount)}
-                        </td>
-
-                        <td className="p-3 text-center">
-                          {isSelected ? (
-                            <input
-                              type="number"
-                              step="0.001"
-                              min="0.01"
-                              max={fee.remaining_amount}
-                              value={itemState?.amount ?? fee.remaining_amount}
-                              onChange={(e) => updateItemAmount(key, parseFloat(e.target.value) || 0, fee.remaining_amount)}
-                              className="w-full text-xs font-bold px-2 py-1 border rounded-lg bg-white text-left font-mono shadow-inner"
-                              style={{ borderColor: C.forest }}
-                            />
-                          ) : (
-                            <span className="text-slate-400 font-mono">—</span>
-                          )}
-                        </td>
-
-                        <td className="p-3 text-center">
-                          {isSelected && (
-                            <button
-                              type="button"
-                              onClick={() => toggleFullOrPartial(key, fee.remaining_amount)}
-                              className={`px-2 py-0.5 rounded text-[10px] font-bold transition border ${
-                                isFull
-                                  ? 'bg-emerald-600 text-white border-emerald-600'
-                                  : 'bg-amber-100 text-amber-800 border-amber-300'
+                          return (
+                            <div
+                              key={arr.student_fee_id}
+                              className={`p-3 rounded-xl border flex items-center justify-between flex-wrap gap-3 transition ${
+                                isSelected ? 'bg-amber-50/80 border-amber-300' : 'bg-slate-50 border-slate-200'
                               }`}
                             >
-                              {isFull ? 'كامل' : 'جزئي'}
-                            </button>
-                          )}
-                        </td>
-                      </tr>
-                    );
-                  });
-                })}
-              </tbody>
-            </table>
+                              <div className="flex items-center gap-3">
+                                <button
+                                  type="button"
+                                  onClick={() => toggleStudentArrear(student.id, arr.student_fee_id, arr.remaining_amount)}
+                                  className="text-slate-400 hover:text-slate-700"
+                                >
+                                  {isSelected ? (
+                                    <CheckSquare size={18} className="text-amber-700" />
+                                  ) : (
+                                    <Square size={18} />
+                                  )}
+                                </button>
+                                <div>
+                                  <div className="text-xs font-bold text-slate-800">{arr.description}</div>
+                                  <div className="text-[11px] text-slate-500">
+                                    المستحق: {money(arr.amount_due)} د.ت • المقبوض: {money(arr.amount_paid)} د.ت • المتبقي: {money(arr.remaining_amount)} د.ت
+                                  </div>
+                                </div>
+                              </div>
+
+                              {isSelected && (
+                                <div className="flex items-center gap-2">
+                                  <label className="text-[11px] text-slate-600">المبلغ المدفوع:</label>
+                                  <input
+                                    type="number"
+                                    min="1"
+                                    max={arr.remaining_amount}
+                                    step="0.01"
+                                    value={currentAmount}
+                                    onChange={(e) => updateArrearAmount(student.id, arr.student_fee_id, parseFloat(e.target.value) || 0, arr.remaining_amount)}
+                                    className="w-24 px-2 py-1 rounded-lg border border-amber-300 text-xs text-center font-bold bg-white focus:outline-hidden focus:ring-1 focus:ring-amber-500"
+                                  />
+                                  <span className="text-xs text-slate-500">د.ت</span>
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
 
-          {/* Operational Settings Bar */}
-          <div className="border-t pt-4 space-y-3" style={{ borderColor: C.line }}>
-            <h3 className="text-xs font-bold text-slate-700">بيانات العملية والوصل:</h3>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          {/* Payment Method Details Panel */}
+          <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-4 space-y-4">
+            <h4 className="text-xs font-bold text-slate-700 flex items-center gap-2">
+              <DollarSign size={15} style={{ color: C.forest }} />
+              بيانات الدفع والتحصيل
+            </h4>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1">تاريخ الاستخلاص</label>
+                <label className="block text-[11px] font-medium text-slate-600 mb-1">تاريخ الاستخلاص *</label>
                 <input
                   type="date"
+                  required
                   value={paymentDate}
                   onChange={(e) => setPaymentDate(e.target.value)}
-                  className="w-full px-3 py-2 text-xs border rounded-xl"
-                  style={{ borderColor: C.line }}
-                  required
+                  className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs bg-white focus:outline-hidden focus:ring-2 focus:ring-slate-300"
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1">طريقة الدفع</label>
+                <label className="block text-[11px] font-medium text-slate-600 mb-1">طريقة الدفع *</label>
                 <select
                   value={method}
                   onChange={(e) => setMethod(e.target.value)}
-                  className="w-full px-3 py-2 text-xs border rounded-xl bg-white"
-                  style={{ borderColor: C.line }}
+                  className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs bg-white focus:outline-hidden focus:ring-2 focus:ring-slate-300"
                 >
-                  <option value="cash">نقداً</option>
-                  <option value="bank_transfer">تحويل بنكي</option>
-                  <option value="check">شيك</option>
-                  <option value="card">بطاقة</option>
+                  <option value="cash">نقداً (Cash)</option>
+                  <option value="check">شيك (Check)</option>
+                  <option value="bank_transfer">تحويل بنكي (Bank Transfer)</option>
+                  <option value="card">بطاقة بنكية (Card)</option>
                 </select>
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1">المرجع (اختياري)</label>
+                <label className="block text-[11px] font-medium text-slate-600 mb-1">رقم المرجع / الشيك (اختياري)</label>
                 <input
                   type="text"
-                  placeholder="رقم الشيك أو التحويل"
+                  placeholder="مثال: رقم الشيك أو رقم التحويل"
                   value={reference}
                   onChange={(e) => setReference(e.target.value)}
-                  className="w-full px-3 py-2 text-xs border rounded-xl"
-                  style={{ borderColor: C.line }}
+                  className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs bg-white focus:outline-hidden focus:ring-2 focus:ring-slate-300"
                 />
               </div>
             </div>
 
             <div>
-              <label className="block text-xs font-medium text-slate-600 mb-1">ملاحظات العملية (اختياري)</label>
+              <label className="block text-[11px] font-medium text-slate-600 mb-1">ملاحظات إضافية</label>
               <input
                 type="text"
-                placeholder="ملاحظات تشغيلية حول التحصيل الجماعي"
+                placeholder="أي ملاحظات حول العملية العائلية"
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
-                className="w-full px-3 py-2 text-xs border rounded-xl"
-                style={{ borderColor: C.line }}
+                className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs bg-white focus:outline-hidden focus:ring-2 focus:ring-slate-300"
               />
             </div>
           </div>
-
-          {/* Modal Action Bar */}
-          <div className="p-4 rounded-2xl bg-slate-900 text-white flex items-center justify-between flex-wrap gap-3">
-            <div>
-              <p className="text-xs text-slate-400">إجمالي المبلغ المراد استخلاصه بالجماعة:</p>
-              <p className="text-2xl font-extrabold text-emerald-400" dir="ltr">
-                {money(totalToPay)} د.ت
-              </p>
-            </div>
-
-            <div className="flex gap-2">
-              <button
-                type="button"
-                onClick={onClose}
-                className="px-4 py-2.5 rounded-xl border border-slate-700 text-xs font-semibold hover:bg-slate-800 transition"
-              >
-                إلغاء
-              </button>
-              <button
-                type="submit"
-                disabled={saving || selectedList.length === 0}
-                className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition shadow-lg disabled:opacity-50"
-              >
-                {saving ? (
-                  <>
-                    <Loader2 size={16} className="animate-spin" /> جاري الحفظ...
-                  </>
-                ) : (
-                  <>
-                    <DollarSign size={16} /> تأكيد الاستخلاص الجماعي وإصدار الوصل
-                  </>
-                )}
-              </button>
-            </div>
-          </div>
         </form>
+
+        {/* Sticky Bottom Summary Checkout Bar */}
+        <div className="p-4 border-t border-slate-200 bg-white flex items-center justify-between flex-wrap gap-4 shadow-lg">
+          <div className="flex items-center gap-3">
+            <div className="text-right">
+              <span className="block text-[11px] text-slate-500 font-medium">المبلغ الإجمالي للاستخلاص العائلي:</span>
+              <span className="text-xl font-bold text-slate-900" style={{ color: C.forest }}>
+                {money(grandTotal)} <span className="text-sm font-normal text-slate-500">دينار تونسي</span>
+              </span>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={onClose}
+              disabled={saving}
+              className="px-4 py-2.5 rounded-xl border border-slate-200 text-xs font-bold text-slate-700 hover:bg-slate-100 transition"
+            >
+              إلغاء
+            </button>
+
+            <button
+              type="button"
+              onClick={handleSubmit}
+              disabled={saving || grandTotal <= 0}
+              className="px-6 py-2.5 rounded-xl text-xs font-bold text-white shadow-md flex items-center gap-2 transition disabled:opacity-50"
+              style={{ backgroundColor: C.forest }}
+            >
+              {saving ? (
+                <>
+                  <Loader2 size={16} className="animate-spin" />
+                  <span>جاري تسجيل الاستخلاص...</span>
+                </>
+              ) : (
+                <>
+                  <Sparkles size={16} />
+                  <span>تأكيد الاستخلاص وطباعة الوصل ({money(grandTotal)} د.ت)</span>
+                </>
+              )}
+            </button>
+          </div>
+        </div>
       </div>
-
-      {/* Dialog: إضافة معلوم ترسيم */}
-      {showAddRegistrationModal && (
-        <div className="fixed inset-0 z-60 flex items-center justify-center bg-black/50 p-4">
-          <div className="bg-white p-5 rounded-2xl max-w-md w-full space-y-4 shadow-xl">
-            <h3 className="text-base font-bold text-slate-800">إضافة معلوم ترسيم لتلميذ</h3>
-            <form onSubmit={handleAddRegistrationFee} className="space-y-3">
-              <div>
-                <label className="block text-xs font-semibold text-slate-600 mb-1">اختر التلميذ</label>
-                <select
-                  value={selectedStudentForReg}
-                  onChange={(e) => setSelectedStudentForReg(Number(e.target.value))}
-                  className="w-full p-2 text-xs border rounded-xl"
-                >
-                  {family.students.map((s) => (
-                    <option key={s.id} value={s.id}>{s.name} ({s.section_name})</option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="block text-xs font-semibold text-slate-600 mb-1">معلوم الترسيم (د.ت)</label>
-                <input
-                  type="number"
-                  step="0.001"
-                  value={regFeeAmount}
-                  onChange={(e) => setRegFeeAmount(parseFloat(e.target.value) || 0)}
-                  className="w-full p-2 text-xs border rounded-xl font-mono"
-                  required
-                />
-              </div>
-              <div className="flex justify-end gap-2 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setShowAddRegistrationModal(false)}
-                  className="px-3 py-1.5 text-xs rounded-xl border"
-                >
-                  إلغاء
-                </button>
-                <button
-                  type="submit"
-                  className="px-4 py-1.5 text-xs rounded-xl bg-emerald-600 text-white font-bold"
-                >
-                  إضافة للجدول
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* Dialog: إضافة نادي */}
-      {showAddClubModal && (
-        <div className="fixed inset-0 z-60 flex items-center justify-center bg-black/50 p-4">
-          <div className="bg-white p-5 rounded-2xl max-w-md w-full space-y-4 shadow-xl">
-            <h3 className="text-base font-bold text-slate-800">إضافة معلوم نادي لتلميذ</h3>
-            <form onSubmit={handleAddClubFee} className="space-y-3">
-              <div>
-                <label className="block text-xs font-semibold text-slate-600 mb-1">اختر التلميذ</label>
-                <select
-                  value={selectedStudentForClub}
-                  onChange={(e) => setSelectedStudentForClub(Number(e.target.value))}
-                  className="w-full p-2 text-xs border rounded-xl"
-                >
-                  {family.students.map((s) => (
-                    <option key={s.id} value={s.id}>{s.name} ({s.section_name})</option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="block text-xs font-semibold text-slate-600 mb-1">اختر النادي</label>
-                <select
-                  value={selectedClubId}
-                  onChange={(e) => setSelectedClubId(Number(e.target.value))}
-                  className="w-full p-2 text-xs border rounded-xl"
-                >
-                  {(family.available_clubs || []).map((c) => (
-                    <option key={c.id} value={c.id}>{c.name} ({c.monthly_fee} د.ت/شهر)</option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="block text-xs font-semibold text-slate-600 mb-1">اختر الشهر المعني</label>
-                <select
-                  value={selectedClubMonth}
-                  onChange={(e) => setSelectedClubMonth(e.target.value)}
-                  className="w-full p-2 text-xs border rounded-xl"
-                >
-                  {MONTHS_LIST.map((m) => (
-                    <option key={m} value={m}>{m}</option>
-                  ))}
-                </select>
-              </div>
-              <div className="flex justify-end gap-2 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setShowAddClubModal(false)}
-                  className="px-3 py-1.5 text-xs rounded-xl border"
-                >
-                  إلغاء
-                </button>
-                <button
-                  type="submit"
-                  className="px-4 py-1.5 text-xs rounded-xl bg-indigo-600 text-white font-bold"
-                >
-                  إضافة للجدول
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

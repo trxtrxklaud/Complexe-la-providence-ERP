@@ -11,6 +11,7 @@ import {
     FeeTypePayload,
 } from '../../api/feeTypes';
 import { TableRowsSkeleton } from '../../components/DataSkeleton';
+import { useToast } from '../../components/ui/Toast';
 
 const C = {
     forest: '#3B4A36',
@@ -37,6 +38,7 @@ export function FeeTypesPage() {
     const [form, setForm]           = useState<FeeTypePayload>(emptyForm);
     const [saving, setSaving]       = useState(false);
     const [formError, setFormError] = useState<string | null>(null);
+    const toast = useToast();
 
     useEffect(() => {
         load();
@@ -125,7 +127,7 @@ export function FeeTypesPage() {
             await deleteFeeType(ft.id);
             setFeeTypes(prev => prev.filter(f => f.id !== ft.id));
         } catch (e: unknown) {
-            alert(e instanceof Error ? e.message : 'فشل الحذف');
+            toast.error(e instanceof Error ? e.message : 'فشل الحذف');
         }
     }
 

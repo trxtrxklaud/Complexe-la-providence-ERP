@@ -4,6 +4,7 @@ export interface Permission {
     id: number;
     name: string;
     display_name: string;
+    group?: string | null;
 }
 export interface Role {
     id: number;
@@ -21,6 +22,33 @@ export interface User {
     is_active: boolean;
     role_id: number;
     role?: Role;
+    effective_permissions?: string[];
+}
+
+export interface UserPermissionItem {
+    permission_id: number;
+    name: string;
+    display_name: string;
+    group: string | null;
+    in_role: boolean;
+    override_effect: 'grant' | 'deny' | null;
+    is_effective: boolean;
+}
+
+export interface UserPermissionBreakdown {
+    user: {
+        id: number;
+        first_name: string;
+        last_name: string;
+        username: string;
+        email: string;
+        role?: {
+            id: number;
+            name: string;
+            display_name: string;
+        } | null;
+    };
+    permissions: UserPermissionItem[];
 }
 
 // ─── Pagination ───────────────────────────────────────────────────────────────

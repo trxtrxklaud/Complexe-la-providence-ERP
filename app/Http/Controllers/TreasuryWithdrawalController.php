@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\TreasuryWithdrawal;
+use App\Services\AuditService;
 use App\Services\LedgerService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -50,6 +51,8 @@ class TreasuryWithdrawalController extends Controller
 
             return $withdrawal;
         });
+
+        AuditService::log('withdrawal.create', 'سحب من الخزينة بمبلغ '.$withdrawal->amount.' د.ت', $withdrawal, ['amount' => $withdrawal->amount]);
 
         return response()->json($withdrawal->load('academicYear:id,name'), 201);
     }

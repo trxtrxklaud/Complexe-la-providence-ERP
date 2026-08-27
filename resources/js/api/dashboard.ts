@@ -11,6 +11,36 @@ export type CashFigures = {
   balance: number;
 };
 
+/** سطر تفصيلي لدين تلميذ قديم مُدخل يدوياً. */
+export type PriorDebtStudentDetail = {
+  id: number;
+  student_name: string;
+  original_amount: number;
+  paid_amount: number;
+  outstanding_amount: number;
+};
+
+/** سطر تفصيلي لاستحقاق إطار قديم مُدخل يدوياً. */
+export type PriorDebtEmployeeDetail = {
+  id: number;
+  employee_name: string;
+  liability_type: string;
+  original_amount: number;
+  paid_amount: number;
+  outstanding_amount: number;
+};
+
+/**
+ * بطاقة «تحصيل الديون السابقة» — للخزينة وعرض التقارير فقط،
+ * والخادم يحجبها كلياً عمّن لا يملك الصلاحية.
+ */
+export type PriorDebtSummary = {
+  total_collected: number;
+  total_remaining: number;
+  student_details: PriorDebtStudentDetail[];
+  employee_details: PriorDebtEmployeeDetail[];
+};
+
 export type DashboardData = {
   current_date: string;
   academic_year: { id: number; name: string } | null;
@@ -41,6 +71,7 @@ export type DashboardData = {
     all_time: CashFigures;
   };
   treasury_balance?: number;
+  prior_debt_summary?: PriorDebtSummary;
 };
 
 /**

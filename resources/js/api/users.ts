@@ -44,6 +44,22 @@ export async function deleteUser(id: number): Promise<void> {
     });
     if (!res.ok) throw new Error('Failed to delete user');
 }
+export async function changeUserPassword(
+    id: number,
+    password: string,
+    password_confirmation: string,
+): Promise<{ message: string }> {
+    const res = await fetch(`${API_BASE}/users/${id}/change-password`, {
+        method: 'POST',
+        headers: getHeaders(),
+        body: JSON.stringify({ password, password_confirmation }),
+    });
+    if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.message || 'Failed to change password');
+    }
+    return res.json();
+}
 export async function fetchRoles(): Promise<Role[]> {
     const res = await fetch(`${API_BASE}/roles`, { headers: getHeaders() });
     if (!res.ok) throw new Error('Failed to fetch roles');

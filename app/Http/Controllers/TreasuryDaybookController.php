@@ -213,7 +213,7 @@ class TreasuryDaybookController extends Controller
 
             $bucket = match (true) {
                 $row->category === CashTransaction::CATEGORY_WITHDRAWAL => 'withdrawals',
-                in_array($row->category, CashTransaction::PRIOR_YEAR_DEBT_CATEGORIES, true) => 'prior_debt',
+                in_array($row->category, CashTransaction::OLD_DEBT_COLLECTION_CATEGORIES, true) => 'prior_debt',
                 in_array($row->category, CashTransaction::INCOME_CATEGORIES, true) => 'income',
                 default => 'expenses',
             };
@@ -278,7 +278,8 @@ class TreasuryDaybookController extends Controller
         $incomeTotal = round(array_sum(array_column($income, 'total')), 2);
         $expenseTotal = round(array_sum(array_column($expenses, 'total')), 2);
         $withdrawals = round($totals[CashTransaction::CATEGORY_WITHDRAWAL] ?? 0.0, 2);
-        $priorYearDebt = round($totals[CashTransaction::CATEGORY_PRIOR_YEAR_DEBT] ?? 0.0, 2);
+        // تحصيل الديون القديمة (تلميذ + إطار): نقد في الصندوق لا مدخول للدخل الصافي.
+        $priorYearDebt = round(collect($totals)->only(CashTransaction::OLD_DEBT_COLLECTION_CATEGORIES)->sum(), 2);
         $net = round($incomeTotal - $expenseTotal, 2);
 
         return [

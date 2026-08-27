@@ -54,7 +54,7 @@ class PaymentService
                         // فتُخصم من المتبقّي المسموح توزيعه.
                         $waived = $fee->waivers()->whereNull('cancelled_at')->sum('amount');
 
-                        $remaining = round((float) $fee->amount_due - (float) $alreadyAllocated - (float) $waived, 2);
+                        $remaining = round((float) $fee->amount_due - (float) $alreadyAllocated - (float) $fee->directPaidAmount() - (float) $waived, 2);
 
                         if ($allocation['amount'] > $remaining) {
                             throw new \InvalidArgumentException(
@@ -135,13 +135,26 @@ class PaymentService
         // فالمقفل يُخزّن paid وسجلّ fee_waivers هو من يوثّق أنّه لم يكن نقداً.
         $waived = (float) $fee->waivers()->whereNull('cancelled_at')->sum('amount');
 
-        $fee->update([
-            'status' => match (true) {
-                $allocated + $waived >= (float) $fee->amount_due => 'paid',
-                $allocated > 0                                   => 'partial',
-                default                                          => 'pending',
-            }
-        ]);
+        $totalPaid = $allocated + $fee->directPaidAmount();
+        $status = match (true) {
+            $totalPaid + $waived >= (float) $fee->amount_due => 'paid',
+            $totalPaid > 0 => 'partial',
+            default => 'pending',
+        };
+
+        $fee->update(['status' => $status]);
+
+        if ($fee->club_monthly_fee_id && $clubFee = $fee->clubMonthlyFee()->first()) {
+            $clubStatus = match (true) {
+                $totalPaid >= (float) $clubFee->amount_due => \App\Models\ClubMonthlyFee::STATUS_PAID,
+                $totalPaid > 0 => \App\Models\ClubMonthlyFee::STATUS_PARTIAL,
+                default => \App\Models\ClubMonthlyFee::STATUS_UNPAID,
+            };
+            $clubFee->update([
+                'amount_paid' => number_format($totalPaid, 2, '.', ''),
+                'status' => $clubStatus,
+            ]);
+        }
     }
 
     public function getStudentBalance(int $studentId): float
@@ -158,7 +171,7 @@ class PaymentService
             ->get();
 
         return (float) $fees->sum(fn ($fee) =>
-            max(0, $fee->amount_due - $fee->paymentAllocations->sum('amount_allocated') - $fee->waivers->sum('amount'))
+            max(0, $fee->amount_due - $fee->paymentAllocations->sum('amount_allocated') - $fee->directPaidAmount() - $fee->waivers->sum('amount'))
         );
     }
 }

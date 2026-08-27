@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
-import { CreditCard, Loader2, AlertCircle } from 'lucide-react';
+import { CreditCard, Loader2, AlertCircle, Printer } from 'lucide-react';
 import { getFeeTypes } from '../../api/feeTypes';
 import {
   collectPayment,
@@ -31,8 +32,6 @@ const METHOD_LABELS: Record<string, string> = {
   card: 'بطاقة',
 };
 
-const TUITION_AR = 'القسط الشهري';
-
 const MONTH_AR: Record<string, string> = {
   '01': 'جانفي', '02': 'فيفري', '03': 'مارس', '04': 'أفريل',
   '05': 'ماي', '06': 'جوان', '07': 'جويلية', '08': 'أوت',
@@ -44,7 +43,6 @@ function monthLabel(m: string) {
   return (MONTH_AR[p[1]] || p[1]) + ' ' + p[0];
 }
 
-
 function userCode(u?: any) {
   if (!u) return '—';
   if (u.code) return String(u.code);
@@ -54,7 +52,24 @@ function userCode(u?: any) {
   return String(u.username || '—').slice(0, 2).toUpperCase();
 }
 
+function findTuitionFee(fees: any[]) {
+  return (
+    fees.find(
+      (x: any) =>
+        x.name_ar === 'معلوم التمدرس' ||
+        x.name_ar === 'المعلوم الشهري' ||
+        x.name_ar === 'التعليم الأساسي' ||
+        x.code === 'TUITION' ||
+        x.name_ar?.includes('تمدرس') ||
+        x.name_ar?.includes('شهري')
+    ) ||
+    fees[0] ||
+    null
+  );
+}
+
 export function CollectionPage() {
+  const navigate = useNavigate();
   const { user } = useAuth();
   const [years, setYears] = useState<any[]>([]);
   const [sections, setSections] = useState<any[]>([]);
@@ -72,6 +87,8 @@ export function CollectionPage() {
 
   const [feeAmounts, setFeeAmounts] = useState<Record<number, string>>({});
   const [selectedFees, setSelectedFees] = useState<Record<number, boolean>>({});
+  const [selectedClubFees, setSelectedClubFees] = useState<Record<number, boolean>>({});
+  const [clubAmounts, setClubAmounts] = useState<Record<number, string>>({});
   const [monthlyPrice, setMonthlyPrice] = useState('0');
   const [method, setMethod] = useState<'cash' | 'bank_transfer' | 'check' | 'card'>('cash');
   const [paymentDate, setPaymentDate] = useState(new Date().toISOString().slice(0, 10));
@@ -87,11 +104,13 @@ export function CollectionPage() {
   const [previewData, setPreviewData] = useState<CollectionPreview | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
 
-  // متخلّدات السنوات السابقة (رصيد افتتاحي) — القابض يوزّع جزءاً من الدفعة عليها.
+  // المتخلدات والديون السابقة (الأرصدة الافتتاحية) — إمكانية تحديد مبالغ جزئية أو كاملة للاستخلاص.
   const [priorItems, setPriorItems] = useState<any[]>([]);
   const [priorSelections, setPriorSelections] = useState<Record<number, boolean>>({});
   const [priorAmounts, setPriorAmounts] = useState<Record<number, string>>({});
 
+  // ديون قديمة مدخلة يدوياً (manual_student_debts) — تنبيه فقط، بلا أي أثر مالي هنا.
+  const [manualDebtAlert, setManualDebtAlert] = useState<{ total: number; items: Array<{ id: number; description: string; outstanding: number }> } | null>(null);
 
   useEffect(() => {
     if (!picked || selectedMonths.length === 0) {
@@ -102,37 +121,42 @@ export function CollectionPage() {
     getCollectionPreview(picked.enrollment_id, selectedMonths, tuitionFee?.id)
       .then((res) => {
         setPreviewData(res);
+        const clubDefaults: Record<number, string> = {};
+        (res.club_items || []).forEach((item: any) => {
+          clubDefaults[item.club_monthly_fee_id] = String(item.remaining_amount ?? 0);
+        });
+        setClubAmounts(clubDefaults);
+        setSelectedClubFees({});
         if (res.items && res.items.length > 0) {
           setMonthlyPrice(String(res.remaining_amount));
         }
       })
       .catch((e) => {
-        setError(e.message || 'فشل جلب المعاينة والتخفيض');
+        setError(e.message || 'تعذر جلب معطيات الاستخلاص والتخفيضات');
       })
       .finally(() => setPreviewLoading(false));
   }, [picked, selectedMonths, tuitionFee]);
 
   useEffect(() => {
     Promise.all([getCollectionYears(), getFeeTypes()])
-
       .then(([y, f]) => {
         setYears(Array.isArray(y) ? y : []);
         const fees = Array.isArray(f) ? f : [];
         const active = fees.filter((x: any) => x.is_active !== false);
-        const tuition = active.find((x: any) => x.name_ar === TUITION_AR) || null;
+        const tuition = findTuitionFee(active);
         setTuitionFee(tuition);
         setFeeTypes(active.filter((x: any) => !tuition || x.id !== tuition.id));
         const am: Record<number, string> = {};
         fees.forEach((x: any) => { am[x.id] = String(x.price ?? 0); });
         setFeeAmounts(am);
       })
-      .catch((e) => setError(e.message || 'فشل التحميل'));
+      .catch((e) => setError(e.message || 'تعذر جلب المعاليم'));
 
     const handleClubFeeUpdated = () => {
       getFeeTypes().then((f) => {
         const fees = Array.isArray(f) ? f : [];
         const active = fees.filter((x: any) => x.is_active !== false);
-        const tuition = active.find((x: any) => x.name_ar === TUITION_AR) || null;
+        const tuition = findTuitionFee(active);
         setTuitionFee(tuition);
         setFeeTypes(active.filter((x: any) => !tuition || x.id !== tuition.id));
         const am: Record<number, string> = {};
@@ -158,7 +182,7 @@ export function CollectionPage() {
       const s = await getSectionsByYear(Number(id));
       setSections(Array.isArray(s) ? s : []);
     } catch (e: any) {
-      setError(e.message || 'فشل جلب الأقسام');
+      setError(e.message || 'تعذر جلب الأقسام');
     }
   }
 
@@ -172,7 +196,7 @@ export function CollectionPage() {
       const list = await getStudentsBySection(Number(id), Number(yearId));
       setStudents(Array.isArray(list) ? list : []);
     } catch (e: any) {
-      setError(e.message || 'فشل جلب التلاميذ');
+      setError(e.message || 'تعذر جلب التلاميذ');
     }
   }
 
@@ -191,37 +215,48 @@ export function CollectionPage() {
       const rows: any[] = [];
       const bag = ledger.ledger || {};
       Object.keys(bag).sort().forEach((month) => {
-        (bag[month] || []).forEach((x: any) => {
-          rows.push({ month, ...x });
-        });
+        (bag[month] || []).forEach((x: any) => rows.push({ month, ...x }));
       });
-      // unique by payment_id
       const seen = new Set();
-      const uniq = [];
+      const uniq: any[] = [];
       for (const r of rows) {
         if (seen.has(r.payment_id)) continue;
         seen.add(r.payment_id);
         uniq.push(r);
       }
-      setLedgerRows(uniq.sort((a,b)=>String(b.payment_date).localeCompare(String(a.payment_date))));
+      setLedgerRows(uniq.sort((a, b) => String(b.payment_date).localeCompare(String(a.payment_date))));
 
-      // الرصيد الافتتاحي: متخلّدات السنوات السابقة للمحاسب على الشاشة نفسها.
+      // الأرصدة الافتتاحية: المتخلدات السابقة الموثقة بصفة متخلدات قديمة.
       try {
-        const ob: any = await getStudentOpeningBalances(row.student.id);
-        setPriorItems(ob.items || []);
-        const am: Record<number, string> = {};
-        (ob.items || []).forEach((it: any) => {
-          am[it.student_fee_id] = String(it.outstanding ?? it.amount ?? 0);
+        const obRes = await getStudentOpeningBalances(row.student.id, Number(yearId) || undefined);
+        const activeItems = (obRes.items || []).filter((it: any) => Number(it.outstanding ?? 0) > 0);
+        setPriorItems(activeItems);
+        const pSel: Record<number, boolean> = {};
+        const pAm: Record<number, string> = {};
+        activeItems.forEach((it: any) => {
+          pSel[it.student_fee_id] = false;
+          pAm[it.student_fee_id] = String(Number(it.outstanding ?? 0).toFixed(2));
         });
-        setPriorAmounts(am);
-        setPriorSelections({});
-      } catch (e: any) {
+        setPriorSelections(pSel);
+        setPriorAmounts(pAm);
+        // تنبيه الديون القديمة المدخلة يدوياً (قراءة فقط — لا حركة مالية هنا)
+        const manualDebtOutstanding = (debt: any): number => Number(debt.outstanding ?? debt.outstanding_amount ?? 0);
+        const manualDebts = (obRes.manual_debts || []).filter((d: any) => manualDebtOutstanding(d) > 0);
+        if (manualDebts.length > 0) {
+          setManualDebtAlert({
+            total: manualDebts.reduce((s: number, d: any) => s + manualDebtOutstanding(d), 0),
+            items: manualDebts.map((d: any) => ({ id: d.id, description: d.description, outstanding: manualDebtOutstanding(d) })),
+          });
+        } else {
+          setManualDebtAlert(null);
+        }
+      } catch {
         setPriorItems([]);
         setPriorSelections({});
         setPriorAmounts({});
       }
     } catch (e: any) {
-      setError(e.message || 'فشل جلب الأشهر');
+      setError(e.message || 'تعذر جلب الدفتر');
     } finally {
       setLoading(false);
     }
@@ -229,17 +264,14 @@ export function CollectionPage() {
 
   function toggleMonth(m: string) {
     if (paidMonths.includes(m)) return;
-    const firstUnpaid = yearMonths.find((x) => !paidMonths.includes(x));
-    if (!firstUnpaid) return;
     setSelectedMonths((prev) => {
-      const exists = prev.includes(m);
-      let next = exists ? prev.filter((x) => x !== m) : [...prev, m];
-      next = next.filter((x) => !paidMonths.includes(x)).sort();
-      const startIdx = yearMonths.indexOf(firstUnpaid);
-      const idxs = next.map((x) => yearMonths.indexOf(x)).filter((i) => i >= 0).sort((a, b) => a - b);
-      if (!idxs.length) return [];
-      if (idxs[0] !== startIdx) {
-        setError('يجب البدء من أول شهر غير مدفوع: ' + monthLabel(firstUnpaid));
+      const next = prev.includes(m) ? prev.filter((x) => x !== m) : [...prev, m];
+      if (!next.length) return [];
+      const unpaidInYear = yearMonths.filter((x) => !paidMonths.includes(x));
+      const firstUnpaid = unpaidInYear[0];
+      const idxs = next.map((x) => yearMonths.indexOf(x)).sort((a, b) => a - b);
+      if (firstUnpaid && yearMonths.indexOf(firstUnpaid) !== idxs[0]) {
+        setError('يجب البدء من أول شهر غير خالص: ' + monthLabel(firstUnpaid));
         return prev;
       }
       const consecutive = [idxs[0]];
@@ -252,6 +284,14 @@ export function CollectionPage() {
     });
   }
 
+  const clubTotal = useMemo(() => {
+    if (!previewData?.club_items) return 0;
+    return previewData.club_items.reduce((sum, item) => {
+      if (!selectedClubFees[item.club_monthly_fee_id]) return sum;
+      return sum + (parseFloat(clubAmounts[item.club_monthly_fee_id] || '0') || 0);
+    }, 0);
+  }, [previewData, selectedClubFees, clubAmounts]);
+
   const productsTotal = useMemo(() => {
     return Object.entries(selectedFees).reduce((sum, [id, on]) => {
       if (!on) return sum;
@@ -259,7 +299,7 @@ export function CollectionPage() {
     }, 0);
   }, [selectedFees, feeAmounts]);
 
-  // قبض ديون السنوات السابقة: يستهلك من رصيد الدفعة لكنه لا يُعتبر مدخولاً جديداً.
+  // مجموع مبالغ المتخلدات السابقة: المتخلدات من سنوات سابقة موثقة في الدفاتر المالية القديمة.
   const priorTotal = useMemo(() => {
     return Object.entries(priorSelections).reduce((sum, [id, on]) => {
       if (!on) return sum;
@@ -268,21 +308,22 @@ export function CollectionPage() {
   }, [priorSelections, priorAmounts]);
 
   const monthsTotal = parseFloat(monthlyPrice || '0') || 0;
-  const itemsTotal = productsTotal + monthsTotal;
-  // التخفيض لم يعد يُطبَّق عند القبض: صار سعراً سنوياً ثابتاً في enrollment_discounts.
-  // هنا يُدفع السعر الكامل، والتخفيض السنوي يُدار من صفحة التلميذ.
+  const itemsTotal = productsTotal + monthsTotal + clubTotal;
+  // التخفيض تم خصمه مسبقاً داخل المعاينة: حيث يتم احتساب الصافي المتبقي من enrollment_discounts.
+  // لذلك يتم جمع المتبقي للشهري والإضافات والمتخلدات السابقة مباشرة دون خصم إضافي.
   const total = itemsTotal + priorTotal;
+  const blockedByFullWaiver = Boolean(previewData?.is_fully_waived) && clubTotal <= 0 && priorTotal <= 0;
 
   async function handleSave() {
     if (!picked) return;
-    if (!selectedMonths.length) { setError('اختر شهراً'); return; }
+    if (!selectedMonths.length) { setError('يرجى تحديد الأشهر'); return; }
     const items = Object.entries(selectedFees)
       .filter(([, on]) => on)
       .map(([id]) => ({ fee_type_id: Number(id), amount: parseFloat(feeAmounts[Number(id)] || '0') }))
       .filter((x) => x.amount > 0);
     const mp = parseFloat(monthlyPrice || '0') || 0;
     if (mp > 0) {
-      if (!tuitionFee) { setError('لا يوجد نوع معلوم باسم «القسط الشهري». شغّل بذرة المعاليم أو أضفه من صفحة أنواع المعاليم.'); return; }
+      if (!tuitionFee) { setError('لم يتم العثور على المعلوم الشهري في قائمة أنواع المعاليم.'); return; }
       items.unshift({ fee_type_id: Number(tuitionFee.id), amount: mp });
     }
     const mergedItems = Object.values(
@@ -294,12 +335,19 @@ export function CollectionPage() {
         return acc;
       }, {})
     );
+    const clubItems = Object.entries(selectedClubFees)
+      .filter(([, on]) => on)
+      .map(([id]) => ({
+        club_monthly_fee_id: Number(id),
+        amount: parseFloat(clubAmounts[Number(id)] || '0'),
+      }))
+      .filter((x) => x.amount > 0);
     const priorAllocs = Object.entries(priorSelections)
       .filter(([, on]) => on)
       .map(([id]) => ({ student_fee_id: Number(id), amount: parseFloat(priorAmounts[Number(id)] || '0') }))
       .filter((x) => x.amount > 0);
 
-    if (!mergedItems.length && priorAllocs.length === 0) { setError('أدخل معلوم الشهر أو اختر معلوماً'); return; }
+    if (!mergedItems.length && priorAllocs.length === 0) { setError('يرجى تحديد معلوم واحد على الأقل للاستخلاص'); return; }
 
     const payload = {
       student_id: picked.student.id,
@@ -310,6 +358,7 @@ export function CollectionPage() {
       reference: reference || null,
       notes: notes || null,
       items: mergedItems,
+      club_items: clubItems,
       prior_allocations: priorAllocs,
     };
 
@@ -342,7 +391,7 @@ export function CollectionPage() {
         items: (raw.items || raw.allocations || []).map((it: any) => ({
           ...it,
           description: it.description || it.name || it.fee_type_name || it.name_ar
-            || it.student_fee?.description || it.feeType?.name_ar || 'بند',
+            || it.student_fee?.description || it.feeType?.name_ar || 'معلوم',
           amount: it.amount ?? it.amount_allocated ?? 0,
           is_prior_year: Boolean(it.is_prior_year),
         })),
@@ -359,14 +408,15 @@ export function CollectionPage() {
       await refreshLedger(picked.enrollment_id);
       setSelectedMonths([]);
       setSelectedFees({});
+      setSelectedClubFees({});
     } catch (e: any) {
-      setError(e.message || 'فشل الحفظ');
+      setError(e.message || 'تعذر الاستخلاص');
     } finally {
       setSaving(false);
     }
   }
 
-  // يُعيد جلب سجل الأشهر والمدفوعات بعد أي تغيير (حفظ أو إلغاء).
+  // تحديث سجل دفتر الدفعات للتسجيل الحالي بعد كل عملية (حفظ أو إلغاء).
   async function refreshLedger(enrollmentId?: number) {
     const eid = enrollmentId ?? picked?.enrollment_id;
     if (!eid) return;
@@ -388,18 +438,18 @@ export function CollectionPage() {
     setLedgerRows(uniq.sort((a, b) => String(b.payment_date).localeCompare(String(a.payment_date))));
   }
 
-  // إلغاء موثّق للدفعة: يطلب سبباً إلزامياً ثم يستدعي مسار الإلغاء.
+  // إلغاء مقبوض مالي مع سبب إلزامي: يعكس القيد بالخزينة ويعيد الدين للحساب.
   async function handleCancelPayment(paymentId: number): Promise<boolean> {
-    const reason = window.prompt('سبب إلغاء الدفعة (إلزامي):');
+    const reason = window.prompt('سبب إلغاء المقبوض (إلزامي):');
     if (reason === null) return false;
-    if (reason.trim().length < 3) { alert('يرجى إدخال سبب واضح (3 أحرف على الأقل)'); return false; }
+    if (reason.trim().length < 3) { alert('يرجى كتابة سبب الإلغاء (3 أحرف على الأقل)'); return false; }
     try {
       await paymentsApi.cancel(paymentId, reason.trim());
       await refreshLedger();
-      alert('تم إلغاء الدفعة وتوثيق السبب. عادت أشهرها متاحة لإعادة الدفع.');
+      alert('تم إلغاء المقبوض بنجاح وتحديث الحساب المالي.');
       return true;
     } catch (e: any) {
-      alert(e.message || 'فشل إلغاء الدفعة');
+      alert(e.message || 'تعذر إلغاء المقبوض');
       return false;
     }
   }
@@ -410,9 +460,31 @@ export function CollectionPage() {
     if (ok) setReceipt(null);
   }
 
-  return (
+  async function handleReprintFromHistory(paymentId: number) {
+    try {
+      const p: any = await paymentsApi.show(paymentId);
+      setReceipt({
+        payment_id: p.id,
+        student_name: p.student ? `${p.student.first_name} ${p.student.last_name}` : '—',
+        student_code: p.student?.student_code,
+        payment_date: p.payment_date,
+        method: p.method,
+        amount: p.amount,
+        total: p.amount,
+        items: (p.payment_allocations || []).map((a: any) => ({
+          description: a.student_fee?.description || 'معلوم',
+          amount: a.amount_allocated,
+        })),
+        cancelled_at: p.cancelled_at,
+        cancellation_reason: p.cancellation_reason,
+      });
+    } catch (e: any) {
+      alert(e.message || 'تعذر تحميل الوصل');
+    }
+  }
 
-<div className="p-6 md:p-8" dir="rtl" style={{ background: '#F4F6F1', minHeight: '100vh' }}>
+  return (
+    <div className="p-6 md:p-8" dir="rtl" style={{ background: '#F4F6F1', minHeight: '100vh' }}>
       <style>{`
 @media print {
   html, body { height: 100% !important; overflow: hidden !important; }
@@ -422,33 +494,30 @@ export function CollectionPage() {
     position: fixed !important;
     inset: 0 !important;
     width: 210mm !important;
-    height: 297mm !important;
+    height: 148mm !important;
     margin: 0 !important;
-    padding: 8mm !important;
-    background: #fff !important;
+    padding: 0 !important;
+    background: #ffffff !important;
+    color: #000000 !important;
+    z-index: 999999 !important;
     overflow: hidden !important;
-    box-shadow: none !important;
-    border-radius: 0 !important;
   }
-  .no-print, .no-print * { display: none !important; visibility: hidden !important; }
-  @page { size: A4 portrait; margin: 0; }
 }
 `}</style>
-    
-      <div className="max-w-4xl mx-auto space-y-4">
-        <div className="flex items-center gap-3 mb-2">
-          <div className="w-12 h-12 rounded-2xl flex items-center justify-center" style={{ background: C.sage, color: C.forest }}>
-            <CreditCard size={22} />
-          </div>
+
+      <div className="max-w-5xl mx-auto space-y-6">
+        <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold" style={{ color: C.ink }}>استخلاص الرسوم</h1>
-            <p className="text-sm" style={{ color: C.muted }}>سنة ← قسم ← تلميذ ← أشهر ← معاليم ← حفظ</p>
+            <h1 className="text-2xl font-bold" style={{ color: C.ink }}>استخلاص المعاليم</h1>
+            <p className="text-sm" style={{ color: C.muted }}>قبض وتوثيق المعلوم الشهري، معاليم النوادي، والمتخلدات السابقة</p>
           </div>
+          <CreditCard className="w-8 h-8" style={{ color: C.forest }} />
         </div>
 
         {error && (
-          <div className="p-3 rounded-xl text-sm flex gap-2 items-center" style={{ background: '#FEE2E2', color: '#B91C1C' }}>
-            <AlertCircle size={16} /> {error}
+          <div className="p-4 rounded-2xl flex items-center gap-3" style={{ background: '#FEE2E2', color: '#991B1B' }}>
+            <AlertCircle className="w-5 h-5 flex-shrink-0" />
+            <span className="text-sm">{error}</span>
           </div>
         )}
 
@@ -462,16 +531,18 @@ export function CollectionPage() {
           </div>
           <div>
             <label className="text-sm font-semibold" style={{ color: C.ink }}>القسم</label>
-            <select value={sectionId} onChange={(e) => onSectionChange(e.target.value)} disabled={!yearId} className="w-full mt-1 border rounded-xl px-3 py-2 text-sm" style={{ borderColor: C.line }}>
+            <select value={sectionId} onChange={(e) => onSectionChange(e.target.value)} disabled={!yearId} className="w-full mt-1 border rounded-xl px-3 py-2 text-sm disabled:opacity-50" style={{ borderColor: C.line }}>
               <option value="">اختر القسم</option>
               {sections.map((s) => (
-                <option key={s.id} value={s.id}>{(s.level?.name ? s.level.name + ' - ' : '') + s.name}</option>
+                <option key={s.id} value={s.id}>
+                  {s.level?.name ? `${s.level.name} - ${s.name}` : s.name}
+                </option>
               ))}
             </select>
           </div>
           <div>
             <label className="text-sm font-semibold" style={{ color: C.ink }}>التلميذ</label>
-            <select value={picked?.enrollment_id || ''} onChange={(e) => onStudentChange(e.target.value)} disabled={!sectionId} className="w-full mt-1 border rounded-xl px-3 py-2 text-sm" style={{ borderColor: C.line }}>
+            <select value={picked?.enrollment_id || ''} onChange={(e) => onStudentChange(e.target.value)} disabled={!sectionId} className="w-full mt-1 border rounded-xl px-3 py-2 text-sm disabled:opacity-50" style={{ borderColor: C.line }}>
               <option value="">اختر التلميذ</option>
               {students.map((row) => (
                 <option key={row.enrollment_id} value={row.enrollment_id}>
@@ -494,23 +565,22 @@ export function CollectionPage() {
               }`}>
                 <div className="font-bold text-sm mb-1">
                   {previewData.is_fully_waived
-                    ? 'تخفيض كلي — هذا المعلوم معفى كلياً (0 د.ت) ولا يوجد مبلغ مستحق للقبض'
+                    ? 'تخفيض كلي — تم إعفاء التلميذ كلياً (0 د.ت) لهذا الشهر ضمن قرارات الإدارة'
                     : previewData.discount_type === 'humanitarian_fixed'
-                    ? 'تخفيض حالة إنسانية سارٍ'
+                    ? 'تخفيض إنساني خاص مطبق'
                     : previewData.discount_type === 'normal_monthly' || previewData.discount_type === 'normal'
-                    ? 'تخفيض عادي سارٍ'
-
-                    : 'لا يوجد تخفيض على الأشهر المختارة'}
+                    ? 'تخفيض شهري عادي مطبق'
+                    : 'لا يوجد تخفيض على هذا التسجيل'}
                 </div>
                 <div className="text-xs space-y-0.5">
-                  <div>المعلوم الأصلي: {previewData.gross_amount} د | التخفيض: {previewData.discount_amount} د | الصافي المستحق: {previewData.remaining_amount} د</div>
+                  <div>المبلغ الأصلي: {previewData.gross_amount} د.ت | التخفيض: {previewData.discount_amount} د.ت | الصافي المستحق: {previewData.remaining_amount} د.ت</div>
                   {previewData.discount_reason && <div>السبب: {previewData.discount_reason}</div>}
                 </div>
               </div>
             )}
 
             <div className="bg-white rounded-2xl border p-4" style={{ borderColor: C.line }}>
-              <label className="text-sm font-semibold" style={{ color: C.ink }}>مجموع معاليم الأشهر المختارة (د.ت)</label>
+              <label className="text-sm font-semibold" style={{ color: C.ink }}>المعلوم الشهري (د.ت)</label>
               <input
                 type="number"
                 min="0"
@@ -523,10 +593,9 @@ export function CollectionPage() {
                 placeholder="مثال: 150"
               />
               <p className="text-xs mt-1" style={{ color: C.muted }}>
-                {previewData?.is_fully_waived ? 'المعلوم معفى كلياً ولا يمكن تغيير المبلغ' : 'المجموع الشهري يحسب آلياً بناء على التخفيضات والصافي'}
+                {previewData?.is_fully_waived ? 'التلميذ معفى كلياً لهذا الشهر ولا يتوجب دفع معلوم' : 'المبلغ الصافي المطلوب للشهر المحدد بعد تطبيق التخفيضات'}
               </p>
             </div>
-
 
             <div className="bg-white rounded-2xl border p-4" style={{ borderColor: C.line }}>
               <div className="font-semibold mb-2" style={{ color: C.ink }}>الأشهر</div>
@@ -534,16 +603,18 @@ export function CollectionPage() {
                 <div className="flex flex-wrap gap-2">
                   {yearMonths.map((m) => {
                     const paid = paidMonths.includes(m);
-                    const active = selectedMonths.includes(m);
+                    const sel = selectedMonths.includes(m);
                     return (
                       <button key={m} type="button" disabled={paid} onClick={() => toggleMonth(m)}
-                        className="px-3 py-2 rounded-xl text-xs border"
+                        className={`px-3 py-2 rounded-xl text-sm font-semibold border transition ${
+                          paid ? 'opacity-40 cursor-not-allowed' : ''
+                        }`}
                         style={{
-                          background: paid ? '#DCFCE7' : active ? C.forest : 'white',
-                          color: paid ? '#15803D' : active ? 'white' : C.ink,
-                          borderColor: C.line,
+                          background: sel ? C.forest : paid ? '#E7E5E4' : 'white',
+                          color: sel ? 'white' : paid ? '#78716C' : C.ink,
+                          borderColor: sel ? C.forest : C.line,
                         }}>
-                        {monthLabel(m)}{paid ? ' ✓' : ''}
+                        {monthLabel(m)} {paid && '✓ خالص'}
                       </button>
                     );
                   })}
@@ -551,29 +622,58 @@ export function CollectionPage() {
               )}
             </div>
 
+            {manualDebtAlert && manualDebtAlert.items.length > 0 && (
+              <div className="rounded-2xl border p-4 mb-4" style={{ borderColor: '#FDE68A', backgroundColor: '#FFFBEB' }}>
+                <div className="flex items-start gap-2 mb-2">
+                  <AlertCircle size={18} style={{ color: '#B45309', marginTop: 2 }} />
+                  <div className="flex-1">
+                    <div className="font-semibold" style={{ color: '#92400E' }}>
+                      تنبيه: لدى التلميذ ديون قديمة مدخلة يدوياً — الإجمالي المتبقي:{' '}
+                      <span dir="ltr">{Number(manualDebtAlert.total).toFixed(2)} د.ت</span>
+                    </div>
+                    <ul className="text-xs mt-1 space-y-0.5" style={{ color: '#92400E' }}>
+                      {manualDebtAlert.items.map((d) => (
+                        <li key={d.id}>• {d.description} — المتبقي {Number(d.outstanding).toFixed(2)} د.ت</li>
+                      ))}
+                    </ul>
+                    <p className="text-xs mt-1" style={{ color: C.muted }}>
+                      هذه الديون تُحصَّل من شاشة الاستخلاص القديم ولا تُضاف تلقائياً إلى الخلاص الحالي.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => navigate('/old-debt-collect?student_id=' + (picked?.student?.id ?? ''))}
+                    className="no-print px-3 py-1.5 rounded-lg text-xs font-medium text-white"
+                    style={{ backgroundColor: '#92400E' }}
+                  >
+                    فتح استخلاص الدين القديم
+                  </button>
+                </div>
+              </div>
+            )}
             {priorItems.length > 0 && (
               <div className="bg-white rounded-2xl border p-4" style={{ borderColor: '#E7E5E4' }}>
-                <div className="font-semibold mb-1" style={{ color: '#57534E' }}>متخلّدات السنوات السابقة (رصيد افتتاحي)</div>
+                <div className="font-semibold mb-1" style={{ color: '#57534E' }}>المتخلدات والديون السابقة (الأرصدة الافتتاحية)</div>
                 <p className="text-xs mb-2" style={{ color: C.muted }}>
-                  قبض هذه المتخلّدات يزيد الصندوق لكنه لا يُحتسب مدخولاً للسنة الحالية — يمكنك تعديل المبالغ قبل الحفظ.
+                  ديون مرحلة من سنوات سابقة موثقة في الدفاتر المالية القديمة، يرجى تحديد المبلغ المستخلص منها.
                 </p>
                 <div className="space-y-2">
-                  {priorItems.map((it) => (
-                    <label key={it.student_fee_id} className="flex items-center gap-3 p-2 rounded-xl border" style={{ borderColor: '#EDE9E9' }}>
+                  {priorItems.map((it: any) => (
+                    <label key={it.student_fee_id} className="flex items-center gap-3 p-2 rounded-xl border" style={{ borderColor: '#F5F5F4' }}>
                       <input
                         type="checkbox"
                         checked={!!priorSelections[it.student_fee_id]}
                         onChange={(e) => setPriorSelections((p) => ({ ...p, [it.student_fee_id]: e.target.checked }))}
                       />
-                      <span className="flex-1 text-sm" style={{ color: '#44403C' }}>
+                      <span className="flex-1 text-sm font-medium" style={{ color: '#292524' }}>
                         {it.description}
-                        <span className="mr-2 text-xs" style={{ color: '#A8A29E' }}>(متبقّي: {Number(it.outstanding ?? 0).toFixed(2)} د.ت)</span>
+                        <span className="mr-2 text-xs" style={{ color: '#A8A29E' }}>(المتبقي: {Number(it.outstanding ?? 0).toFixed(2)} د.ت)</span>
                       </span>
                       <input
                         type="number"
                         min="0"
-                        step="0.01"
                         max={Number(it.outstanding ?? 0)}
+                        step="0.01"
                         value={priorAmounts[it.student_fee_id] || ''}
                         onChange={(e) => setPriorAmounts((p) => ({ ...p, [it.student_fee_id]: e.target.value }))}
                         className="w-24 border rounded-lg px-2 py-1 text-sm"
@@ -585,8 +685,24 @@ export function CollectionPage() {
               </div>
             )}
 
+            {previewData?.club_items && previewData.club_items.length > 0 && (
+              <div className="bg-white rounded-2xl border p-4" style={{ borderColor: '#D9E6D1' }}>
+                <div className="font-semibold mb-1" style={{ color: C.forest }}>معاليم النوادي الشهرية المستحقة</div>
+                <p className="text-xs mb-2" style={{ color: C.muted }}>النوادي المشترك بها التلميذ للشهر المحدد، حدد معاليم النوادي المراد دفعها.</p>
+                <div className="space-y-2">
+                  {previewData.club_items.map((item) => (
+                    <label key={item.club_monthly_fee_id} className="flex items-center gap-3 p-2 rounded-xl border" style={{ borderColor: C.line }}>
+                      <input type="checkbox" checked={!!selectedClubFees[item.club_monthly_fee_id]} onChange={(e) => setSelectedClubFees((p) => ({ ...p, [item.club_monthly_fee_id]: e.target.checked }))} />
+                      <span className="flex-1 text-sm" style={{ color: C.ink }}>{item.club_name} — {monthLabel(item.month)}<span className="mr-2 text-xs" style={{ color: C.muted }}>(المتبقي: {Number(item.remaining_amount).toFixed(2)} د.ت)</span></span>
+                      <input type="number" min="0" max={item.remaining_amount} step="0.01" value={clubAmounts[item.club_monthly_fee_id] || ''} onChange={(e) => setClubAmounts((p) => ({ ...p, [item.club_monthly_fee_id]: e.target.value }))} className="w-24 border rounded-lg px-2 py-1 text-sm" style={{ borderColor: C.line, direction: 'ltr' }} />
+                    </label>
+                  ))}
+                </div>
+              </div>
+            )}
+
             <div className="bg-white rounded-2xl border p-4" style={{ borderColor: C.line }}>
-              <div className="font-semibold mb-2" style={{ color: C.ink }}>المعاليم / النوادي</div>
+              <div className="font-semibold mb-2" style={{ color: C.ink }}>الخدمات واللوازم / أخرى</div>
               <div className="space-y-2">
                 {feeTypes.map((f) => (
                   <label key={f.id} className="flex items-center gap-3 p-2 rounded-xl border" style={{ borderColor: C.line }}>
@@ -616,26 +732,26 @@ export function CollectionPage() {
                   ))}
                 </div>
               </div>
-              <input value={reference} onChange={(e) => setReference(e.target.value)} placeholder="مرجع / شيك"
+              <input value={reference} onChange={(e) => setReference(e.target.value)} placeholder="المرجع / رقم الشيك"
                 className="border rounded-xl px-3 py-2 text-sm" style={{ borderColor: C.line }} />
-              <input value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="ملاحظات"
+              <input value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="ملاحظات إضافية"
                 className="border rounded-xl px-3 py-2 text-sm" style={{ borderColor: C.line }} />
             </div>
 
             {ledgerRows.length > 0 && (
               <div className="bg-white rounded-2xl border p-4" style={{ borderColor: C.line }}>
-                <div className="font-semibold mb-3" style={{ color: C.ink }}>سجل المدفوعات (مسجّل في النظام)</div>
+                <div className="font-semibold mb-3" style={{ color: C.ink }}>سجل المقابيض (المسجلة في الدفتر)</div>
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
                     <thead>
                       <tr style={{ color: C.muted, textAlign: 'right' }}>
                         <th className="py-2">#</th>
                         <th>التاريخ</th>
-                        <th>الأشهر</th>
+                        <th>الشهر</th>
                         <th>المبلغ</th>
                         <th>الطريقة</th>
-                        <th>المستخدم</th>
-                        <th></th>
+                        <th>المستخلص</th>
+                        <th>إجراءات</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -648,12 +764,21 @@ export function CollectionPage() {
                           <td>{METHOD_LABELS[r.method] || r.method}</td>
                           <td>{r.created_by || r.user_name || '—'}</td>
                           <td>
-                            <button
-                              type="button"
-                              className="text-xs px-2 py-1 rounded-lg text-white"
-                              style={{ background: '#DC2626' }}
-                              onClick={() => handleCancelPayment(r.payment_id)}
-                            >إلغاء</button>
+                            <div className="flex gap-1">
+                              <button
+                                type="button"
+                                className="p-1.5 rounded-lg border hover:bg-slate-50"
+                                style={{ borderColor: '#EDF1E8', color: C.forest }}
+                                onClick={() => handleReprintFromHistory(r.payment_id)}
+                                title="طباعة"
+                              ><Printer size={14} /></button>
+                              <button
+                                type="button"
+                                className="text-xs px-2 py-1 rounded-lg text-white"
+                                style={{ background: '#DC2626' }}
+                                onClick={() => handleCancelPayment(r.payment_id)}
+                              >إلغاء</button>
+                            </div>
                           </td>
                         </tr>
                       ))}
@@ -667,18 +792,20 @@ export function CollectionPage() {
               <div>
                 <div className="text-xs" style={{ color: C.muted }}>المجموع</div>
                 <div className="text-2xl font-extrabold" style={{ color: C.forest }}>{total.toFixed(2)} د.ت</div>
+                {clubTotal > 0 && (
+                  <div className="text-xs mt-1" style={{ color: C.forest }}>منها معاليم نوادي: {clubTotal.toFixed(2)} د.ت</div>
+                )}
                 {priorTotal > 0 && (
                   <div className="text-xs mt-1" style={{ color: '#A16207' }}>
-                    منها قبض دَين سابق (ليس مدخولاً جديداً): {priorTotal.toFixed(2)} د.ت
+                    منها سداد ديون سابقة (الأرصدة الافتتاحية): {priorTotal.toFixed(2)} د.ت
                   </div>
                 )}
               </div>
-              <button type="button" onClick={handleSave} disabled={saving || total <= 0 || Boolean(previewData?.is_fully_waived)}
+              <button type="button" onClick={handleSave} disabled={saving || total <= 0 || blockedByFullWaiver}
                 className="px-6 py-3 rounded-2xl text-white font-bold transition disabled:opacity-50"
-                style={{ background: saving || total <= 0 || Boolean(previewData?.is_fully_waived) ? C.muted : C.forest }}>
-                {saving ? 'جاري الحفظ...' : previewData?.is_fully_waived ? 'معفى كلياً — لا يمكن القبض' : 'حفظ'}
+                style={{ background: saving || total <= 0 || blockedByFullWaiver ? C.muted : C.forest }}>
+                {saving ? 'جارٍ الحفظ...' : blockedByFullWaiver ? 'معفى كلياً — لا يوجد مبلغ للدفع' : 'استخلاص'}
               </button>
-
             </div>
           </>
         )}
@@ -692,7 +819,6 @@ export function CollectionPage() {
           onDelete={handleDelete}
         />
       )}
-
     </div>
   );
 }
