@@ -112,6 +112,7 @@ Route::middleware(['auth:sanctum', 'active', 'throttle:120,1'])->group(function 
         Route::post('/employee-liabilities', [EmployeeLiabilityController::class, 'store']);
         Route::post('/employee-liabilities/bulk', [EmployeeLiabilityController::class, 'bulkStore']);
         Route::get('/employee-liabilities/{liability}', [EmployeeLiabilityController::class, 'show']);
+        Route::put('/employee-liabilities/{liability}', [EmployeeLiabilityController::class, 'update']);
         Route::post('/employee-liabilities/{liability}/collect', [EmployeeLiabilityController::class, 'collect']);
         Route::post('/employee-liabilities/{liability}/pay', [EmployeeLiabilityController::class, 'pay']);
         Route::post('/employee-liabilities/{liability}/cancel', [EmployeeLiabilityController::class, 'cancel']);

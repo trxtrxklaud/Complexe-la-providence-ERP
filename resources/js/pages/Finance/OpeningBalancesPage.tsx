@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Ban, BookOpenCheck, Briefcase, Layers, Plus, Printer, Save, Wallet } from 'lucide-react';
+import { Ban, BookOpenCheck, Briefcase, Layers, Pencil, Plus, Printer, Save, Wallet } from 'lucide-react';
 import { PageShell } from '../../components/PageShell';
 import { CancelReasonModal } from '../../components/CancelReasonModal';
 import { fetchYears, type AcademicYear } from '../../api/roster';
@@ -22,6 +22,7 @@ import {
   fetchSectionStudents,
   liabilityTypesForStaff,
   payEmployeeLiability,
+  updateEmployeeLiability,
   type BulkOptions,
   type EmployeeLiability,
   type ManualDebt,
@@ -83,6 +84,14 @@ export function OpeningBalancesPage() {
   const [cancelDebtTarget, setCancelDebtTarget] = useState<ManualDebt | null>(null);
   const [cancelLiabilityTarget, setCancelLiabilityTarget] = useState<EmployeeLiability | null>(null);
   const [payTarget, setPayTarget] = useState<EmployeeLiability | null>(null);
+  const [editLiabilityTarget, setEditLiabilityTarget] = useState<EmployeeLiability | null>(null);
+  const [editForm, setEditForm] = useState<{ original_amount: string; liability_type: string; description: string; notes: string }>({
+    original_amount: '',
+    liability_type: 'debt',
+    description: '',
+    notes: '',
+  });
+  const [editBusy, setEditBusy] = useState(false);
   const [cancelBusy, setCancelBusy] = useState(false);
   const [payBusy, setPayBusy] = useState(false);
 
@@ -393,6 +402,42 @@ export function OpeningBalancesPage() {
       setError(errorMessage(err));
     } finally {
       setSavingLiability(false);
+    }
+  };
+
+  const openEditLiability = (liability: EmployeeLiability) => {
+    setEditLiabilityTarget(liability);
+    setEditForm({
+      original_amount: String(liability.original_amount ?? ''),
+      liability_type: liability.liability_type,
+      description: liability.description ?? '',
+      notes: liability.notes ?? '',
+    });
+  };
+
+  const handleSaveEditLiability = async () => {
+    if (!editLiabilityTarget) return;
+    const hasPayments = Number(editLiabilityTarget.paid_amount ?? 0) > 0;
+    const payload = hasPayments
+      ? { notes: editForm.notes.trim() || null }
+      : {
+          original_amount: Number(editForm.original_amount),
+          liability_type: editForm.liability_type,
+          description: editForm.description.trim() || undefined,
+          notes: editForm.notes.trim() || null,
+        };
+
+    setEditBusy(true);
+    setError('');
+    try {
+      await updateEmployeeLiability(editLiabilityTarget.id, payload);
+      flash('تمّ تعديل التزام الإطار بنجاح');
+      setEditLiabilityTarget(null);
+      await reloadLiabilities();
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setEditBusy(false);
     }
   };
 
@@ -1037,15 +1082,26 @@ export function OpeningBalancesPage() {
                               </td>
                               <td className="no-print px-3 py-2.5">
                                 <div className="flex items-center gap-1.5">
+                                  {!cancelled ? (
+                                    <button type="button" onClick={() => openEditLiability(liability)} title="تعديل التزام الإطار" className="p-1.5 rounded-lg bg-gray-50 hover:bg-gray-100">
+                                      <Pencil size={14} color={C.forest} />
+                                    </button>
+                                  ) : null}
                                   {!cancelled && outstanding > 0 ? (
                                     <button type="button" onClick={() => openPay(liability)} title={liability.liability_type === 'debt' ? 'تحصيل الدين' : 'خلاص المستحق'} className="px-2.5 py-1.5 rounded-lg text-xs font-medium text-white" style={{ backgroundColor: C.forest }}>
                                       {liability.liability_type === 'debt' ? 'تحصيل الدين' : 'خلاص المستحق'}
                                     </button>
                                   ) : null}
-                                  {!cancelled && Number(liability.paid_amount ?? 0) === 0 ? (
-                                    <button type="button" onClick={() => setCancelLiabilityTarget(liability)} title="إلغاء دَين الإطار" className="p-1.5 rounded-lg bg-gray-50">
-                                      <Ban size={14} color={C.error} />
-                                    </button>
+                                  {!cancelled ? (
+                                    Number(liability.paid_amount ?? 0) === 0 ? (
+                                      <button type="button" onClick={() => setCancelLiabilityTarget(liability)} title="إلغاء دَين الإطار" className="p-1.5 rounded-lg bg-gray-50 hover:bg-gray-100">
+                                        <Ban size={14} color={C.error} />
+                                      </button>
+                                    ) : (
+                                      <button type="button" disabled title="لا يمكن إلغاء التزام مرتبط بدفعات خلاص/تحصيل" className="p-1.5 rounded-lg bg-gray-50 opacity-40 cursor-not-allowed">
+                                        <Ban size={14} color={C.muted} />
+                                      </button>
+                                    )
                                   ) : null}
                                 </div>
                               </td>
@@ -1172,25 +1228,34 @@ export function OpeningBalancesPage() {
                             const existing = bulkExistingLiabilities.get(emp.id) ?? null;
                             const row = bulkEmployeeRows[emp.id] ?? { checked: false, liabilityType: liabilityTypesForStaff(emp.staff_type)[0] ?? 'debt', amount: '', notes: '' };
                             const paidVal = Number(existing?.paid_amount ?? 0);
-                            const disabled = paidVal > 0;
+                            const hasPayments = paidVal > 0;
                             const outstanding = existing ? Math.max(0, Number(existing.original_amount) - paidVal) : 0;
                             const allowed = liabilityTypesForStaff(emp.staff_type);
                             return (
-                              <tr key={emp.id} style={{ borderTop: '1px solid ' + C.line, opacity: disabled ? 0.55 : 1 }}>
-                                <td className="px-3 py-2.5"><input type="checkbox" checked={row.checked} disabled={disabled} onChange={(e) => setBulkEmployeeRows((prev) => ({ ...prev, [emp.id]: { ...row, checked: e.target.checked } }))} /></td>
+                              <tr key={emp.id} style={{ borderTop: '1px solid ' + C.line, opacity: hasPayments ? 0.75 : 1 }}>
+                                <td className="px-3 py-2.5"><input type="checkbox" checked={row.checked} disabled={hasPayments} onChange={(e) => setBulkEmployeeRows((prev) => ({ ...prev, [emp.id]: { ...row, checked: e.target.checked } }))} /></td>
                                 <td className="px-3 py-2.5" style={{ color: C.ink }}>{emp.first_name} {emp.last_name}</td>
                                 <td className="px-3 py-2.5 text-xs" style={{ color: C.muted }}>{emp.job_title ?? '—'}</td>
                                 <td className="px-3 py-2.5">
-                                  <select value={row.liabilityType} disabled={disabled} onChange={(e) => setBulkEmployeeRows((prev) => ({ ...prev, [emp.id]: { ...row, liabilityType: e.target.value } }))} className="text-xs rounded-lg px-2 py-1.5" style={{ ...fieldStyle, opacity: disabled ? 0.6 : 1 }}>
+                                  <select value={row.liabilityType} disabled={hasPayments} onChange={(e) => setBulkEmployeeRows((prev) => ({ ...prev, [emp.id]: { ...row, liabilityType: e.target.value } }))} className="text-xs rounded-lg px-2 py-1.5" style={{ ...fieldStyle, opacity: hasPayments ? 0.6 : 1 }}>
                                     {allowed.map((v) => <option key={v} value={v}>{LIABILITY_TYPE_LABELS[v] ?? v}</option>)}
                                   </select>
                                 </td>
-                                <td className="px-3 py-2.5"><input type="number" min="0" step="0.01" value={row.amount} disabled={disabled || !row.checked} onChange={(e) => setBulkEmployeeRows((prev) => ({ ...prev, [emp.id]: { ...row, amount: e.target.value } }))} className="w-24 px-2 py-1.5 rounded-lg text-sm" style={{ ...fieldStyle, direction: 'ltr', opacity: disabled || !row.checked ? 0.6 : 1 }} placeholder="0.00" /></td>
-                                <td className="px-3 py-2.5"><input value={row.notes} disabled={disabled} onChange={(e) => setBulkEmployeeRows((prev) => ({ ...prev, [emp.id]: { ...row, notes: e.target.value } }))} className="w-28 px-2 py-1.5 rounded-lg text-xs" style={{ ...fieldStyle, opacity: disabled ? 0.6 : 1 }} /></td>
+                                <td className="px-3 py-2.5"><input type="number" min="0" step="0.01" value={row.amount} readOnly={hasPayments} disabled={!row.checked && !hasPayments} onChange={(e) => setBulkEmployeeRows((prev) => ({ ...prev, [emp.id]: { ...row, amount: e.target.value } }))} className="w-24 px-2 py-1.5 rounded-lg text-sm" style={{ ...fieldStyle, direction: 'ltr', opacity: !row.checked && !hasPayments ? 0.6 : 1 }} placeholder="0.00" /></td>
+                                <td className="px-3 py-2.5">
+                                  <input
+                                    value={row.notes}
+                                    disabled={hasPayments}
+                                    title={hasPayments ? 'لتعديل الملاحظات بعد التحصيل، استخدم زر القلم في جدول الالتزامات.' : undefined}
+                                    onChange={(e) => setBulkEmployeeRows((prev) => ({ ...prev, [emp.id]: { ...row, notes: e.target.value } }))}
+                                    className="w-28 px-2 py-1.5 rounded-lg text-xs"
+                                    style={{ ...fieldStyle, opacity: hasPayments ? 0.6 : 1 }}
+                                  />
+                                </td>
                                 <td className="px-3 py-2.5" style={{ color: C.ink, direction: 'ltr', textAlign: 'right' }}>{existing ? money(existing.original_amount) : '—'}</td>
                                 <td className="px-3 py-2.5" style={{ color: C.muted, direction: 'ltr', textAlign: 'right' }}>{existing ? money(paidVal) : '—'}</td>
                                 <td className="px-3 py-2.5" style={{ color: C.forest, direction: 'ltr', textAlign: 'right' }}>{existing ? money(outstanding) : '—'}</td>
-                                <td className="px-3 py-2.5 text-xs" style={{ color: C.muted }}>{existing ? (paidVal > 0 ? (outstanding === 0 ? 'مدفوع' : 'جزئي') : 'قائم') : '—'}</td>
+                                <td className="px-3 py-2.5 text-xs" style={{ color: C.muted }}>{existing ? (paidVal > 0 ? (outstanding === 0 ? 'خالص (تعديل بالنافذة)' : 'محصل جزئياً (تعديل بالنافذة)') : 'قائم') : '—'}</td>
                               </tr>
                             );
                           })}
@@ -1278,6 +1343,96 @@ export function OpeningBalancesPage() {
               </button>
               <button type="button" onClick={() => setPayTarget(null)} className="px-5 py-2.5 rounded-xl text-sm" style={{ border: '1px solid ' + C.line, color: C.muted }}>
                 رجوع
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {editLiabilityTarget ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ backgroundColor: 'rgba(31,38,28,0.45)' }}>
+          <div className="bg-white rounded-2xl w-full max-w-md p-6" dir="rtl">
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <Pencil size={18} color={C.forest} />
+                <h3 className="font-bold" style={{ color: C.ink }}>تعديل التزام الإطار</h3>
+              </div>
+              <button onClick={() => setEditLiabilityTarget(null)} type="button" className="text-sm" style={{ color: C.muted }}>إغلاق</button>
+            </div>
+            <p className="text-sm mb-4" style={{ color: C.muted }}>
+              {personLabel(editLiabilityTarget.employee)}
+              {Number(editLiabilityTarget.paid_amount ?? 0) > 0 && (
+                <span className="block mt-2 text-xs text-amber-800 bg-amber-50 p-2.5 rounded-xl border border-amber-200">
+                  هذا الالتزام محصّل جزئياً أو كلياً ({money(editLiabilityTarget.paid_amount)} د.ت)؛ يُسمح بتعديل الملاحظات فقط للحفاظ على سلامة القيود المحاسبية.
+                </span>
+              )}
+            </p>
+            <div className="space-y-3">
+              <div>
+                <label className="block text-xs mb-1.5" style={{ color: C.muted }}>نوع الالتزام</label>
+                <select
+                  value={editForm.liability_type}
+                  disabled={Number(editLiabilityTarget.paid_amount ?? 0) > 0}
+                  onChange={(e) => setEditForm((prev) => ({ ...prev, liability_type: e.target.value }))}
+                  className={fieldCls}
+                  style={{ ...fieldStyle, opacity: Number(editLiabilityTarget.paid_amount ?? 0) > 0 ? 0.6 : 1 }}
+                >
+                  {liabilityTypesForStaff(editLiabilityTarget.employee?.staff_type).map((v) => (
+                    <option key={v} value={v}>{LIABILITY_TYPE_LABELS[v] ?? v}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs mb-1.5" style={{ color: C.muted }}>الوصف</label>
+                <input
+                  value={editForm.description}
+                  readOnly={Number(editLiabilityTarget.paid_amount ?? 0) > 0}
+                  onChange={(e) => setEditForm((prev) => ({ ...prev, description: e.target.value }))}
+                  className={fieldCls}
+                  style={{ ...fieldStyle, opacity: Number(editLiabilityTarget.paid_amount ?? 0) > 0 ? 0.6 : 1 }}
+                />
+              </div>
+              <div>
+                <label className="block text-xs mb-1.5" style={{ color: C.muted }}>المبلغ الأصلي (د.ت)</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0.01"
+                  value={editForm.original_amount}
+                  readOnly={Number(editLiabilityTarget.paid_amount ?? 0) > 0}
+                  onChange={(e) => setEditForm((prev) => ({ ...prev, original_amount: e.target.value }))}
+                  className={fieldCls}
+                  style={{ ...fieldStyle, direction: 'ltr', opacity: Number(editLiabilityTarget.paid_amount ?? 0) > 0 ? 0.6 : 1 }}
+                />
+              </div>
+              <div>
+                <label className="block text-xs mb-1.5" style={{ color: C.muted }}>الملاحظات</label>
+                <textarea
+                  value={editForm.notes}
+                  onChange={(e) => setEditForm((prev) => ({ ...prev, notes: e.target.value }))}
+                  className={fieldCls}
+                  style={fieldStyle}
+                  rows={3}
+                />
+              </div>
+            </div>
+            <div className="flex items-center justify-end gap-3 mt-6">
+              <button
+                type="button"
+                onClick={() => setEditLiabilityTarget(null)}
+                className="px-4 py-2 rounded-xl text-sm"
+                style={{ border: '1px solid ' + C.line, color: C.muted }}
+              >
+                إلغاء
+              </button>
+              <button
+                type="button"
+                disabled={editBusy}
+                onClick={() => void handleSaveEditLiability()}
+                className="px-5 py-2 rounded-xl text-white text-sm font-medium disabled:opacity-50"
+                style={{ backgroundColor: C.forest }}
+              >
+                {editBusy ? 'جارٍ الحفظ…' : 'حفظ التعديلات'}
               </button>
             </div>
           </div>
