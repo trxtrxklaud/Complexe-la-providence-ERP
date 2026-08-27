@@ -580,4 +580,80 @@ class ClubFeesTest extends TestCase
         $this->assertCount(1, $previewBAfter['club_items']);
         $this->assertEquals(45.00, $previewBAfter['club_items'][0]['amount_due']);
     }
+
+    /** 24. تعديل معلوم النادي يحدّث فوراً كافة السجلات غير الخالصة في كشف معلوم النوادي ويحمي السجلات المسددة والمخصصة. */
+    public function test_updating_club_monthly_fee_syncs_all_unpaid_months_in_report(): void
+    {
+        $year = $this->makeAcademicYear();
+        $enrollment1 = $this->makeEnrollment($year);
+        $enrollment2 = $this->makeEnrollment($year);
+        $enrollment3 = $this->makeEnrollment($year);
+
+        $club = $this->clubService->createClub([
+            'name' => 'نادي الروبوتيك المطور',
+            'monthly_fee' => 10.00,
+            'is_active' => true,
+        ], [], [$enrollment1->section_id, $enrollment2->section_id, $enrollment3->section_id]);
+
+        // اشتراك تلميذ 3 بسعر خاص مخصص (15 د.ت)
+        $this->clubService->subscribeStudent(
+            $enrollment3->student_id,
+            $club->id,
+            $year->id,
+            null,
+            15.00,
+            $enrollment3->id
+        );
+
+        // توليد معاليم لأشهر متعددة
+        $this->clubService->generateMonthFees($year->id, '2025-09', $club->id);
+        $this->clubService->generateMonthFees($year->id, '2025-10', $club->id);
+
+        // سداد جزئي للتلميذ 2 في شهر 2025-09
+        $feeToPay = ClubMonthlyFee::where('student_id', $enrollment2->student_id)
+            ->where('club_id', $club->id)
+            ->where('month', '2025-09')
+            ->firstOrFail();
+        $feeToPay->update(['amount_paid' => 10.00, 'status' => ClubMonthlyFee::STATUS_PAID]);
+
+        // تعديل معلوم النادي من 10 إلى 30 د.ت
+        $this->clubService->updateClub($club, [
+            'name' => 'نادي الروبوتيك المطور',
+            'monthly_fee' => 30.00,
+            'is_active' => true,
+        ]);
+
+        // 1. فحص تقرير معلوم النوادي لشهر 2025-09
+        $reportSep = $this->clubService->getReport([
+            'month' => '2025-09',
+            'academic_year_id' => $year->id,
+            'club_id' => $club->id,
+        ]);
+        $record1Sep = collect($reportSep['records'])->firstWhere('student_id', $enrollment1->student_id);
+        $record2Sep = collect($reportSep['records'])->firstWhere('student_id', $enrollment2->student_id);
+        $record3Sep = collect($reportSep['records'])->firstWhere('student_id', $enrollment3->student_id);
+
+        // تلميذ 1 غير خالص -> أصبح 30 د.ت
+        $this->assertEquals(30.00, $record1Sep['amount_due']);
+        $this->assertEquals(30.00, $record1Sep['remaining']);
+
+        // تلميذ 2 خالص -> بقي 10 د.ت دون مساس
+        $this->assertEquals(10.00, $record2Sep['amount_due']);
+        $this->assertEquals(10.00, $record2Sep['amount_paid']);
+
+        // تلميذ 3 صاحب السعر الخاص -> بقي 15 د.ت دون مساس
+        $this->assertEquals(15.00, $record3Sep['amount_due']);
+
+        // 2. فحص تقرير معلوم النوادي لشهر 2025-10
+        $reportOct = $this->clubService->getReport([
+            'month' => '2025-10',
+            'academic_year_id' => $year->id,
+            'club_id' => $club->id,
+        ]);
+        $record1Oct = collect($reportOct['records'])->firstWhere('student_id', $enrollment1->student_id);
+        $record2Oct = collect($reportOct['records'])->firstWhere('student_id', $enrollment2->student_id);
+
+        $this->assertEquals(30.00, $record1Oct['amount_due']);
+        $this->assertEquals(30.00, $record2Oct['amount_due']);
+    }
 }

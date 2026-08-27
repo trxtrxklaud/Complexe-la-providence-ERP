@@ -74,7 +74,7 @@ class ClubService
             }
 
             $this->syncFeeTypePrice($club);
-            $count = $this->syncUnpaidCurrentMonthFees($club);
+            $count = $this->syncUnpaidFeesForClub($club);
 
             $fresh = $club->fresh(['levels', 'sections']);
             $fresh->setAttribute('updated_unpaid_count', $count);
@@ -131,35 +131,41 @@ class ClubService
     }
 
     /**
-     * مزامنة مبلغ معلوم النادي في السجلات الشهرية الحالية غير المدفوعة للشهر الحالي.
-     * تحمي السجلات المدفوعة بالكامل أو جزئياً، والأشهر السابقة المغلقة، والحركات المطبقة في الخزينة.
+     * مزامنة مبلغ معلوم النادي في كافة السجلات الشهرية غير المدفوعة للسنة الدراسية النشطة.
+     * تحمي السجلات المدفوعة بالكامل أو جزئياً، والاشتراكات ذات الأسعار المخصصة (override)،
+     * والسنوات السابقة أو المقفلة، والسجلات ذات الحركات المالية النشطة في الخزينة.
      */
-    private function syncUnpaidCurrentMonthFees(Club $club): int
+    public function syncUnpaidFeesForClub(Club $club): int
     {
-        $activeYearId = AcademicYear::where('is_active', true)->value('id');
+        $activeYearId = AcademicYear::where('is_active', true)->whereNull('closed_at')->value('id');
         if (! $activeYearId) {
             return 0;
         }
 
-        $currentMonth = now()->format('Y-m');
-
         $fees = ClubMonthlyFee::where('club_id', $club->id)
             ->where('academic_year_id', $activeYearId)
-            ->where('month', $currentMonth)
             ->where('status', ClubMonthlyFee::STATUS_UNPAID)
             ->where(function ($q) {
                 $q->whereNull('amount_paid')->orWhere('amount_paid', '<=', 0);
             })
             ->whereNull('cancelled_at')
+            ->whereDoesntHave('subscription', function ($subQ) {
+                $subQ->whereNotNull('monthly_fee_override');
+            })
+            ->whereDoesntHave('studentFee.paymentAllocations', function ($allocQ) {
+                $allocQ->whereHas('payment', fn ($p) => $p->whereNull('cancelled_at'));
+            })
             ->get();
 
+        $newPrice = number_format((float) $club->monthly_fee, 2, '.', '');
         $count = 0;
+
         foreach ($fees as $fee) {
-            $fee->update(['amount_due' => number_format((float) $club->monthly_fee, 2, '.', '')]);
+            $fee->update(['amount_due' => $newPrice]);
             $studentFee = $fee->studentFee()->first();
-            if ($studentFee && (float) $studentFee->direct_paid_amount <= 0 && (float) $fee->amount_paid <= 0) {
+            if ($studentFee && (float) $studentFee->direct_paid_amount <= 0) {
                 $studentFee->update([
-                    'amount_due' => number_format((float) $club->monthly_fee, 2, '.', ''),
+                    'amount_due' => $newPrice,
                     'status' => 'pending',
                 ]);
             }
