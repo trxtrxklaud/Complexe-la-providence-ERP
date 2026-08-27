@@ -12,12 +12,14 @@ class AcademicYear extends Model
         'start_date',
         'end_date',
         'is_active',
+        'closed_at',
     ];
 
     protected $casts = [
         'start_date' => 'date',
         'end_date' => 'date',
         'is_active' => 'boolean',
+        'closed_at' => 'datetime',
     ];
 
     public function enrollments(): HasMany
@@ -33,5 +35,16 @@ class AcademicYear extends Model
     public function clubSubscriptions(): HasMany
     {
         return $this->hasMany(ClubSubscription::class);
+    }
+
+    /** الأرصدة الافتتاحية المنقولة إلى هذه السنة. */
+    public function openingBalances(): HasMany
+    {
+        return $this->hasMany(OpeningBalance::class);
+    }
+
+    public function isClosed(): bool
+    {
+        return $this->closed_at !== null;
     }
 }

@@ -6,6 +6,12 @@ export interface LevelInfo {
   code: string;
 }
 
+export interface SectionInfo {
+  id: number;
+  name: string;
+  level_id: number;
+}
+
 export interface ClubItem {
   id: number;
   name: string;
@@ -14,6 +20,7 @@ export interface ClubItem {
   monthly_fee: number | string;
   is_active: boolean;
   levels?: LevelInfo[];
+  sections?: SectionInfo[];
 }
 
 export interface ClubSubscriptionItem {
@@ -77,6 +84,63 @@ export interface ClubReportData {
   records: ClubReportRecord[];
 }
 
+export interface ClubArrearsDetail {
+  id: number;
+  month: string;
+  student_id: number;
+  student_name: string;
+  student_code: string;
+  guardian_phone?: string | null;
+  level_name: string;
+  section_id: number | null;
+  section_name: string;
+  club_id: number;
+  club_name: string;
+  amount_due: number;
+  amount_paid: number;
+  remaining: number;
+  status: string;
+}
+
+export interface ClubArrearsStudent {
+  student_id: number;
+  student_name: string;
+  student_code: string;
+  guardian_phone?: string | null;
+  level_name: string;
+  section_id: number | null;
+  section_name: string;
+  clubs_count: number;
+  months_count: number;
+  total_remaining: number;
+  details: ClubArrearsDetail[];
+}
+
+export interface ClubArrearsSection {
+  section_id: number | null;
+  section_name: string;
+  students_count: number;
+  clubs_count: number;
+  fees_count: number;
+  total_remaining: number;
+  students: ClubArrearsStudent[];
+}
+
+export interface ClubArrearsDashboardData {
+  academic_year_id: number;
+  summary: {
+    sections_count: number;
+    students_count: number;
+    clubs_count: number;
+    fees_count: number;
+    total_due: number;
+    total_paid: number;
+    total_remaining: number;
+  };
+  sections: ClubArrearsSection[];
+  students: ClubArrearsStudent[];
+}
+
 export function fetchClubs(params?: { active_only?: boolean }): Promise<ClubItem[]> {
   return apiFetch<ClubItem[]>('/clubs', { params });
 }
@@ -87,6 +151,7 @@ export function createClub(data: {
   monthly_fee: number;
   is_active?: boolean;
   level_ids?: number[];
+  section_ids?: number[];
 }): Promise<ClubItem> {
   return apiFetch<ClubItem>('/clubs', { method: 'POST', body: data });
 }
@@ -99,6 +164,7 @@ export function updateClub(
     monthly_fee?: number;
     is_active?: boolean;
     level_ids?: number[];
+    section_ids?: number[];
   }
 ): Promise<ClubItem> {
   return apiFetch<ClubItem>(`/clubs/${id}`, { method: 'PUT', body: data });
@@ -144,8 +210,22 @@ export function restoreStudentToClub(
   return apiFetch(`/club-subscriptions/${subscriptionId}/restore`, { method: 'POST' });
 }
 
+export function fetchClubArrearsDashboard(params: {
+  academic_year_id?: number;
+  club_id?: number;
+  level_id?: number;
+  section_id?: number;
+  from_month?: string;
+  to_month?: string;
+  search?: string;
+}): Promise<ClubArrearsDashboardData> {
+  return apiFetch<ClubArrearsDashboardData>('/reports/club-arrears', { params });
+}
+
 export function fetchClubFeesReport(params: {
   month?: string;
+  from_month?: string;
+  to_month?: string;
   academic_year_id?: number;
   club_id?: number;
   level_id?: number;
@@ -183,4 +263,10 @@ export function cancelClubFeePayment(
   reason: string
 ): Promise<{ message: string; record: ClubReportRecord }> {
   return apiFetch(`/club-monthly-fees/${monthlyFeeId}/cancel`, { method: 'POST', body: { reason } });
+}
+
+
+export function fetchClubSections(params?: { academic_year_id?: number }): Promise<any[]> {
+  // Using fetch directly or importing from classrooms would be better, but we can do a direct fetch here to resolve the type error.
+  return apiFetch<any[]>('/classrooms/sections', { params });
 }

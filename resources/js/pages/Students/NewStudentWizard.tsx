@@ -130,20 +130,66 @@ export function NewStudentWizard() {
 
   return (
     <div className="p-8 max-w-4xl mx-auto" dir="rtl">
-      <div className="mb-8 flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
-        <div className="flex items-center gap-4">
-          <div className="w-12 h-12 bg-blue-50 text-blue-600 rounded-xl flex items-center justify-center">
-            <UserPlus size={24} strokeWidth={2} />
+      {/* Hero سينمائي كرتوني محاسبي — صبغة مدرسية */}
+      <div className="mb-6 overflow-hidden rounded-3xl border border-slate-200 shadow-sm bg-white">
+        <div className="grid md:grid-cols-5 gap-0">
+          <div className="md:col-span-3 p-7 flex flex-col justify-center">
+            <div className="inline-flex items-center gap-2 text-[11px] font-bold tracking-widest px-3 py-1 rounded-full w-fit" style={{ background: '#E0F0EE', color: '#2a9d8f' }}>
+              Complexe La Providence — التسجيل المدرسي
+            </div>
+            <h1 className="text-2xl md:text-[26px] font-extrabold text-slate-800 mt-3 leading-tight">
+              تسجيل تلميذ جديد
+            </h1>
           </div>
-          <div>
-            <h1 className="text-2xl font-bold text-slate-800">تسجيل تلميذ جديد</h1>
-            <p className="text-slate-500 text-sm mt-1">بيانات التلميذ والولي ومعلوم الترسيم في ثلاث خطوات</p>
+          <div className="md:col-span-2 relative p-4 flex items-center justify-center" style={{ background: 'linear-gradient(135deg, #F4F6F1 0%, #E0F0EE 100%)' }}>
+            <svg viewBox="0 0 320 180" xmlns="http://www.w3.org/2000/svg" className="w-full h-auto max-w-[340px] drop-shadow-sm">
+              <rect width="320" height="180" rx="16" fill="#fff" />
+              <ellipse cx="40" cy="30" rx="22" ry="10" fill="#fff" opacity="0.9" />
+              <ellipse cx="58" cy="28" rx="14" ry="8" fill="#fff" opacity="0.9" />
+              <rect x="90" y="60" width="140" height="80" rx="6" fill="#1a3a5c" stroke="#2a9d8f" strokeWidth="2" />
+              <rect x="95" y="65" width="130" height="12" rx="3" fill="#2a9d8f" />
+              <text x="160" y="74" textAnchor="middle" fontSize="6" fontWeight="800" fill="#fff" fontFamily="Cairo,sans-serif">LA PROVIDENCE</text>
+              <rect x="110" y="80" width="8" height="50" rx="3" fill="#E3EBDB" />
+              <rect x="150" y="80" width="8" height="50" rx="3" fill="#E3EBDB" />
+              <rect x="190" y="80" width="8" height="50" rx="3" fill="#E3EBDB" />
+              <rect x="125" y="88" width="16" height="18" rx="2" fill="#c8a96e" stroke="#fff" strokeWidth="1" />
+              <rect x="168" y="88" width="16" height="18" rx="2" fill="#c8a96e" stroke="#fff" strokeWidth="1" />
+              <rect x="205" y="88" width="16" height="18" rx="2" fill="#c8a96e" stroke="#fff" strokeWidth="1" />
+              <line x1="133" y1="88" x2="133" y2="106" stroke="#fff" strokeWidth="0.8" />
+              <line x1="125" y1="97" x2="141" y2="97" stroke="#fff" strokeWidth="0.8" />
+              <line x1="176" y1="88" x2="176" y2="106" stroke="#fff" strokeWidth="0.8" />
+              <line x1="168" y1="97" x2="184" y2="97" stroke="#fff" strokeWidth="0.8" />
+              <rect x="148" y="112" width="24" height="28" rx="3" fill="#c8a96e" stroke="#fff" strokeWidth="1" />
+              <circle cx="168" cy="126" r="2" fill="#1a3a5c" />
+              <polygon points="160,40 230,60 90,60" fill="#2a9d8f" stroke="#1a3a5c" strokeWidth="1.5" />
+              <rect x="158" y="20" width="3" height="22" fill="#1a3a5c" />
+              <rect x="161" y="22" width="18" height="10" rx="1" fill="#c8a96e" />
+              <rect x="18" y="128" width="48" height="10" rx="2" fill="#2a9d8f" />
+              <rect x="20" y="118" width="44" height="10" rx="2" fill="#1a3a5c" />
+              <rect x="22" y="108" width="40" height="10" rx="2" fill="#c8a96e" />
+              <text x="42" y="115" textAnchor="middle" fontSize="5" fill="#fff" fontWeight="700">محاسبة</text>
+              <rect x="250" y="108" width="42" height="38" rx="4" fill="#fff" stroke="#2a9d8f" strokeWidth="1.5" />
+              <rect x="256" y="114" width="30" height="10" rx="1" fill="#1a3a5c" />
+              <circle cx="260" cy="130" r="3" fill="#E3EBDB" stroke="#2a9d8f" strokeWidth="0.5" />
+              <circle cx="272" cy="130" r="3" fill="#E3EBDB" stroke="#2a9d8f" strokeWidth="0.5" />
+              <circle cx="284" cy="130" r="3" fill="#c8a96e" />
+              <circle cx="260" cy="140" r="3" fill="#E3EBDB" stroke="#2a9d8f" strokeWidth="0.5" />
+              <circle cx="272" cy="140" r="3" fill="#E3EBDB" stroke="#2a9d8f" strokeWidth="0.5" />
+              <circle cx="284" cy="140" r="3" fill="#2a9d8f" />
+              <ellipse cx="70" cy="142" rx="12" ry="7" fill="#c8a96e" stroke="#1a3a5c" strokeWidth="1" />
+              <text x="70" y="145" textAnchor="middle" fontSize="6" fontWeight="800" fill="#1a3a5c">د.ت</text>
+              <ellipse cx="78" cy="135" rx="10" ry="6" fill="#fff" stroke="#c8a96e" strokeWidth="1" />
+              <text x="78" y="137" textAnchor="middle" fontSize="5" fill="#c8a96e" fontWeight="700">100</text>
+              <ellipse cx="160" cy="165" rx="90" ry="10" fill="#1a3a5c" opacity="0.08" />
+            </svg>
           </div>
         </div>
+      </div>
+      <div className="mb-6 flex justify-end">
         <button
           type="button"
           onClick={() => navigate('/students')}
-          className="px-5 py-2.5 text-sm font-medium text-slate-600 bg-slate-50 border border-slate-200 rounded-xl hover:bg-slate-100 transition-colors"
+          className="px-5 py-2.5 text-sm font-medium text-slate-600 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 transition-colors shadow-sm"
         >
           إلغاء التسجيل
         </button>

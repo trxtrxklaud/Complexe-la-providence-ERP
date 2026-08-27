@@ -8,6 +8,7 @@ import {
   type UnpaidMonthlyRow,
 } from '../../api/reports';
 import { PageDataSkeleton } from '../../components/DataSkeleton';
+import { ExemptionBadge } from '../../components/Exemptions/ExemptionBadge';
 
 const C = { forest: '#3B4A36', sage: '#E3EBDB', ink: '#1F261C', muted: '#7C8677', line: '#EDF1E8' };
 
@@ -229,8 +230,18 @@ export function UnpaidMonthlyReportPage() {
             </div>
 
             <div className="flex flex-wrap items-center justify-between gap-3 border-b bg-[#F7F9F4] px-5 py-4">
-              <span className="text-sm font-semibold text-slate-700">عدد التلاميذ غير المسددين</span>
-              <span className="text-2xl font-extrabold tabular-nums" style={{ color: C.forest }}>{report.summary.unpaid_students_count}</span>
+              <div className="flex items-center gap-6">
+                <div>
+                  <span className="text-xs text-slate-500 block">عدد غير المسددين</span>
+                  <span className="text-2xl font-extrabold tabular-nums" style={{ color: C.forest }}>{report.summary.unpaid_students_count}</span>
+                </div>
+                {report.summary.waived_students_count !== undefined && report.summary.waived_students_count > 0 && (
+                  <div>
+                    <span className="text-xs text-slate-500 block">عدد المعفيين كلياً</span>
+                    <span className="text-2xl font-extrabold tabular-nums text-emerald-700">{report.summary.waived_students_count}</span>
+                  </div>
+                )}
+              </div>
               <button type="button" onClick={() => window.print()} className="inline-flex items-center gap-2 rounded-xl bg-[#3B4A36] px-4 py-2 text-sm font-semibold text-white print:hidden"><Printer size={16} />طباعة التقرير</button>
             </div>
 
@@ -271,7 +282,15 @@ export function UnpaidMonthlyReportPage() {
                           </td>
                         ))}
                         <td className="border px-3 py-2.5" style={{ borderColor: C.line }}>
-                          <span className="rounded-full bg-red-100 px-2 py-1 text-xs font-semibold text-red-700">غير مسدد</span>
+                          {row.is_waived || row.status === 'waived' || row.discount_type === 'full_waiver' ? (
+                            <ExemptionBadge discountType="full_waiver" size="sm" />
+                          ) : row.status === 'discounted' || row.discount_type ? (
+                            <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2.5 py-1 text-xs font-semibold text-amber-800">
+                              تخفيض جزئي ({Number(row.remaining_amount ?? 0).toFixed(2)} د)
+                            </span>
+                          ) : (
+                            <span className="rounded-full bg-red-100 px-2.5 py-1 text-xs font-semibold text-red-700">غير مسدد</span>
+                          )}
                         </td>
                       </tr>
                     ))

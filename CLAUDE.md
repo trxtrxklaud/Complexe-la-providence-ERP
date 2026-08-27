@@ -32,12 +32,13 @@ Dev DB is **SQLite with real data** — never run `php artisan migrate:fresh`. T
 ## Architecture
 
 ### Ledger is the single source of truth for money
-Every financial document (payment, salary, expense, advance, advance repayment, withdrawal) posts its cash effect into `cash_transactions` via `LedgerService::post()`. **Reports never read from source tables — only from `cash_transactions`**, so figures reconcile across every screen without double-counting. Posting is idempotent: a unique key `(source_type, source_id, category)` means re-posting a document updates its row rather than inserting a duplicate. When adding or changing any money-moving feature, route its cash effect through `LedgerService`.
+Every financial document (payment, salary, expense, advance, advance repayment, withdrawal) posts its cash effect into `cash_transactions` via `LedgerService::post()`. **Reports never read from source tables — only from `cash_transactions`**, so figures reconcile across every screen without double-counting. Posting is idempotent: a unique key `(source_type, source_id, category)` means re-posting a document updates its row rather than inserting a duplicate. When adding or changing any money-moving feature, route its cash effect through `LedgerService`. A one-off backfill command (`app/Console/Commands/BackfillLedgerCommand.php`) rebuilds `cash_transactions` from the source tables when the ledger needs repopulating.
 
 ### Service layer holds business logic
 Controllers are thin; domain logic lives in `app/Services/` (`PaymentService`, `CollectionService`, `FeeService`, `EnrollmentService`, `LedgerService`, etc.). Key invariants enforced there:
 - **Payments** (`PaymentService`) use an `idempotency_key` to dedupe retries, lock fee rows (`lockForUpdate`) so concurrent payments can't over-allocate, and subtract active waivers from the remaining balance.
 - **Deletion is generally forbidden** for financial records — they are cancelled with a documented reason (e.g. `salaries/{id}/cancel`, advance repayment cancellation) rather than destroyed. Preserve this pattern.
+- **Collection & families:** `CollectionService` creates `student_fees` month-by-month on demand and records payments; the family module (`FamilyController` / `FamilyService`, `POST /families/{family}/collect`) settles several students' fees in one transaction. Both live under `manage_payments`.
 
 ### Discount (التخفيض) is NOT arrears (المتخلّد)
 These are two different concepts and must never be conflated:
@@ -48,6 +49,12 @@ Implementation:
 - `enrollment_discounts` table + `EnrollmentDiscount` model hold the discount; `DiscountService` owns all rules (single active discount per enrollment per year, 20% cap, cancel-not-delete). The cap basis is the **`FeePlan`** (monthly × 10 + yearly), which is known up-front — NOT the ad-hoc `student_fees` rows, which are created month-by-month by `CollectionService` and are incomplete when a discount is granted.
 - A discount **never posts to the ledger** — no cash moves. It only reduces the amount owed. Do not route it through `LedgerService`.
 - `StudentFee.amount_due` stores the **full** item price. The transactional "discount" field was removed from the collection/payment flow (`CollectionService`, `CollectPaymentRequest`); the annual discount is managed separately via `DiscountController` (`/enrollments/{enrollment}/discount`, guarded by `waive_fees`).
+
+**Two separate discount families exist — do not merge them:**
+- **Annual discount** (`EnrollmentDiscount` / `DiscountService`, described above): one fixed reduction for the whole year, 20% cap on the `FeePlan` basis, one active per enrollment/year.
+- **Recurring monthly discounts** (`MonthlyDiscount` for tuition, `ClubMonthlyDiscount` for clubs; `MonthlyDiscountService` / `ClubMonthlyDiscountService`): applied per month across a `start_month..end_month` range (defaults to the academic year). Three types — `full_waiver`, `humanitarian_fixed` (> 20 TND, ≤ monthly fee), `normal_monthly` (≤ 20% of the monthly `FeePlan` amount). Overlapping active ranges for the same enrollment/category are rejected; cancel-not-delete with `lockForUpdate`.
+
+Both discount families and fee waivers are guarded by `waive_fees` (never `manage_payments`) and **never post to the ledger** — the cashier collects money but cannot forgive debt; only the owner reduces what the school earns.
 
 ### Auth & permissions
 - Sanctum bearer tokens. Every authenticated route passes through `auth:sanctum` + `active` (`EnsureUserIsActive`, blocks disabled accounts) + rate limiting.
@@ -67,45 +74,14 @@ Implementation:
 - In `app.blade.php`, `@viteReactRefresh` **must** stay before `@vite(...)` or the React preamble error returns.
 - `vite.config.ts` `manualChunks` splitting is deliberate — don't raise `chunkSizeWarningLimit` to hide warnings, and don't hand-edit `public/build` output.
 - Pre-existing TypeScript errors exist unrelated to any given task; check `npm run lint` output but don't fix unrelated files without being asked.
-- Older docs (`README.md`, `HANDOFF.md`) may reference Laravel 11 or stale info — `composer.json` and the code are authoritative.
+- Older docs (`README.md`, `HANDOFF.md`) may carry stale info — e.g. `README.md` references Laravel Horizon, which is **not installed** (see `composer.json`). Treat `composer.json` and the code as authoritative.
 - Never `git reset --hard`, `git clean -fd`, or `migrate:fresh` without explicit approval.
 
 ## Definition of done
 
 Read a file fully before editing it; keep changes minimal and scoped; run the nearest test to the change; run `npm run build` for frontend/Vite changes and `php artisan test` for backend changes where feasible.
 
-## Progress log
+## Security invariants
 
-### Discount vs Arrears fix (in progress)
-Separating the annual discount (التخفيض) from arrears (المتخلّد). Plan is 10 phases; each is user-approved and tested before the next.
-
-- **Phase 1 — Migration ✅** `enrollment_discounts` table (`2026_08_06_000000_...`), fee_waivers-style (no FK constraints).
-- **Phase 2 — Models ✅** `EnrollmentDiscount` (scopes `active`/`notCancelled`/`forYear`, `getEffectiveAmount`); `Enrollment::discounts()` + `activeDiscount()`.
-- **Phase 3 — Services ✅** `DiscountService` (create/cancel, 20% cap on `FeePlan` basis, one-active rule, lockForUpdate). `CollectionService` now stores full price and ignores any transactional discount.
-- **Phase 4 — API ✅** `DiscountController` (show/store/cancel) + `StoreDiscountRequest`; routes under `waive_fees`; `discount` field removed from `CollectPaymentRequest`.
-- **Phase 5 — Frontend ✅** `api/discounts.ts`; `EnrollmentDiscountCard` on the student detail page; discount input removed from `CollectionPage`; `ReceiptModal` discount row now legacy-only.
-- **Phase 6 — Fix arrears (next):** `ClassroomRosterController` — subtract discount (and waivers) in outstanding/`months_arrears`; add the discount column to `ClassroomRosterPage` (deferred here because it needs the controller's per-row data).
-- **Phase 7 — Tests:** `DiscountServiceTest`, feature `DiscountTest`.
-
-Verification so far: `php artisan test` 67 passing; `npm run lint` clean; `npm run build` OK.
-
-## Security Closure Progress — 2026-08-08
-
-- Canonical copy: `C:\laragon\www\providence`
-- Branch: `audit/security-closure-2026-08-08`
-- Baseline completed.
-- Read-only security audit completed: no CRITICAL findings.
-- HIGH finding fixed: dashboard treasury exposure.
-- `DashboardService` conditionally returns `financial_summary`, `cash`, and `treasury_balance`.
-- Financial access uses existing `manage_treasury` OR `view_reports` permissions, with configured super-role bypass.
-- Cashier/restricted users do not receive those three keys server-side.
-- `outstanding_balance` intentionally remains available for collection workflows.
-- Verification: `php artisan test --filter=DashboardTest` — 4 tests passed, 18 assertions.
-- Next task: review security headers separately.
-- Unrelated Discounts UI changes must remain excluded.
-- CRIT-001 closed: Student deletion blocked when enrollments, payments, or clubSubscriptions exist (`app/Http/Controllers/StudentController.php`).
-- Focused test: `tests/Feature/StudentDeleteProtectionTest.php` (3 passed, 10 assertions).
-- No migrations changed.
-- CRIT-002 closed: Employee deletion blocked when salaries, advances, or repayments exist (`app/Http/Controllers/EmployeeController.php`, `app/Models/Employee.php`).
-- Focused test: `tests/Feature/EmployeeDeleteProtectionTest.php` (4 passed, 15 assertions).
-- No migrations changed.
+- **Financial data is gated server-side.** `DashboardService` only returns `financial_summary`, `cash`, and `treasury_balance` to users with `manage_treasury` or `view_reports` (super-roles bypass); cashiers never receive those keys. `outstanding_balance` stays available for collection workflows.
+- **Records with financial dependents cannot be deleted.** Student deletion is blocked when enrollments, payments, or club subscriptions exist (`StudentController`); employee deletion is blocked when salaries, advances, or repayments exist (`EmployeeController` / `Employee`). This complements the cancel-not-delete rule above.

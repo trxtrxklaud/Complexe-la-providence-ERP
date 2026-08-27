@@ -103,10 +103,11 @@ export function PeriodReport({
         style={{ border: `1px solid ${C.line}` }}
       >
         <div>
-          <label className="block text-sm mb-1" style={{ color: C.muted }}>
+          <label htmlFor="period-report-from" className="block text-sm mb-1" style={{ color: C.muted }}>
             من تاريخ
           </label>
           <input
+            id="period-report-from"
             type="date"
             value={from}
             max={to}
@@ -116,10 +117,11 @@ export function PeriodReport({
           />
         </div>
         <div>
-          <label className="block text-sm mb-1" style={{ color: C.muted }}>
+          <label htmlFor="period-report-to" className="block text-sm mb-1" style={{ color: C.muted }}>
             إلى تاريخ
           </label>
           <input
+            id="period-report-to"
             type="date"
             value={to}
             min={from}

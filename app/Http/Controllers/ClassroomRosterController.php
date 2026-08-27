@@ -513,7 +513,7 @@ class ClassroomRosterController extends Controller
             ->when($year !== null, fn ($q) => $q->where('e.academic_year_id', $year->id))
             ->groupBy('e.student_id')
             ->select('e.student_id')
-            ->selectRaw('SUM(f.amount_due) as due')
+            ->selectRaw('SUM(f.amount_due - COALESCE(f.direct_paid_amount, 0)) as due')
             ->pluck('due', 'student_id');
 
         $allocated = DB::table('payment_allocations as pa')

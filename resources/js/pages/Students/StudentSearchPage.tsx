@@ -166,14 +166,16 @@ export function StudentSearchPage() {
       {/* Print Styles */}
       <style>{`
         @media print {
-          @page { size: A4 portrait; margin: 12mm; }
-          body { background: white !important; font-size: 11pt !important; color: black !important; }
-          .no-print, header, nav, sidebar, button, form, .no-print * { display: none !important; }
+          @page { size: A4 landscape; margin: 10mm 8mm; }
+          body { background: white !important; font-size: 10pt !important; color: black !important; }
+          .no-print, header, nav, aside, sidebar, button, form, .no-print * { display: none !important; }
           .print-only { display: block !important; }
-          .print-container { padding: 0 !important; margin: 0 !important; width: 100% !important; max-width: none !important; }
-          table { width: 100% !important; border-collapse: collapse !important; margin-top: 15px !important; }
-          th, td { border: 1px solid #CBD5E1 !important; padding: 6px 8px !important; font-size: 10pt !important; text-align: right !important; }
-          th { background-color: #F8FAFC !important; font-weight: bold !important; }
+          .print-container { padding: 0 !important; margin: 0 !important; width: 100% !important; max-width: none !important; box-shadow: none !important; border: none !important; }
+          table { width: 100% !important; border-collapse: collapse !important; margin-top: 15px !important; direction: rtl !important; }
+          thead { display: table-header-group !important; }
+          tr, th, td { break-inside: avoid !important; page-break-inside: avoid !important; }
+          th, td { border: 1px solid #000000 !important; padding: 5px 6px !important; font-size: 9pt !important; text-align: right !important; color: black !important; }
+          th { background-color: #F2F2F2 !important; font-weight: bold !important; }
         }
         .print-only { display: none; }
       `}</style>

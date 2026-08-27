@@ -1,9 +1,11 @@
 <?php
 
 use App\Http\Controllers\AcademicYearController;
+use App\Http\Controllers\AuditLogController;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\ClassroomRosterController;
 use App\Http\Controllers\ClubController;
+use App\Http\Controllers\ClubMonthlyDiscountController;
 use App\Http\Controllers\ClubReportController;
 use App\Http\Controllers\ClubSubscriptionController;
 use App\Http\Controllers\CollectionController;
@@ -11,12 +13,18 @@ use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\DiscountController;
 use App\Http\Controllers\EmployeeAdvanceController;
 use App\Http\Controllers\EmployeeController;
+use App\Http\Controllers\EmployeeHoursController;
+use App\Http\Controllers\ExemptionController;
 use App\Http\Controllers\ExpenseCategoryController;
 use App\Http\Controllers\ExpenseController;
+use App\Http\Controllers\FamilyController;
 use App\Http\Controllers\FeeTypeController;
 use App\Http\Controllers\FeeWaiverController;
 use App\Http\Controllers\FinancialReportController;
 use App\Http\Controllers\LevelController;
+use App\Http\Controllers\ManualDebtController;
+use App\Http\Controllers\MonthlyDiscountController;
+use App\Http\Controllers\OldEmployeeDebtController;
 use App\Http\Controllers\PaymentController;
 use App\Http\Controllers\RosterController;
 use App\Http\Controllers\SalaryController;
@@ -27,6 +35,7 @@ use App\Http\Controllers\TreasuryDaybookController;
 use App\Http\Controllers\TreasuryWithdrawalController;
 use App\Http\Controllers\UnpaidMonthlyReportController;
 use App\Http\Controllers\UserController;
+use App\Http\Controllers\UserPermissionOverrideController;
 use Illuminate\Support\Facades\Route;
 
 Route::middleware('throttle:5,1')->post('/login', [AuthController::class, 'login']);
@@ -42,6 +51,11 @@ Route::middleware(['auth:sanctum', 'active', 'throttle:120,1'])->group(function 
 
     // الموظفون — صلاحية منفصلة
     Route::middleware('permission:manage_employees')->group(function () {
+        // جدول الحصص: يحسب ويقترح فحسب — لا يُنشئ راتباً ولا صفّاً نقدياً.
+        Route::get('/employees/{employee}/hours/monthly-summary', [EmployeeHoursController::class, 'monthlySummary']);
+        Route::get('/employees/{employee}/hours', [EmployeeHoursController::class, 'index']);
+        Route::post('/employees/{employee}/hours', [EmployeeHoursController::class, 'store']);
+
         Route::apiResource('/employees', EmployeeController::class);
     });
 
@@ -77,6 +91,30 @@ Route::middleware(['auth:sanctum', 'active', 'throttle:120,1'])->group(function 
 
         Route::apiResource('/treasury/withdrawals', TreasuryWithdrawalController::class)->except(['destroy']);
         Route::post('/treasury/withdrawals/{withdrawal}/cancel', [TreasuryWithdrawalController::class, 'cancel']);
+
+        // إقفال سنة دراسية وترحيل متخلّداتها كأرصدة افتتاحية — عملية مالية حساسة
+        // فتتبع صلاحية الخزينة ولا يملكها القابض.
+        Route::post('/academic-years/{year}/close', [AcademicYearController::class, 'close']);
+
+        // الأرصدة الافتتاحية اليدوية (بيانات خارجية بلا أثر سابق في النظام):
+        // الديون القديمة للتلاميذ. إدخالها لا يحرّك مالاً
+        // — تحصيلها لاحقاً عبر مسار الاستخلاص (prior_year_debt)
+        // فتتبع صلاحية الخزينة وحدها.
+        Route::get('/manual-debts/bulk-options', [ManualDebtController::class, 'bulkOptions']);
+        Route::get('/manual-debts/section-students', [ManualDebtController::class, 'sectionStudents']);
+        Route::post('/manual-debts/bulk', [ManualDebtController::class, 'bulkStore']);
+        Route::get('/manual-debts', [ManualDebtController::class, 'index']);
+        Route::post('/manual-debts', [ManualDebtController::class, 'store']);
+        Route::get('/manual-debts/{debt}', [ManualDebtController::class, 'show']);
+        Route::post('/manual-debts/{debt}/cancel', [ManualDebtController::class, 'cancel']);
+
+        // الأرصدة الافتتاحية التاريخية للإطارات: ديون قديمة مدخلة يدوياً
+        Route::get('/employee-opening-debts', [OldEmployeeDebtController::class, 'index']);
+        Route::post('/employee-opening-debts', [OldEmployeeDebtController::class, 'store']);
+        Route::get('/employee-opening-debts/{debt}', [OldEmployeeDebtController::class, 'show']);
+        Route::put('/employee-opening-debts/{debt}', [OldEmployeeDebtController::class, 'update']);
+        Route::post('/employee-opening-debts/{debt}/cancel', [OldEmployeeDebtController::class, 'cancel']);
+        Route::post('/employee-opening-debts/{debt}/collect', [OldEmployeeDebtController::class, 'collect']);
     });
 
     // التقارير المالية — قراءة فقط، وكلها تُبنى على الدفتر النقدي المركزي
@@ -107,13 +145,32 @@ Route::middleware(['auth:sanctum', 'active', 'throttle:120,1'])->group(function 
         // صفحات التفصيل: قسم واحد أو تلميذ واحد
         Route::get('/reports/revenue/classrooms/{section}', [FinancialReportController::class, 'classroomDetail']);
         Route::get('/reports/revenue/students/{student}', [FinancialReportController::class, 'studentDetail']);
+
+        // تقارير الأرصدة الافتتاحية: كشف الديون اليدوية، الملخّص الموحّد
+        // (آلي + يدوي).
+        Route::get('/reports/manual-debts', [FinancialReportController::class, 'manualDebts']);
+        Route::get('/reports/opening-balances-summary', [FinancialReportController::class, 'openingBalancesSummary']);
     });
 
     // User Management
     Route::middleware('permission:manage_users')->group(function () {
         Route::get('/roles', [UserController::class, 'roles']);
+        // تغيير كلمة مرور مستخدم من قِبل المشرف — مسار صريح قبل apiResource.
+        Route::post('/users/{user}/change-password', [UserController::class, 'changePassword']);
         Route::apiResource('/users', UserController::class);
         Route::apiResource('/fee-types', FeeTypeController::class)->except(['index']);
+
+        // سجل العمليات — قراءة فقط بصلاحية manage_users حصراً.
+        Route::get('/audit-logs', [AuditLogController::class, 'index']);
+    });
+
+    // Direct Permission Overrides (منح / منع الصلاحيات المباشرة للمستخدم)
+    Route::middleware('permission:manage_user_permissions')->group(function () {
+        Route::get('/users/{user}/permission-overrides', [UserPermissionOverrideController::class, 'index']);
+        Route::post('/users/{user}/permission-overrides', [UserPermissionOverrideController::class, 'store']);
+        Route::put('/users/{user}/permission-overrides/{permission}', [UserPermissionOverrideController::class, 'update']);
+        Route::delete('/users/{user}/permission-overrides/{permission}', [UserPermissionOverrideController::class, 'destroy']);
+        Route::get('/users/{user}/effective-permissions', [UserPermissionOverrideController::class, 'effectivePermissions']);
     });
 
     // School structure — المستويات والأقسام
@@ -162,15 +219,41 @@ Route::middleware(['auth:sanctum', 'active', 'throttle:120,1'])->group(function 
 
     // Payments
     Route::middleware('permission:manage_payments')->group(function () {
+        // «ما تم استخلاصه» — ذاتيّ النطاق؛ يسبق apiResource كي لا يلتقطه GET /payments/{payment}.
+        Route::get('/payments/my-collections', [PaymentController::class, 'myCollections']);
         Route::apiResource('/payments', PaymentController::class)->except(['update', 'destroy']);
+        Route::post('/payments/{payment}/reprint', [PaymentController::class, 'reprint']);
         Route::post('/payments/{payment}/cancel', [PaymentController::class, 'cancel']);
         Route::get('/fee-types', [FeeTypeController::class, 'index']);
+
+        Route::get('/club-sections', [ClubController::class, 'clubSections']);
 
         Route::get('/collection/years', [CollectionController::class, 'years']);
         Route::get('/collection/years/{year}/sections', [CollectionController::class, 'sectionsByYear']);
         Route::get('/collection/sections/{section}/students', [CollectionController::class, 'studentsBySection']);
+        Route::get('/payments/collect/preview', [CollectionController::class, 'preview']);
         Route::post('/payments/collect', [CollectionController::class, 'collect']);
+
+        // رصيد افتتاحي ومعاينة توزيع الدفعة — يراهما القابض قبل تثبيت الوصل.
+        Route::get('/collection/students/{student}/opening-balances', [CollectionController::class, 'openingBalances']);
+        Route::get('/collection/students/{student}/allocation-preview', [CollectionController::class, 'allocationPreview']);
+
+        // موديول العائلات والتحصيل الجماعي
+        Route::get('/families', [FamilyController::class, 'index']);
+        Route::get('/families/{family}', [FamilyController::class, 'show']);
+        Route::post('/families/{family}/collect', [FamilyController::class, 'collect']);
+        // تنبيه الديون القديمة لأبناء العائلة — قراءة فقط في manual_student_debts
+        // لبانر غير حاجب؛ لا ينشئ دفعة ولا قيدا ولا يعدّل أي رصيد.
+        Route::get('/families/{family}/old-debts', [FamilyController::class, 'oldDebts']);
+
         Route::get('/enrollments/{enrollment}/ledger', [CollectionController::class, 'ledger']);
+
+        // استخلاص الديون القديمة — تحصيل عبر CollectionService نفسه (prior_year_debt/in)
+        // وقراءات السجلّ والكشف. الإلغاء عبر مسار الوصلات العام أعلاه.
+        Route::get('/students/{student}/old-debt-summary', [ManualDebtController::class, 'summary']);
+        Route::post('/manual-debts/{debt}/collect', [ManualDebtController::class, 'collect']);
+        Route::get('/manual-debts/{debt}/payments', [ManualDebtController::class, 'payments']);
+        Route::get('/manual-debts/{debt}/statement', [ManualDebtController::class, 'statement']);
     });
 
     // التنازل عن الدُّيون — صلاحية مستقلة عن manage_payments عمداً:
@@ -186,6 +269,23 @@ Route::middleware(['auth:sanctum', 'active', 'throttle:120,1'])->group(function 
         Route::get('/enrollments/{enrollment}/discount', [DiscountController::class, 'show']);
         Route::post('/enrollments/{enrollment}/discount', [DiscountController::class, 'store']);
         Route::post('/discounts/{discount}/cancel', [DiscountController::class, 'cancel']);
+
+        // التخفيضات الشهرية المتكررة (دراسي / نوادي)
+        Route::get('/enrollments/{enrollment}/monthly-discounts', [MonthlyDiscountController::class, 'index']);
+        Route::post('/enrollments/{enrollment}/monthly-discounts', [MonthlyDiscountController::class, 'store']);
+        Route::post('/monthly-discounts/{discount}/cancel', [MonthlyDiscountController::class, 'cancel']);
+
+        Route::get('/club-subscriptions/{subscription}/monthly-discounts', [ClubMonthlyDiscountController::class, 'index']);
+        Route::post('/club-subscriptions/{subscription}/monthly-discounts', [ClubMonthlyDiscountController::class, 'store']);
+        Route::post('/club-monthly-discounts/{discount}/cancel', [ClubMonthlyDiscountController::class, 'cancel']);
+
+        // إدارة الإعفاءات للتلاميذ (دراسي / نوادي)
+        Route::get('/exemptions', [ExemptionController::class, 'allExemptions']);
+        Route::get('/enrollments/{enrollment}/exemptions', [ExemptionController::class, 'index']);
+        Route::post('/enrollments/{enrollment}/exemptions/monthly', [ExemptionController::class, 'storeMonthly']);
+        Route::post('/enrollments/{enrollment}/exemptions/club/{clubSubscription}', [ExemptionController::class, 'storeClub']);
+        Route::delete('/exemptions/monthly/{monthlyDiscount}', [ExemptionController::class, 'cancelMonthly']);
+        Route::delete('/exemptions/club/{clubMonthlyDiscount}', [ExemptionController::class, 'cancelClub']);
     });
 
     // النوادي المدرسية واشتراكاتها
@@ -199,6 +299,7 @@ Route::middleware(['auth:sanctum', 'active', 'throttle:120,1'])->group(function 
     // تقارير واستخلاص معلوم النوادي
     Route::middleware('permission:manage_payments')->group(function () {
         Route::get('/reports/club-fees', [ClubReportController::class, 'report']);
+        Route::get('/reports/club-arrears', [ClubReportController::class, 'arrearsDashboard']);
         Route::post('/reports/club-fees/generate', [ClubReportController::class, 'generateMonth']);
         Route::post('/club-monthly-fees/{monthlyFee}/collect', [ClubReportController::class, 'collectPayment']);
         Route::post('/club-monthly-fees/{monthlyFee}/cancel', [ClubReportController::class, 'cancelPayment']);

@@ -166,9 +166,10 @@ export function DiscountsPage() {
       return;
     }
     if (value > panel.enrollment.discount_cap) {
-      setError('المبلغ يتجاوز سقف التخفيض المسموح (20 د في الشهر)');
+      setError(`المبلغ يتجاوز سقف التخفيض المسموح (${panel.enrollment.discount_cap} د في الشهر)`);
       return;
     }
+
     if (!reason.trim()) {
       setError('سبب التخفيض إجباري');
       return;
@@ -342,11 +343,12 @@ export function DiscountsPage() {
                 </strong>
               </div>
               <div className="flex items-center justify-between">
-                <span style={{ color: C.muted }}>السقف الشهري (20 د)</span>
+                <span style={{ color: C.muted }}>السقف الشهري الأقصى</span>
                 <strong style={{ color: C.ink }}>
                   <Money value={panel.enrollment.discount_cap} />
                 </strong>
               </div>
+
               <div className="flex items-center justify-between">
                 <span style={{ color: C.muted }}>التخفيض الشهري الساري</span>
                 <strong style={{ color: C.forest }}>
@@ -417,7 +419,7 @@ export function DiscountsPage() {
                 <div className="flex gap-2">
                   <button
                     onClick={() => void doDelete()}
-                    disabled={buzy}
+                    disabled={busy}
                     className="rounded-xl px-4 py-2 text-sm text-white disabled:opacity-50"
                     style={{ backgroundColor: C.error }}
                   >

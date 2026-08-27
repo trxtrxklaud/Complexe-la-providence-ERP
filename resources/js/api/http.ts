@@ -42,12 +42,14 @@ export function getHeaders(extra?: Record<string, string>): Record<string, strin
 export class ApiError extends Error {
   readonly status: number;
   readonly errors?: Record<string, string[]>;
+  readonly details?: Record<string, number>;
 
-  constructor(message: string, status: number, errors?: Record<string, string[]>) {
+  constructor(message: string, status: number, errors?: Record<string, string[]>, details?: Record<string, number>) {
     super(message);
     this.name = 'ApiError';
     this.status = status;
     this.errors = errors;
+    this.details = details;
   }
 
   /** أول رسالة تحقق إن وجدت، وإلا الرسالة العامة. */
@@ -128,8 +130,23 @@ export async function apiFetch<T>(path: string, options: RequestOptions = {}): P
         ? ((payload as { errors?: Record<string, string[]> }).errors ?? undefined)
         : undefined;
 
-    throw new ApiError(message, response.status, errors);
+    const details =
+      payload && typeof payload === 'object' && 'details' in payload
+        ? ((payload as { details?: Record<string, number> }).details ?? undefined)
+        : undefined;
+
+    throw new ApiError(message, response.status, errors, details);
   }
 
   return payload as T;
+}
+
+export function getCsrfTokenFromCookie(): string | null {
+    if (typeof document === 'undefined') {
+        return null;
+    }
+
+    const match = document.cookie.match(/(?:^|;\s*)XSRF-TOKEN=([^;]*)/);
+
+    return match ? decodeURIComponent(match[1]) : null;
 }

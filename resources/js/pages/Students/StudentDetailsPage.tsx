@@ -6,6 +6,8 @@ import { studentFeesApi } from '../../api/payments';
 import type { StudentFeesEnrollment } from '../../types';
 import { PageDataSkeleton } from '../../components/DataSkeleton';
 import { EnrollmentDiscountCard } from './EnrollmentDiscountCard';
+import { StudentExemptionsTab } from '../../components/Exemptions/StudentExemptionsTab';
+import { fetchClubSubscriptions, type ClubSubscriptionItem } from '../../api/clubs';
 
 function money(value: number | string | null | undefined): string {
   if (value === null || value === undefined || value === '') return 'غير متاح';
@@ -29,9 +31,11 @@ export function StudentDetailsPage() {
   const [student, setStudent] = useState<Student | null>(null);
   const [feeEnrollments, setFeeEnrollments] = useState<StudentFeesEnrollment[]>([]);
   const [payments, setPayments] = useState<StudentPaymentHistoryEntry[]>([]);
+  const [clubSubscriptions, setClubSubscriptions] = useState<ClubSubscriptionItem[]>([]);
   const [balance, setBalance] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [activeTab, setActiveTab] = useState<'overview' | 'exemptions'>('overview');
 
   // Gender update state
   const [genderEditing, setGenderEditing] = useState(false);
@@ -51,13 +55,20 @@ export function StudentDetailsPage() {
       studentFeesApi.fees(Number(studentId)),
       studentFeesApi.balance(Number(studentId)),
       getStudentPaymentHistory(Number(studentId)),
+      fetchClubSubscriptions({ student_id: Number(studentId) }).catch(() => ({ data: [] })),
     ])
-      .then(([studentData, feesData, balanceData, paymentData]) => {
+      .then(([studentData, feesData, balanceData, paymentData, subsData]) => {
         if (!active) return;
         setStudent(studentData);
         setFeeEnrollments(feesData);
         setBalance(balanceData.balance);
         setPayments(paymentData);
+        const list = (subsData && 'data' in subsData && Array.isArray(subsData.data))
+          ? subsData.data
+          : Array.isArray(subsData)
+            ? subsData
+            : [];
+        setClubSubscriptions(list);
       })
       .catch((requestError) => {
         if (active) setError(requestError instanceof Error ? requestError.message : 'تعذّر تحميل تفاصيل التلميذ');
@@ -217,102 +228,136 @@ export function StudentDetailsPage() {
                 </div>
               </div>
 
-              <div className="mb-5 grid grid-cols-1 gap-4 md:grid-cols-3">
-                <div className="rounded-2xl bg-[#E3EBDB] p-5">
-                  <div className="mb-3 flex items-center gap-2 text-[#3B4A36]"><UserRound size={18} /><span className="text-sm font-semibold">الولي / الأب</span></div>
-                  <p className="font-bold text-slate-800">{guardianName}</p>
-                  <p className="mt-2 flex items-center gap-2 text-sm text-slate-600" dir="ltr"><Phone size={15} />{guardianPhone}</p>
-                  <p className="mt-2 text-sm text-slate-600">الأم: {student.mother_name || 'غير مسجّل'}</p>
-                </div>
-                <div className="rounded-2xl bg-[#EFEAE0] p-5">
-                  <div className="mb-3 flex items-center gap-2 text-[#7C6B42] text-sm font-semibold"><Wallet size={18} />الرصيد المستحق</div>
-                  <p className="text-2xl font-extrabold text-slate-800">{money(balance)}</p>
-                  <p className="mt-2 text-xs text-slate-500">محسوب من الرسوم والتوزيعات غير الملغاة.</p>
-                </div>
-                <div className="rounded-2xl bg-[#F1E4E2] p-5">
-                  <div className="mb-3 flex items-center gap-2 text-[#A03434] text-sm font-semibold"><AlertCircle size={18} />الأقساط الشهرية غير المسددة</div>
-                  <p className="text-2xl font-extrabold text-slate-800">{unpaidMonthlyFees.length}</p>
-                  <p className="mt-2 text-xs text-slate-500">المتبقي: {money(monthlyRemaining)}</p>
-                </div>
+              {/* Tab Navigation */}
+              <div className="mb-6 flex items-center gap-2 border-b border-slate-200 print:hidden">
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('overview')}
+                  className={`px-5 py-3 text-sm font-bold border-b-2 transition -mb-px ${
+                    activeTab === 'overview'
+                      ? 'border-[#3B4A36] text-[#3B4A36]'
+                      : 'border-transparent text-slate-500 hover:text-slate-800'
+                  }`}
+                >
+                  البيانات والرسوم والدفعات
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('exemptions')}
+                  className={`px-5 py-3 text-sm font-bold border-b-2 transition -mb-px flex items-center gap-2 ${
+                    activeTab === 'exemptions'
+                      ? 'border-[#3B4A36] text-[#3B4A36]'
+                      : 'border-transparent text-slate-500 hover:text-slate-800'
+                  }`}
+                >
+                  <span>الإعفاءات والتخفيضات الشهرية</span>
+                </button>
               </div>
 
-              <div className="mb-5 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-                <div className="border-b border-slate-100 bg-[#E3EBDB] px-5 py-4">
-                  <h2 className="font-bold text-slate-800">الرسوم: غير المسددة والمسددّة</h2>
-                  <p className="mt-1 text-xs text-slate-500">المبالغ قادمة من الرسوم وتوزيعات الدفعات المحفوظة فعليًا.</p>
+              {activeTab === 'exemptions' ? (
+                <div className="mb-6">
+                  <StudentExemptionsTab
+                    enrollmentId={enrollment?.id || feeEnrollments[0]?.enrollment_id || 0}
+                    studentName={`${student.first_name} ${student.last_name}`}
+                    clubSubscriptions={clubSubscriptions}
+                  />
                 </div>
-                {feeEnrollments.length === 0 ? (
-                  <p className="p-6 text-center text-sm text-slate-500">لا توجد رسوم مسجّلة لهذا التلميذ.</p>
-                ) : (
-                  <div className="divide-y divide-slate-100">
-                    {feeEnrollments.map((feeEnrollment) => (
-                      <div key={feeEnrollment.enrollment_id} className="p-5">
-                        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-                          <h3 className="font-semibold text-slate-800">{feeEnrollment.academic_year?.name || 'سنة غير محددة'} — {feeEnrollment.level?.name || 'مستوى غير محدد'}</h3>
-                          <span className="text-xs text-slate-500">{studentStatusLabel(feeEnrollment.status)}</span>
-                        </div>
-                        <div className="overflow-x-auto">
-                          <table className="w-full text-right text-sm">
-                            <thead className="text-xs text-slate-500"><tr><th className="px-3 py-2 font-medium">الرسم / القسط</th><th className="px-3 py-2 font-medium">الاستحقاق</th><th className="px-3 py-2 font-medium">المطلوب</th><th className="px-3 py-2 font-medium">المدفوع</th><th className="px-3 py-2 font-medium">المتبقي</th><th className="px-3 py-2 font-medium">الحالة</th></tr></thead>
-                            <tbody className="divide-y divide-slate-100">
-                              {feeEnrollment.fees.map((fee) => {
-                                const unpaid = Number(fee.remaining) > 0;
-                                return (
-                                  <tr key={fee.id}>
-                                    <td className="px-3 py-2 text-slate-800">{feeLabel(fee)}</td>
-                                    <td className="px-3 py-2 text-slate-600">{fee.due_date || '—'}</td>
-                                    <td className="px-3 py-2 text-slate-600">{money(fee.amount_due)}</td>
-                                    <td className="px-3 py-2 text-[#3B4A36]">{money(fee.allocated)}</td>
-                                    <td className={`px-3 py-2 font-semibold ${unpaid ? 'text-[#A03434]' : 'text-[#3B4A36]'}`}>{money(fee.remaining)}</td>
-                                    <td className="px-3 py-2"><span className={`inline-flex rounded-full px-2 py-1 text-xs font-semibold ${unpaid ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'}`}>{unpaid ? 'غير مسدد' : 'مسدد'}</span></td>
-                                  </tr>
-                                );
-                              })}
-                            </tbody>
-                          </table>
-                        </div>
-
-                        <div className="mt-4">
-                          <EnrollmentDiscountCard
-                            enrollmentId={feeEnrollment.enrollment_id}
-                            yearLabel={feeEnrollment.academic_year?.name}
-                          />
-                        </div>
-                      </div>
-                    ))}
+              ) : (
+                <>
+                  <div className="mb-5 grid grid-cols-1 gap-4 md:grid-cols-3">
+                    <div className="rounded-2xl bg-[#E3EBDB] p-5">
+                      <div className="mb-3 flex items-center gap-2 text-[#3B4A36]"><UserRound size={18} /><span className="text-sm font-semibold">الولي / الأب</span></div>
+                      <p className="font-bold text-slate-800">{guardianName}</p>
+                      <p className="mt-2 flex items-center gap-2 text-sm text-slate-600" dir="ltr"><Phone size={15} />{guardianPhone}</p>
+                      <p className="mt-2 text-sm text-slate-600">الأم: {student.mother_name || 'غير مسجّل'}</p>
+                    </div>
+                    <div className="rounded-2xl bg-[#EFEAE0] p-5">
+                      <div className="mb-3 flex items-center gap-2 text-[#7C6B42] text-sm font-semibold"><Wallet size={18} />الرصيد المستحق</div>
+                      <p className="text-2xl font-extrabold text-slate-800">{money(balance)}</p>
+                      <p className="mt-2 text-xs text-slate-500">محسوب من الرسوم والتوزيعات غير الملغاة.</p>
+                    </div>
+                    <div className="rounded-2xl bg-[#F1E4E2] p-5">
+                      <div className="mb-3 flex items-center gap-2 text-[#A03434] text-sm font-semibold"><AlertCircle size={18} />الأقساط الشهرية غير المسددة</div>
+                      <p className="text-2xl font-extrabold text-slate-800">{unpaidMonthlyFees.length}</p>
+                      <p className="mt-2 text-xs text-slate-500">المتبقي: {money(monthlyRemaining)}</p>
+                    </div>
                   </div>
-                )}
-              </div>
 
-              <div className="mb-5 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-                <div className="border-b border-slate-100 bg-[#EFEAE0] px-5 py-4">
-                  <h2 className="font-bold text-slate-800">سجل الدفعات حسب الشهر</h2>
-                  <p className="mt-1 text-xs text-slate-500">تاريخ التحصيل هو التاريخ المحفوظ فعليًا لكل دفعة.</p>
-                </div>
-                {payments.length === 0 ? (
-                  <p className="p-6 text-center text-sm text-slate-500">لا توجد دفعات محفوظة لهذا التلميذ.</p>
-                ) : (
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-right text-sm">
-                      <thead className="border-b border-slate-100 bg-slate-50 text-xs text-slate-500"><tr><th className="px-5 py-3 font-semibold">الشهر</th><th className="px-5 py-3 font-semibold">مبلغ الدفعة</th><th className="px-5 py-3 font-semibold">تاريخ التحصيل</th><th className="px-5 py-3 font-semibold">الحالة</th></tr></thead>
-                      <tbody className="divide-y divide-slate-100">
-                        {payments.map((payment) => (
-                          <tr key={payment.id}>
-                            <td className="px-5 py-3 text-slate-800">{payment.months.length > 0 ? payment.months.join('، ') : 'غير محدد'}</td>
-                            <td className="px-5 py-3 text-slate-700">{money(payment.amount)}</td>
-                            <td className="px-5 py-3 text-slate-700" dir="ltr">{payment.payment_date || 'غير متاح'}</td>
-                            <td className="px-5 py-3"><span className={`inline-flex rounded-full px-2 py-1 text-xs font-semibold ${payment.cancelled_at ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'}`}>{payment.cancelled_at ? 'ملغاة' : 'مدفوعة'}</span></td>
-                          </tr>
+                  <div className="mb-5 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+                    <div className="border-b border-slate-100 bg-[#E3EBDB] px-5 py-4">
+                      <h2 className="font-bold text-slate-800">الرسوم: غير المسددة والمسددّة</h2>
+                      <p className="mt-1 text-xs text-slate-500">المبالغ قادمة من الرسوم وتوزيعات الدفعات المحفوظة فعليًا.</p>
+                    </div>
+                    {feeEnrollments.length === 0 ? (
+                      <p className="p-6 text-center text-sm text-slate-500">لا توجد رسوم مسجّلة لهذا التلميذ.</p>
+                    ) : (
+                      <div className="divide-y divide-slate-100">
+                        {feeEnrollments.map((feeEnrollment) => (
+                          <div key={feeEnrollment.enrollment_id} className="p-5">
+                            <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                              <h3 className="font-semibold text-slate-800">{feeEnrollment.academic_year?.name || 'سنة غير محددة'} — {feeEnrollment.level?.name || 'مستوى غير محدد'}</h3>
+                              <span className="text-xs text-slate-500">{studentStatusLabel(feeEnrollment.status)}</span>
+                            </div>
+                            <div className="overflow-x-auto">
+                              <table className="w-full text-right text-sm">
+                                <thead className="text-xs text-slate-500"><tr><th className="px-3 py-2 font-medium">الرسم / القسط</th><th className="px-3 py-2 font-medium">الاستحقاق</th><th className="px-3 py-2 font-medium">المطلوب</th><th className="px-3 py-2 font-medium">المدفوع</th><th className="px-3 py-2 font-medium">المتبقي</th><th className="px-3 py-2 font-medium">الحالة</th></tr></thead>
+                                <tbody className="divide-y divide-slate-100">
+                                  {feeEnrollment.fees.map((fee) => {
+                                    const unpaid = Number(fee.remaining) > 0;
+                                    return (
+                                      <tr key={fee.id}>
+                                        <td className="px-3 py-2 text-slate-800">{feeLabel(fee)}</td>
+                                        <td className="px-3 py-2 text-slate-600">{fee.due_date || '—'}</td>
+                                        <td className="px-3 py-2 text-slate-600">{money(fee.amount_due)}</td>
+                                        <td className="px-3 py-2 text-[#3B4A36]">{money(fee.allocated)}</td>
+                                        <td className={`px-3 py-2 font-semibold ${unpaid ? 'text-[#A03434]' : 'text-[#3B4A36]'}`}>{money(fee.remaining)}</td>
+                                        <td className="px-3 py-2"><span className={`inline-flex rounded-full px-2 py-1 text-xs font-semibold ${unpaid ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'}`}>{unpaid ? 'غير مسدد' : 'مسدد'}</span></td>
+                                      </tr>
+                                    );
+                                  })}
+                                </tbody>
+                              </table>
+                            </div>
+
+                            <div className="mt-4">
+                              <EnrollmentDiscountCard
+                                enrollmentId={feeEnrollment.enrollment_id}
+                                yearLabel={feeEnrollment.academic_year?.name}
+                              />
+                            </div>
+                          </div>
                         ))}
-                      </tbody>
-                    </table>
+                      </div>
+                    )}
                   </div>
-                )}
-              </div>
 
-              <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
-                معاليم الأندية غير متاحة بعد لأن الاشتراكات الحالية لا ترتبط بجدول رسوم أو دفعات مستحقة يمكن حساب المتبقي منه بأمان.
-              </div>
+                  <div className="mb-5 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+                    <div className="border-b border-slate-100 bg-[#EFEAE0] px-5 py-4">
+                      <h2 className="font-bold text-slate-800">سجل الدفعات حسب الشهر</h2>
+                      <p className="mt-1 text-xs text-slate-500">تاريخ التحصيل هو التاريخ المحفوظ فعليًا لكل دفعة.</p>
+                    </div>
+                    {payments.length === 0 ? (
+                      <p className="p-6 text-center text-sm text-slate-500">لا توجد دفعات محفوظة لهذا التلميذ.</p>
+                    ) : (
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-right text-sm">
+                          <thead className="border-b border-slate-100 bg-slate-50 text-xs text-slate-500"><tr><th className="px-5 py-3 font-semibold">الشهر</th><th className="px-5 py-3 font-semibold">مبلغ الدفعة</th><th className="px-5 py-3 font-semibold">تاريخ التحصيل</th><th className="px-5 py-3 font-semibold">الحالة</th></tr></thead>
+                          <tbody className="divide-y divide-slate-100">
+                            {payments.map((payment) => (
+                              <tr key={payment.id}>
+                                <td className="px-5 py-3 text-slate-800">{payment.months.length > 0 ? payment.months.join('، ') : 'غير محدد'}</td>
+                                <td className="px-5 py-3 text-slate-700">{money(payment.amount)}</td>
+                                <td className="px-5 py-3 text-slate-700" dir="ltr">{payment.payment_date || 'غير متاح'}</td>
+                                <td className="px-5 py-3"><span className={`inline-flex rounded-full px-2 py-1 text-xs font-semibold ${payment.cancelled_at ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'}`}>{payment.cancelled_at ? 'ملغاة' : 'مدفوعة'}</span></td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </div>
+                </>
+              )}
             </>
           )}
         </>

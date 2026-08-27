@@ -52,4 +52,9 @@ class ClubSubscription extends Model
     {
         return $this->belongsTo(User::class, 'excluded_by');
     }
+
+    public function monthlyDiscounts(): \Illuminate\Database\Eloquent\Relations\HasMany
+    {
+        return $this->hasMany(ClubMonthlyDiscount::class, 'club_subscription_id');
+    }
 }

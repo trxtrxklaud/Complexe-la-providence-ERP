@@ -83,6 +83,64 @@ export function TreasuryHistoryPage() {
 
   return (
     <div className="px-6 pb-10 max-w-6xl mx-auto" dir="rtl">
+      {/* Print Styles — احترافي مثل وصولات الاستخلاص: يملأ كامل الورقة */}
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;700;800&display=swap');
+        @media print {
+          @page { size: A4 portrait; margin: 8mm; }
+          body * { visibility: hidden !important; }
+          .print-only, .print-only * { visibility: visible !important; }
+          .print-only {
+            position: static !important;
+            width: 100% !important;
+            min-height: 88vh !important;
+            height: auto !important;
+            margin: 0 !important;
+            padding: 8mm !important;
+            box-sizing: border-box !important;
+            background: #fff !important;
+            display: block !important;
+            font-family: 'Cairo', sans-serif !important;
+            font-size: 14px !important;
+            font-weight: 600 !important;
+            border: 1px solid #2a9d8f !important;
+            border-radius: 0 !important;
+          }
+          .no-print, header, nav, aside, button, form, input, select { display: none !important; visibility: hidden !important; }
+          table { width: 100% !important; border-collapse: collapse !important; }
+          thead th { background: #2a9d8f !important; color: #fff !important; font-size: 13px !important; font-weight: 700 !important; padding: 8px 10px !important; }
+          td { font-size: 13px !important; font-weight: 600 !important; padding: 8px 10px !important; }
+          .treasury-print-summary { font-size: 14px !important; font-weight: 700 !important; border: 1px solid #2a9d8f !important; background: #E0F0EE !important; margin-top: auto !important; }
+          * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+        }
+        .print-only { display: none; }
+      `}</style>
+
+      {/* Printable Official Header — تصميم احترافي مثل وصل الاستخلاص */}
+      <div className="print-only mb-4 p-4 border rounded-xl bg-white text-slate-900" style={{ borderColor: '#2a9d8f' }}>
+        <div style={{ textAlign: 'center', fontWeight: 800, fontSize: 15, color: '#c8a96e', letterSpacing: 0.5, lineHeight: 1.3 }}>Complexe La Providence</div>
+        <div style={{ textAlign: 'center', fontSize: 9, fontWeight: 600, color: '#7d93a8', direction: 'ltr' }}>Tel: 95420350 / 76624400</div>
+        <div className="flex items-center justify-between border-b pb-3 mt-3" style={{ borderColor: '#2a9d8f' }}>
+          <div>
+            <h1 className="text-xl font-bold" style={{ color: '#1a3a5c' }}>مدرسة العناية — كشف حركات الخزينة الرسمية</h1>
+            <p className="text-sm mt-1" style={{ color: '#7d93a8', fontWeight: 600 }}>
+              الفترة: من <strong style={{ color: '#1a3a5c' }}>{dateFrom || 'بداية السجل'}</strong> إلى <strong style={{ color: '#1a3a5c' }}>{dateTo || 'اليوم'}</strong>
+            </p>
+          </div>
+          <div className="text-left text-sm" style={{ color: '#7d93a8', fontWeight: 600 }}>
+            <p>تاريخ الطباعة: {new Date().toLocaleDateString('ar-TN')}</p>
+          </div>
+        </div>
+
+        <div className="mt-3 grid grid-cols-5 gap-2 text-xs font-semibold bg-slate-50 p-2.5 rounded-lg border border-slate-200 text-center">
+          <div>المداخيل: <span dir="ltr">{money(summary?.income ?? 0)}</span> د.ت</div>
+          <div>المصاريف: <span dir="ltr">{money(summary?.expenses ?? 0)}</span> د.ت</div>
+          <div>الصافي: <span dir="ltr">{money(summary?.net_income ?? 0)}</span> د.ت</div>
+          <div>السحوبات: <span dir="ltr">{money(summary?.withdrawals ?? 0)}</span> د.ت</div>
+          <div className="font-bold text-slate-900">الرصيد النهائي: <span dir="ltr">{money(summary?.balance ?? 0)}</span> د.ت</div>
+        </div>
+      </div>
+
       <PageShell
         title="سجل حركات الخزينة"
         subtitle="كل الحركات الداخلة والخارجة (مداخيل / مصاريف / سحوبات) من الدفتر المركزي"
@@ -94,7 +152,7 @@ export function TreasuryHistoryPage() {
           ) : null}
 
           {/* المرشّحات */}
-          <div className="bg-white rounded-2xl p-5 mb-6" style={{ border: '1px solid ' + C.line }}>
+          <div className="no-print bg-white rounded-2xl p-5 mb-6" style={{ border: '1px solid ' + C.line }}>
             <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
               <div>
                 <label className="block text-xs mb-1.5" style={{ color: C.muted }}>من تاريخ</label>
@@ -239,7 +297,7 @@ export function TreasuryHistoryPage() {
                 </div>
 
                 {lastPage > 1 ? (
-                  <div className="flex items-center justify-between px-5 py-3" style={{ borderTop: '1px solid ' + C.line }}>
+                  <div className="no-print flex items-center justify-between px-5 py-3" style={{ borderTop: '1px solid ' + C.line }}>
                     <button
                       type="button"
                       onClick={() => setPage((p) => Math.max(1, p - 1))}
@@ -261,6 +319,14 @@ export function TreasuryHistoryPage() {
                     </button>
                   </div>
                 ) : null}
+
+                {/* ملخص الرصيد التراكمي النهائي داخل نفس التقرير المطبوع */}
+                <div className="print-only treasury-print-summary rounded-xl p-4 mt-4 border border-slate-900 bg-white">
+                  <div className="flex items-center justify-between text-sm font-bold text-slate-900">
+                    <span>الرصيد التراكمي النهائي للخزينة (المداخيل − المصاريف − السحوبات):</span>
+                    <span dir="ltr" className="text-base">{money(summary?.balance ?? 0)} د.ت</span>
+                  </div>
+                </div>
               </>
             )}
           </div>

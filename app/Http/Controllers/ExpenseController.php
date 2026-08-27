@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\AcademicYear;
 use App\Models\Expense;
+use App\Services\AuditService;
 use App\Services\LedgerService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -54,6 +55,8 @@ class ExpenseController extends Controller
 
             return $expense;
         });
+
+        AuditService::log('expense.create', 'تسجيل مصروف: '.$expense->label.' بمبلغ '.$expense->amount.' د.ت', $expense, ['amount' => $expense->amount]);
 
         return response()->json($expense->load(['category:id,name', 'academicYear:id,name']), 201);
     }

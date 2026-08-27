@@ -183,6 +183,9 @@ function DayCard({
         </div>
       </div>
 
+      <TotalRow label="تحصيل ديون قديمة" value={day.prior_year_debt} />
+      <TotalRow label="إجمالي المقبوضات النقدية" value={day.income.total + (day.prior_year_debt ?? 0)} strong />
+      <TotalRow label="الدخل المحقق للسنة الحالية" value={day.income.total} />
       <TotalRow label="الدخل الصافي" value={day.net_income} strong danger />
       <TotalRow label="السحوبات" value={day.withdrawals} />
       {day.details && day.details.withdrawals.length > 0 && (
@@ -190,15 +193,25 @@ function DayCard({
           <DetailList title="تفاصيل السحوبات" items={day.details.withdrawals} />
         </div>
       )}
-      <TotalRow label="الرصيد النهائي اليومي" value={day.balance} strong danger />
+      <TotalRow label="الرصيد بعد السحوبات" value={day.balance} strong danger />
 
       {showCumulative && (
         <div style={{ backgroundColor: C.bg }}>
-          <TotalRow label="الدخل الصافي التراكمي" value={day.cumulative.net_income} />
+          <TotalRow label="تحصيل ديون قديمة (تراكمي)" value={day.cumulative.prior_year_debt} />
+          <TotalRow label="إجمالي المقبوضات النقدية (تراكمي)" value={(day.cumulative.net_income ?? 0) + (day.cumulative.prior_year_debt ?? 0)} />
+          <TotalRow label="الدخل المحقق للسنة الحالية (تراكمي)" value={day.cumulative.net_income} />
           <TotalRow label="السحوبات التراكمية" value={day.cumulative.withdrawals} />
-          <TotalRow label="الرصيد التراكمي بعد السحب" value={day.cumulative.balance} strong danger />
+          <TotalRow label="الرصيد بعد السحوبات (تراكمي)" value={day.cumulative.balance} strong danger />
         </div>
       )}
+
+      {/* الرصيد التراكمي المطبوع دائماً داخل التقرير */}
+      <div className="print-only treasury-print-summary px-4 py-2.5 text-sm font-bold border-t border-slate-900 bg-slate-50 text-slate-900">
+        <div className="flex items-center justify-between">
+          <span>الرصيد التراكمي النهائي حتى هذا اليوم:</span>
+          <span dir="ltr">{money(day.cumulative?.balance ?? 0)} د.ت</span>
+        </div>
+      </div>
     </div>
   );
 }
@@ -294,12 +307,41 @@ export function TreasuryDaybookPage() {
       className={'px-6 pb-10 max-w-6xl mx-auto' + (printDay ? ' printing-single' : '')}
     >
       <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;700;800&display=swap');
         @media print {
-          .no-print { display: none !important; }
-          body { background: #fff; }
-          .daybook-card { break-inside: avoid; page-break-inside: avoid; }
+          @page { size: A4 portrait; margin: 8mm; }
+          body * { visibility: hidden !important; }
+          .daybook-card, .daybook-card * { visibility: visible !important; }
+          .daybook-card {
+            break-inside: avoid !important;
+            page-break-inside: avoid !important;
+            border: 1px solid #2a9d8f !important;
+            border-radius: 0 !important;
+            box-shadow: none !important;
+            font-family: 'Cairo', sans-serif !important;
+            font-size: 14px !important;
+            font-weight: 600 !important;
+            background: #fff !important;
+          }
+          .daybook-card.print-target {
+            position: fixed !important;
+            top: 0 !important; left: 0 !important;
+            width: 100% !important;
+            height: 100% !important;
+            margin: 0 !important;
+            padding: 8mm !important;
+            box-sizing: border-box !important;
+            display: flex !important;
+            flex-direction: column !important;
+            justify-content: space-between !important;
+            border: 1px solid #2a9d8f !important;
+          }
+          .daybook-card.print-target * { font-weight: 600 !important; }
           .printing-single .daybook-card:not(.print-target) { display: none !important; }
-          .printing-single .range-only { display: none !important; }
+          .no-print, header, nav, aside, button, form, input, select { display: none !important; visibility: hidden !important; }
+          th, td { font-size: 13px !important; font-weight: 600 !important; padding: 8px 10px !important; border-color: #ccc !important; }
+          .treasury-print-summary { font-size: 14px !important; font-weight: 700 !important; border-color: #2a9d8f !important; background: #E0F0EE !important; }
+          * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
         }
       `}</style>
 

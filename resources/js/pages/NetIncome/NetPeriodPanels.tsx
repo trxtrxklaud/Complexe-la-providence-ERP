@@ -69,72 +69,99 @@ export function dinar(value: number | string | null | undefined): string {
 export function PrintStyles() {
   return (
     <style>{`
+      @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;700;800&display=swap');
       @media print {
-        @page { size: A4 portrait; margin: 0; }
+        @page { size: A4 landscape; margin: 8mm; }
 
         body * { visibility: hidden !important; }
         #net-print-area, #net-print-area * { visibility: visible !important; }
 
         #net-print-area {
           position: absolute !important;
-          top: 0;
-          right: 0;
-          left: 0;
+          top: 0 !important; left: 0 !important; right: 0 !important;
           width: 100% !important;
-          max-width: 100% !important;
+          min-height: 88vh !important;
+          height: auto !important;
+          margin: 0 !important;
           padding: 8mm !important;
           box-sizing: border-box !important;
+          background: #fff !important;
+          border: 1px solid #2a9d8f !important;
+          border-radius: 0 !important;
+          display: block !important;
+          font-family: 'Cairo', sans-serif !important;
+          font-size: 14px !important;
+          font-weight: 600 !important;
           overflow: visible !important;
         }
 
         #net-print-area table {
           width: 100% !important;
           max-width: 100% !important;
-          table-layout: fixed;
-          border-collapse: collapse;
+          table-layout: fixed !important;
+          border-collapse: collapse !important;
+          font-size: 11pt !important;
         }
 
-        #net-print-area th,
+        #net-print-area th {
+          background: #2a9d8f !important;
+          color: #fff !important;
+          font-size: 10.5pt !important;
+          font-weight: 700 !important;
+          padding: 6px 8px !important;
+          border: 1px solid #2a9d8f !important;
+        }
         #net-print-area td {
+          font-size: 10pt !important;
+          font-weight: 600 !important;
+          padding: 5px 6px !important;
           white-space: normal !important;
           word-break: break-word !important;
           overflow-wrap: break-word !important;
+          border: 1px solid #ccc !important;
         }
 
         #net-print-area thead { display: table-header-group; }
         #net-print-area tr { break-inside: avoid; page-break-inside: avoid; }
 
         .no-print { display: none !important; }
+        * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
       }
     `}</style>
   );
 }
 
-/** ترويسة لا تظهر إلا في المطبوع، تحمل هوية المؤسسة. */
+/** ترويسة لا تظهر إلا في المطبوع، تحمل هوية المؤسسة — تصميم احترافي مثل وصل الاستخلاص. */
 export function PrintHeader({ date }: { date: string }) {
   return (
-    <table className="w-full hidden print:table mb-4" style={{ color: '#000' }}>
-      <tbody>
-        <tr>
-          <td className="w-1/2 text-center align-top">
-            <strong>{SCHOOL_FR}</strong>
-            <br />
-            {CITY_FR}
-            <br />
-            {date}
-          </td>
-          <td className="w-1/2 text-center align-top">
-            <strong>{SCHOOL_AR}</strong>
-            <br />
-            {CITY_AR}
-            <br />
-            {PHONE_1}
-            <br />
-            {PHONE_2}
-          </td>
-        </tr>
-      </tbody>
-    </table>
+    <>
+      <div className="hidden print:block text-center mb-2" style={{ borderBottom: '2px solid #2a9d8f', paddingBottom: 6 }}>
+        <div style={{ fontWeight: 800, fontSize: 15, color: '#c8a96e', letterSpacing: 0.5, lineHeight: 1.3 }}>Complexe La Providence</div>
+        <div style={{ fontSize: 9, fontWeight: 600, color: '#7d93a8', direction: 'ltr' }}>Tel: 95420350 / 76624400 — {date}</div>
+      </div>
+      <table className="w-full hidden print:table mb-4" style={{ color: '#1a3a5c', border: '1px solid #2a9d8f' }}>
+        <tbody>
+          <tr>
+            <td className="w-1/2 text-center align-top" style={{ padding: '8px', fontWeight: 600 }}>
+              <strong style={{ color: '#c8a96e' }}>{SCHOOL_FR}</strong>
+              <br />
+              {CITY_FR}
+              <br />
+              {date}
+            </td>
+            <td className="w-1/2 text-center align-top" style={{ padding: '8px', fontWeight: 600 }}>
+              <strong style={{ color: '#2a9d8f' }}>{SCHOOL_AR}</strong>
+              <br />
+              {CITY_AR}
+              <br />
+              {PHONE_1}
+              <br />
+              {PHONE_2}
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </>
   );
 }
 

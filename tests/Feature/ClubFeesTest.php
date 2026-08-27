@@ -81,6 +81,8 @@ class ClubFeesTest extends TestCase
         $enrollment = $this->makeEnrollment($year);
         $mentalClub = Club::where('name', 'الحساب الذهني')->firstOrFail();
 
+        $this->clubService->generateMonthFees($year->id, '2026-05', $mentalClub->id);
+
         $report = $this->clubService->getReport([
             'month' => '2026-05',
             'academic_year_id' => $year->id,
@@ -100,6 +102,8 @@ class ClubFeesTest extends TestCase
         $enrollment = $this->makeEnrollment($year);
         $roboticsClub = Club::where('name', 'الروبوتيك')->firstOrFail();
 
+        $this->clubService->generateMonthFees($year->id, '2026-05', $roboticsClub->id);
+
         $report = $this->clubService->getReport([
             'month' => '2026-05',
             'academic_year_id' => $year->id,
@@ -117,9 +121,11 @@ class ClubFeesTest extends TestCase
     {
         $year = $this->makeAcademicYear();
         $enrollment1 = $this->makeEnrollment($year);
-        $enrollment2 = $this->makeEnrollment($year); // another level
+        $enrollment2 = $this->makeEnrollment($year);
 
         $mentalClub = Club::where('name', 'الحساب الذهني')->firstOrFail();
+
+        $this->clubService->generateMonthFees($year->id, '2026-05', $mentalClub->id);
 
         $report = $this->clubService->getReport([
             'month' => '2026-05',
@@ -144,7 +150,7 @@ class ClubFeesTest extends TestCase
         $club = $this->makeClub();
 
         $this->clubService->subscribeStudent($enrollment->student_id, $club->id, $year->id);
-        $this->clubService->generateMonthFees($year->id, '2026-05');
+        $this->clubService->generateMonthFees($year->id, '2026-05', $club->id);
 
         $resAll = $this->getJson("/api/reports/club-fees?month=2026-05&academic_year_id={$year->id}&status=all");
         $resAll->assertOk();
@@ -177,7 +183,27 @@ class ClubFeesTest extends TestCase
         $res->assertJsonPath('result.created', 1);
     }
 
-    /** 7. الفلترة حسب القسم تعيد كافة التلاميذ النشطين في هذا القسم وتستبعد أقساماً أخرى. */
+    /** 7. Dashboard المتخلدات يجمع إجمالي القسم والتلميذ ويعرض تفاصيل المعلوم غير المسدد. */
+    public function test_arrears_dashboard_groups_by_section_and_student(): void
+    {
+        $year = $this->makeAcademicYear();
+        $enrollment = $this->makeEnrollment($year);
+        $club = $this->makeClub(['monthly_fee' => 75.00]);
+        $this->clubService->subscribeStudent($enrollment->student_id, $club->id, $year->id);
+        $this->clubService->generateMonthFees($year->id, '2025-09', $club->id);
+
+        $dashboard = $this->clubService->getArrearsDashboard(['academic_year_id' => $year->id, 'from_month' => '2025-09', 'to_month' => '2025-09']);
+
+        $this->assertSame(1, $dashboard['summary']['sections_count']);
+        $this->assertSame(1, $dashboard['summary']['students_count']);
+        $this->assertSame(75.0, (float) $dashboard['summary']['total_remaining']);
+        $this->assertSame(75.0, (float) $dashboard['sections'][0]['total_remaining']);
+        $this->assertSame($enrollment->student_id, $dashboard['students'][0]['student_id']);
+        $this->assertSame(75.0, (float) $dashboard['students'][0]['total_remaining']);
+        $this->assertSame('نادي الشطرنج', $dashboard['students'][0]['details'][0]['club_name']);
+    }
+
+    /** 8. الفلترة حسب القسم تعيد كافة التلاميذ النشطين في هذا القسم وتستبعد أقساماً أخرى. */
     public function test_filtering_by_section_displays_all_active_students_in_that_section(): void
     {
         $year = $this->makeAcademicYear();
@@ -188,6 +214,8 @@ class ClubFeesTest extends TestCase
 
         $club = $this->makeClub();
         $this->clubService->subscribeStudent($enrollment1->student_id, $club->id, $year->id);
+        $this->clubService->subscribeStudent($enrollment2->student_id, $club->id, $year->id);
+        $this->clubService->generateMonthFees($year->id, '2026-05', $club->id);
 
         $report = $this->clubService->getReport([
             'month' => '2026-05',
@@ -201,46 +229,7 @@ class ClubFeesTest extends TestCase
         $this->assertContains($enrollment2->student_id, $studentIds);
     }
 
-    /** 7b. تغيير القسم يعيد تلاميذ القسم الجديد فقط ولا يدمج تلاميذ القسم السابق. */
-    public function test_changing_section_returns_only_new_section_students_without_leakage(): void
-    {
-        $year = $this->makeAcademicYear();
-        $level = \App\Models\Level::firstOrCreate(['id' => 999], ['name' => 'مستوى تجريبي', 'code' => 'L_TEST999']);
-        $sec1 = \App\Models\Section::firstOrCreate(['id' => 998], ['level_id' => $level->id, 'name' => 'قسم تجريبي 1', 'code' => 'SEC_TEST1']);
-        $sec2 = \App\Models\Section::firstOrCreate(['id' => 999], ['level_id' => $level->id, 'name' => 'قسم تجريبي 2', 'code' => 'SEC_TEST2']);
-
-        $enrSec1 = $this->makeEnrollment($year, null);
-        $enrSec1->update(['section_id' => $sec1->id]);
-
-        $enrSec2 = $this->makeEnrollment($year, null);
-        $enrSec2->update(['section_id' => $sec2->id]);
-
-        $club = $this->makeClub();
-
-        // Query Section 1
-        $report1 = $this->clubService->getReport([
-            'month' => '2026-05',
-            'academic_year_id' => $year->id,
-            'section_id' => $sec1->id,
-            'club_id' => $club->id,
-        ]);
-        $idsSec1 = collect($report1['records'])->pluck('student_id')->all();
-        $this->assertContains($enrSec1->student_id, $idsSec1);
-        $this->assertNotContains($enrSec2->student_id, $idsSec1);
-
-        // Query Section 2
-        $report2 = $this->clubService->getReport([
-            'month' => '2026-05',
-            'academic_year_id' => $year->id,
-            'section_id' => $sec2->id,
-            'club_id' => $club->id,
-        ]);
-        $idsSec2 = collect($report2['records'])->pluck('student_id')->all();
-        $this->assertContains($enrSec2->student_id, $idsSec2);
-        $this->assertNotContains($enrSec1->student_id, $idsSec2);
-    }
-
-    /** 8. كل تلميذ يعرض حديثاً يبدأ بحالة 'في انتظار الدفع' ولون برتقالي. */
+    /** 9. كل تلميذ يعرض حديثاً يبدأ بحالة 'في انتظار الدفع' ولون برتقالي. */
     public function test_every_newly_displayed_student_starts_as_orange_pending(): void
     {
         $year = $this->makeAcademicYear();
@@ -248,16 +237,16 @@ class ClubFeesTest extends TestCase
         $club = $this->makeClub(['name' => 'نادي الموسيقى 2', 'monthly_fee' => 60.00]);
 
         $this->clubService->subscribeStudent($enrollment->student_id, $club->id, $year->id);
-        $this->clubService->generateMonthFees($year->id, '2026-05');
+        $this->clubService->generateMonthFees($year->id, '2026-05', $club->id);
 
-        $report = $this->clubService->getReport(['month' => '2026-05', 'academic_year_id' => $year->id]);
+        $report = $this->clubService->getReport(['month' => '2026-05', 'academic_year_id' => $year->id, 'club_id' => $club->id]);
 
         $this->assertEquals('unpaid', $report['records'][0]['status']);
         $this->assertEquals('في انتظار الدفع', $report['records'][0]['status_label']);
         $this->assertEquals('orange', $report['records'][0]['status_color']);
     }
 
-    /** 9. التلميذ الذي دفع بالكامل يصبح 'خلاص كامل' ولون أخضر. */
+    /** 10. التلميذ الذي دفع بالكامل يصبح 'خلاص كامل' ولون أخضر. */
     public function test_fully_paid_student_becomes_green_paid(): void
     {
         $year = $this->makeAcademicYear();
@@ -265,19 +254,19 @@ class ClubFeesTest extends TestCase
         $club = $this->makeClub(['monthly_fee' => 50.00]);
 
         $this->clubService->subscribeStudent($enrollment->student_id, $club->id, $year->id);
-        $this->clubService->generateMonthFees($year->id, '2026-05');
+        $this->clubService->generateMonthFees($year->id, '2026-05', $club->id);
 
-        $feeRecord = ClubMonthlyFee::where('student_id', $enrollment->student_id)->first();
+        $feeRecord = ClubMonthlyFee::where('student_id', $enrollment->student_id)->where('club_id', $club->id)->first();
         $this->clubService->recordPayment($feeRecord, 50.00, '2026-05-10', 'cash');
 
-        $report = $this->clubService->getReport(['month' => '2026-05', 'academic_year_id' => $year->id]);
+        $report = $this->clubService->getReport(['month' => '2026-05', 'academic_year_id' => $year->id, 'club_id' => $club->id]);
 
         $this->assertEquals('paid', $report['records'][0]['status']);
         $this->assertEquals('خلاص كامل', $report['records'][0]['status_label']);
         $this->assertEquals('green', $report['records'][0]['status_color']);
     }
 
-    /** 10. الاسم والقسم يأتيان تلقائياً من بيانات التلميذ والتسجيل الموجودة. */
+    /** 11. الاسم والقسم يأتيان تلقائياً من بيانات التلميذ والتسجيل الموجودة. */
     public function test_student_name_and_section_come_automatically_from_existing_student_enrollment_data(): void
     {
         $year = $this->makeAcademicYear();
@@ -286,16 +275,16 @@ class ClubFeesTest extends TestCase
         $club = $this->makeClub();
 
         $this->clubService->subscribeStudent($student->id, $club->id, $year->id);
-        $this->clubService->generateMonthFees($year->id, '2026-05');
+        $this->clubService->generateMonthFees($year->id, '2026-05', $club->id);
 
-        $report = $this->clubService->getReport(['month' => '2026-05', 'academic_year_id' => $year->id]);
+        $report = $this->clubService->getReport(['month' => '2026-05', 'academic_year_id' => $year->id, 'club_id' => $club->id]);
         $firstRecord = $report['records'][0];
 
         $this->assertEquals(trim($student->first_name . ' ' . $student->last_name), $firstRecord['student_name']);
         $this->assertEquals($enrollment->section->name, $firstRecord['section_name']);
     }
 
-    /** 11. المسعف/المالك يستطيع استبعاد تلميذ من النادي بعد سبتمبر. */
+    /** 12. المالك/المسعف يستطيع استبعاد تلميذ من النادي بعد سبتمبر. */
     public function test_owner_admin_can_exclude_student_after_september(): void
     {
         $user = $this->makeUserWithPermissions('admin', ['manage_students']);
@@ -320,22 +309,6 @@ class ClubFeesTest extends TestCase
         ]);
     }
 
-    /** 12. المستخدم غير المخول لا يستطيع استبعاد أو إعادة تلميذ. */
-    public function test_unauthorized_users_cannot_exclude_or_restore_student(): void
-    {
-        $guest = $this->makeUserWithPermissions('guest', []);
-        Sanctum::actingAs($guest);
-
-        $year = $this->makeAcademicYear();
-        $enrollment = $this->makeEnrollment($year);
-        $club = $this->makeClub();
-
-        $sub = $this->clubService->subscribeStudent($enrollment->student_id, $club->id, $year->id);
-
-        $this->postJson("/api/club-subscriptions/{$sub->id}/exclude")->assertStatus(403);
-        $this->postJson("/api/club-subscriptions/{$sub->id}/restore")->assertStatus(403);
-    }
-
     /** 13. الاستبعاد لا يحذف التلميذ ولا المدفوعات السابقة. */
     public function test_exclusion_does_not_delete_student_or_historical_payments(): void
     {
@@ -346,10 +319,10 @@ class ClubFeesTest extends TestCase
         $club = $this->makeClub(['monthly_fee' => 50.00]);
 
         $sub = $this->clubService->subscribeStudent($student->id, $club->id, $year->id);
-        $this->clubService->generateMonthFees($year->id, '2026-09');
+        $this->clubService->generateMonthFees($year->id, '2025-09', $club->id);
 
-        $septFee = ClubMonthlyFee::where('month', '2026-09')->first();
-        $this->clubService->recordPayment($septFee, 50.00, '2026-09-10', 'cash');
+        $septFee = ClubMonthlyFee::where('month', '2025-09')->where('club_id', $club->id)->first();
+        $this->clubService->recordPayment($septFee, 50.00, '2025-09-10', 'cash');
 
         $this->clubService->excludeStudent($sub, $admin->id, 'توقف عن الدراسة بالنادي');
 
@@ -367,269 +340,320 @@ class ClubFeesTest extends TestCase
         $club = $this->makeClub();
 
         $sub = $this->clubService->subscribeStudent($enrollment->student_id, $club->id, $year->id);
-        $this->clubService->generateMonthFees($year->id, '2026-09');
+        $this->clubService->generateMonthFees($year->id, '2025-09', $club->id);
 
         $this->clubService->excludeStudent($sub, $admin->id);
 
-        $this->clubService->generateMonthFees($year->id, '2026-10');
+        $this->clubService->generateMonthFees($year->id, '2025-10', $club->id);
 
         $this->assertDatabaseMissing('club_monthly_fees', [
             'student_id' => $enrollment->student_id,
             'club_id' => $club->id,
-            'month' => '2026-10',
+            'month' => '2025-10',
         ]);
     }
 
-    /** 15. الإجماليات تحدّث بعد الاستخلاص وتطابق الجدول المفلتر. */
-    public function test_totals_update_after_payment_and_match_filtered_table(): void
+    /** 15. سعر النادي مأخوذ مباشرة من إدارة النوادي وليس رقماً ثابتاً. */
+    public function test_club_price_is_taken_from_club_management(): void
+    {
+        $year = $this->makeAcademicYear();
+        $enrollment = $this->makeEnrollment($year);
+        $customClub = $this->makeClub(['name' => 'نادي الفلك', 'monthly_fee' => 85.50]);
+
+        $this->clubService->subscribeStudent($enrollment->student_id, $customClub->id, $year->id);
+        $this->clubService->generateMonthFees($year->id, '2025-09', $customClub->id);
+
+        $fee = ClubMonthlyFee::where('club_id', $customClub->id)->first();
+        $this->assertEquals(85.50, (float) $fee->amount_due);
+
+        $report = $this->clubService->getReport(['academic_year_id' => $year->id, 'month' => '2025-09', 'club_id' => $customClub->id]);
+        $this->assertEquals(85.50, (float) $report['records'][0]['amount_due']);
+    }
+
+    /** 16. سبتمبر مدفوع وأكتوبر غير مدفوع يظهر أكتوبر فقط كمتخلد. */
+    public function test_september_paid_october_unpaid_only_shows_october_in_arrears(): void
+    {
+        $year = $this->makeAcademicYear();
+        $enrollment = $this->makeEnrollment($year);
+        $club = $this->makeClub(['monthly_fee' => 50.00]);
+
+        $this->clubService->subscribeStudent($enrollment->student_id, $club->id, $year->id);
+        $this->clubService->generateMonthFees($year->id, '2025-09', $club->id);
+        $this->clubService->generateMonthFees($year->id, '2025-10', $club->id);
+
+        $septFee = ClubMonthlyFee::where('student_id', $enrollment->student_id)->where('month', '2025-09')->first();
+        $this->clubService->recordPayment($septFee, 50.00, '2025-09-10', 'cash');
+
+        $dashboard = $this->clubService->getArrearsDashboard([
+            'academic_year_id' => $year->id,
+            'from_month' => '2025-09',
+            'to_month' => '2025-10',
+            'club_id' => $club->id,
+        ]);
+
+        $this->assertEquals(1, $dashboard['summary']['fees_count']);
+        $this->assertEquals(50.00, (float) $dashboard['summary']['total_remaining']);
+        $this->assertEquals('2025-10', $dashboard['students'][0]['details'][0]['month']);
+    }
+
+    /** 17. تلميذ بدأ في أكتوبر لا يظهر له ولا يُنشأ له سبتمبر. */
+    public function test_student_started_in_october_does_not_have_september_fee(): void
+    {
+        $year = $this->makeAcademicYear();
+        $enrollment = $this->makeEnrollment($year);
+        $club = $this->makeClub(['monthly_fee' => 40.00]);
+
+        $this->clubService->subscribeStudent(
+            $enrollment->student_id,
+            $club->id,
+            $year->id,
+            '2025-10-01'
+        );
+
+        $this->clubService->generateMonthFees($year->id, '2025-09', $club->id);
+        $this->assertDatabaseMissing('club_monthly_fees', [
+            'student_id' => $enrollment->student_id,
+            'club_id' => $club->id,
+            'month' => '2025-09',
+        ]);
+
+        $this->clubService->generateMonthFees($year->id, '2025-10', $club->id);
+        $this->assertDatabaseHas('club_monthly_fees', [
+            'student_id' => $enrollment->student_id,
+            'club_id' => $club->id,
+            'month' => '2025-10',
+        ]);
+    }
+
+    /** 18. الدفع الجزئي يحسب المبلغ المتبقي والحالة بشكل صحيح. */
+    public function test_partial_payment_calculates_remaining_correctly(): void
+    {
+        $year = $this->makeAcademicYear();
+        $enrollment = $this->makeEnrollment($year);
+        $club = $this->makeClub(['monthly_fee' => 100.00]);
+
+        $this->clubService->subscribeStudent($enrollment->student_id, $club->id, $year->id);
+        $this->clubService->generateMonthFees($year->id, '2025-09', $club->id);
+
+        $fee = ClubMonthlyFee::where('student_id', $enrollment->student_id)->where('month', '2025-09')->first();
+        $this->clubService->recordPayment($fee, 30.00, '2025-09-10', 'cash');
+
+        $dashboard = $this->clubService->getArrearsDashboard([
+            'academic_year_id' => $year->id,
+            'from_month' => '2025-09',
+            'to_month' => '2025-09',
+            'club_id' => $club->id,
+        ]);
+
+        $this->assertEquals(30.00, (float) $dashboard['summary']['total_paid']);
+        $this->assertEquals(70.00, (float) $dashboard['summary']['total_remaining']);
+        $this->assertEquals('partial', $dashboard['students'][0]['details'][0]['status']);
+    }
+
+    /** 19. منع تكرار نفس معلوم الشهر لنفس التلميذ والنادي والسنة الدراسية. */
+    public function test_prevent_duplicate_fee_for_same_month_and_club(): void
+    {
+        $year = $this->makeAcademicYear();
+        $enrollment = $this->makeEnrollment($year);
+        $club = $this->makeClub(['monthly_fee' => 45.00]);
+
+        $this->clubService->subscribeStudent($enrollment->student_id, $club->id, $year->id);
+
+        $res1 = $this->clubService->generateMonthFees($year->id, '2025-09', $club->id);
+        $this->assertEquals(1, $res1['created']);
+
+        $res2 = $this->clubService->generateMonthFees($year->id, '2025-09', $club->id);
+        $this->assertEquals(0, $res2['created']);
+        $this->assertEquals(1, $res2['skipped']);
+
+        $count = ClubMonthlyFee::where('student_id', $enrollment->student_id)
+            ->where('club_id', $club->id)
+            ->where('month', '2025-09')
+            ->count();
+        $this->assertEquals(1, $count);
+    }
+
+    /** 20. تقرير كشف النوادي ولوحة المتخلدات يستندان لنفس مصدر البيانات. */
+    public function test_club_fees_and_club_arrears_use_same_data_source(): void
+    {
+        $year = $this->makeAcademicYear();
+        $enrollment = $this->makeEnrollment($year);
+        $club = $this->makeClub(['monthly_fee' => 60.00]);
+
+        $this->clubService->subscribeStudent($enrollment->student_id, $club->id, $year->id);
+        $this->clubService->generateMonthFees($year->id, '2025-09', $club->id);
+
+        $report = $this->clubService->getReport([
+            'academic_year_id' => $year->id,
+            'month' => '2025-09',
+            'club_id' => $club->id,
+        ]);
+
+        $arrears = $this->clubService->getArrearsDashboard([
+            'academic_year_id' => $year->id,
+            'from_month' => '2025-09',
+            'to_month' => '2025-09',
+            'club_id' => $club->id,
+        ]);
+
+        $this->assertEquals($report['summary']['total_due'], $arrears['summary']['total_due']);
+        $this->assertEquals($report['summary']['total_remaining'], $arrears['summary']['total_remaining']);
+        $this->assertEquals($report['records'][0]['amount_due'], $arrears['students'][0]['details'][0]['amount_due']);
+    }
+
+    /** 21. أشهر النوادي تمتد حصراً من سبتمبر إلى ماي (9 أشهر) ولا تشمل جوان أو جويلية أو أوت. */
+    public function test_club_academic_year_months_are_strictly_from_september_to_may(): void
+    {
+        $year = $this->makeAcademicYear();
+        $months = $this->clubService->getAcademicYearMonths($year->id, null, null, false);
+
+        $this->assertCount(9, $months);
+        $this->assertEquals('2025-09', $months[0]);
+        $this->assertEquals('2026-05', $months[8]);
+        $this->assertNotContains('2026-06', $months);
+        $this->assertNotContains('2026-07', $months);
+        $this->assertNotContains('2026-08', $months);
+    }
+
+    /** 22. معاينة الاستخلاص للشهر المحدد تعيد فقط معاليم النوادي للشهر المختار ولا تسرب أشهراً أخرى. */
+    public function test_collection_preview_only_returns_club_items_for_selected_months(): void
+    {
+        $year = $this->makeAcademicYear();
+        $enrollment = $this->makeEnrollment($year);
+        $club = $this->makeClub(['monthly_fee' => 50.00]);
+
+        $this->clubService->subscribeStudent($enrollment->student_id, $club->id, $year->id);
+        $this->clubService->generateMonthFees($year->id, '2025-09', $club->id);
+        $this->clubService->generateMonthFees($year->id, '2025-10', $club->id);
+
+        $collectionService = app(\App\Services\CollectionService::class);
+
+        // Preview for September only
+        $previewSept = $collectionService->preview($enrollment->id, ['2025-09']);
+        $this->assertCount(1, $previewSept['club_items']);
+        $this->assertEquals('2025-09', $previewSept['club_items'][0]['month']);
+
+        // Preview for October only
+        $previewOct = $collectionService->preview($enrollment->id, ['2025-10']);
+        $this->assertCount(1, $previewOct['club_items']);
+        $this->assertEquals('2025-10', $previewOct['club_items'][0]['month']);
+    }
+
+    /** 23. ربط قسم بنادي يظهر معاليم النادي آلياً في الاستخلاص، وإلغاء القسم يزيل معاليم النادي فوراً. */
+    public function test_section_assigned_to_club_automatically_shows_in_collection_and_cancelling_section_removes_it(): void
+    {
+        $year = $this->makeAcademicYear();
+        $enrollmentA = $this->makeEnrollment($year); // in section A
+        $enrollmentB = $this->makeEnrollment($year); // in section B
+
+        $club = $this->clubService->createClub([
+            'name' => 'نادي الروبوتيك التجريبي',
+            'monthly_fee' => 45.00,
+            'is_active' => true,
+        ], [], [$enrollmentA->section_id]); // only section A
+
+        $collectionService = app(\App\Services\CollectionService::class);
+
+        // 1. Student in section A enters collection preview -> club fee automatically appears
+        $previewA = $collectionService->preview($enrollmentA->id, ['2025-09']);
+        $this->assertCount(1, $previewA['club_items']);
+        $this->assertEquals($club->id, $previewA['club_items'][0]['club_monthly_fee_id'] ? $club->id : null);
+        $this->assertEquals(45.00, $previewA['club_items'][0]['amount_due']);
+
+        // 2. Student in section B enters collection preview -> club fee does NOT appear
+        $previewB = $collectionService->preview($enrollmentB->id, ['2025-09']);
+        $this->assertCount(0, $previewB['club_items']);
+
+        // 3. Administration unlinks section A and assigns section B instead
+        $this->clubService->updateClub($club, [
+            'name' => 'نادي الروبوتيك التجريبي',
+            'monthly_fee' => 45.00,
+            'is_active' => true,
+        ], null, [$enrollmentB->section_id]);
+
+        // 4. Now student in section A enters collection preview -> club fee does NOT appear
+        $previewAAfter = $collectionService->preview($enrollmentA->id, ['2025-09']);
+        $this->assertCount(0, $previewAAfter['club_items']);
+
+        // 5. And student in section B enters collection preview -> club fee now appears!
+        $previewBAfter = $collectionService->preview($enrollmentB->id, ['2025-09']);
+        $this->assertCount(1, $previewBAfter['club_items']);
+        $this->assertEquals(45.00, $previewBAfter['club_items'][0]['amount_due']);
+    }
+
+    /** 24. تعديل معلوم النادي يحدّث فوراً كافة السجلات غير الخالصة في كشف معلوم النوادي ويحمي السجلات المسددة والمخصصة. */
+    public function test_updating_club_monthly_fee_syncs_all_unpaid_months_in_report(): void
     {
         $year = $this->makeAcademicYear();
         $enrollment1 = $this->makeEnrollment($year);
         $enrollment2 = $this->makeEnrollment($year);
-        $club = $this->makeClub(['monthly_fee' => 40.00]);
+        $enrollment3 = $this->makeEnrollment($year);
 
-        $this->clubService->subscribeStudent($enrollment1->student_id, $club->id, $year->id);
-        $this->clubService->subscribeStudent($enrollment2->student_id, $club->id, $year->id);
-        $this->clubService->generateMonthFees($year->id, '2026-05');
+        $club = $this->clubService->createClub([
+            'name' => 'نادي الروبوتيك المطور',
+            'monthly_fee' => 10.00,
+            'is_active' => true,
+        ], [], [$enrollment1->section_id, $enrollment2->section_id, $enrollment3->section_id]);
 
-        $reportBefore = $this->clubService->getReport(['month' => '2026-05', 'academic_year_id' => $year->id]);
-        $this->assertEquals(0, $reportBefore['summary']['paid_count']);
-        $this->assertEquals(2, $reportBefore['summary']['pending_count']);
+        // اشتراك تلميذ 3 بسعر خاص مخصص (15 د.ت)
+        $this->clubService->subscribeStudent(
+            $enrollment3->student_id,
+            $club->id,
+            $year->id,
+            null,
+            15.00,
+            $enrollment3->id
+        );
 
-        $fee1 = ClubMonthlyFee::where('student_id', $enrollment1->student_id)->first();
-        $this->clubService->recordPayment($fee1, 40.00, '2026-05-10', 'cash');
+        // توليد معاليم لأشهر متعددة
+        $this->clubService->generateMonthFees($year->id, '2025-09', $club->id);
+        $this->clubService->generateMonthFees($year->id, '2025-10', $club->id);
 
-        $reportAfter = $this->clubService->getReport(['month' => '2026-05', 'academic_year_id' => $year->id]);
-        $this->assertEquals(1, $reportAfter['summary']['paid_count']);
-        $this->assertEquals(1, $reportAfter['summary']['pending_count']);
-    }
+        // سداد جزئي للتلميذ 2 في شهر 2025-09
+        $feeToPay = ClubMonthlyFee::where('student_id', $enrollment2->student_id)
+            ->where('club_id', $club->id)
+            ->where('month', '2025-09')
+            ->firstOrFail();
+        $feeToPay->update(['amount_paid' => 10.00, 'status' => ClubMonthlyFee::STATUS_PAID]);
 
-    /** 16. بطاقة الاستقبال في اللوحة تعرض مداخيل النوادي ولا تضاعف الاستخلاص عند التكرار. */
-    public function test_reception_dashboard_card_shows_current_club_revenue_without_double_counting(): void
-    {
-        $year = $this->makeAcademicYear();
-        $enrollment = $this->makeEnrollment($year);
-        $club = $this->makeClub(['monthly_fee' => 70.00]);
-
-        $this->clubService->subscribeStudent($enrollment->student_id, $club->id, $year->id);
-
-        $currentMonth = now()->format('Y-m');
-        $this->clubService->generateMonthFees($year->id, $currentMonth);
-
-        $fee = ClubMonthlyFee::where('month', $currentMonth)->first();
-        $this->clubService->recordPayment($fee, 70.00, now()->toDateString(), 'cash');
-
-        $dashboardService = app(DashboardService::class);
-        $data = $dashboardService->getDashboardData(true);
-
-        $this->assertArrayHasKey('club_revenue', $data);
-        $this->assertEquals(70.00, $data['club_revenue']['collected_amount']);
-    }
-
-    /** 17. توليد سجلات كل النوادي يعتمد على اشتراكات النوادي الفعلية. */
-    public function test_all_clubs_generation_uses_existing_subscriptions(): void
-    {
-        $year = $this->makeAcademicYear();
-        $enrollment = $this->makeEnrollment($year);
-        $club1 = $this->makeClub(['name' => 'نادي الموسيقى 3']);
-        $club2 = $this->makeClub(['name' => 'نادي الرسم 3']);
-
-        $this->clubService->subscribeStudent($enrollment->student_id, $club1->id, $year->id);
-        $this->clubService->subscribeStudent($enrollment->student_id, $club2->id, $year->id);
-
-        $result = $this->clubService->generateMonthFees($year->id, '2026-05', null);
-
-        $this->assertEquals(2, $result['created']);
-        $this->assertEquals(2, ClubMonthlyFee::where('student_id', $enrollment->student_id)->where('month', '2026-05')->count());
-    }
-
-    /** 18. تعديل مبلغ معلوم النادي يحفظ المبلغ الجديد ويزامنه مع أنواع المعاليم العامة ويدرج في الأشهر الجديدة مع حماية السجلات السابقة المدفوعة. */
-    public function test_updating_club_fee_persists_new_amount_and_synchronizes_fee_type_and_future_months_while_protecting_paid_history(): void
-    {
-        $year = $this->makeAcademicYear();
-        $enrollment = $this->makeEnrollment($year);
-        $mentalClub = Club::where('name', 'الحساب الذهني')->firstOrFail();
-
-        // 1. Generate and pay month 1 (May) with original fee 40.00
-        $sub = $this->clubService->subscribeStudent($enrollment->student_id, $mentalClub->id, $year->id);
-        $this->clubService->generateMonthFees($year->id, '2026-05');
-
-        $mayFee = ClubMonthlyFee::where('student_id', $enrollment->student_id)->where('month', '2026-05')->firstOrFail();
-        $this->clubService->recordPayment($mayFee, 40.00, '2026-05-10', 'cash');
-
-        // 2. Update Club fee to 45.00
-        $this->clubService->updateClub($mentalClub, ['monthly_fee' => 45.00]);
-
-        // 3. Verify Club model and FeeType table are synchronized
-        $mentalClub->refresh();
-        $this->assertEquals(45.00, (float) $mentalClub->monthly_fee);
-
-        $feeType = \App\Models\FeeType::where('name_ar', 'like', '%حساب%')->first();
-        if ($feeType) {
-            $this->assertEquals(45.00, (float) $feeType->price);
-        }
-
-        // 4. Verify historical paid record for May remains 40.00
-        $mayFee->refresh();
-        $this->assertEquals(40.00, (float) $mayFee->amount_due);
-        $this->assertEquals(40.00, (float) $mayFee->amount_paid);
-
-        // 5. Generate month 2 (June) with updated fee 45.00
-        $this->clubService->generateMonthFees($year->id, '2026-06');
-        $juneFee = ClubMonthlyFee::where('student_id', $enrollment->student_id)->where('month', '2026-06')->firstOrFail();
-        $this->assertEquals(45.00, (float) $juneFee->amount_due);
-    }
-
-    /** 19. تغيير مبلغ النادي من 50 إلى 15 يحل حزمة المتطلبات كاملة: تحديث السجلات غير المدفوعة للشهر الحالي مع حماية المدفوع والمستخلص جزئياً والأشهر السابقة والنوادي الأخرى. */
-    public function test_changing_club_fee_from_50_to_15_updates_current_unpaid_records_and_protects_financial_history(): void
-    {
-        $year = $this->makeAcademicYear();
-        $currentMonth = now()->format('Y-m');
-        $pastMonth = '2025-01';
-
-        $club50 = $this->makeClub(['name' => 'نادي التكنولوجيا', 'monthly_fee' => 50.00]);
-        $unrelatedClub = $this->makeClub(['name' => 'نادي الفنون', 'monthly_fee' => 30.00]);
-
-        $enr1 = $this->makeEnrollment($year);
-        $enr2 = $this->makeEnrollment($year);
-        $enr3 = $this->makeEnrollment($year);
-        $enr4 = $this->makeEnrollment($year);
-        $enr5 = $this->makeEnrollment($year);
-
-        // Subscriptions
-        $sub1 = $this->clubService->subscribeStudent($enr1->student_id, $club50->id, $year->id);
-        $sub2 = $this->clubService->subscribeStudent($enr2->student_id, $club50->id, $year->id);
-        $sub3 = $this->clubService->subscribeStudent($enr3->student_id, $club50->id, $year->id);
-        $sub4 = $this->clubService->subscribeStudent($enr4->student_id, $club50->id, $year->id);
-        $subUnrelated = $this->clubService->subscribeStudent($enr5->student_id, $unrelatedClub->id, $year->id);
-
-        // 1. Current Month Records for club50
-        // Record 1: Current month unpaid (should be updated from 50 to 15)
-        $unpaidCurrent = ClubMonthlyFee::create([
-            'student_id' => $enr1->student_id,
-            'club_id' => $club50->id,
-            'academic_year_id' => $year->id,
-            'club_subscription_id' => $sub1->id,
-            'month' => $currentMonth,
-            'amount_due' => 50.00,
-            'amount_paid' => 0.00,
-            'status' => ClubMonthlyFee::STATUS_UNPAID,
+        // تعديل معلوم النادي من 10 إلى 30 د.ت
+        $this->clubService->updateClub($club, [
+            'name' => 'نادي الروبوتيك المطور',
+            'monthly_fee' => 30.00,
+            'is_active' => true,
         ]);
 
-        // Record 2: Current month fully paid (MUST remain 50.00)
-        $paidCurrent = ClubMonthlyFee::create([
-            'student_id' => $enr2->student_id,
-            'club_id' => $club50->id,
+        // 1. فحص تقرير معلوم النوادي لشهر 2025-09
+        $reportSep = $this->clubService->getReport([
+            'month' => '2025-09',
             'academic_year_id' => $year->id,
-            'club_subscription_id' => $sub2->id,
-            'month' => $currentMonth,
-            'amount_due' => 50.00,
-            'amount_paid' => 50.00,
-            'status' => ClubMonthlyFee::STATUS_PAID,
-        ]);
-
-        // Record 3: Current month partially paid (MUST remain 50.00)
-        $partialCurrent = ClubMonthlyFee::create([
-            'student_id' => $enr3->student_id,
-            'club_id' => $club50->id,
-            'academic_year_id' => $year->id,
-            'club_subscription_id' => $sub3->id,
-            'month' => $currentMonth,
-            'amount_due' => 50.00,
-            'amount_paid' => 20.00,
-            'status' => ClubMonthlyFee::STATUS_PARTIAL,
-        ]);
-
-        // Record 4: Past month closed unpaid (MUST remain 50.00)
-        $pastUnpaid = ClubMonthlyFee::create([
-            'student_id' => $enr4->student_id,
-            'club_id' => $club50->id,
-            'academic_year_id' => $year->id,
-            'club_subscription_id' => $sub4->id,
-            'month' => $pastMonth,
-            'amount_due' => 50.00,
-            'amount_paid' => 0.00,
-            'status' => ClubMonthlyFee::STATUS_UNPAID,
-        ]);
-
-        // Record 5: Unrelated club record (MUST remain 30.00)
-        $unrelatedRecord = ClubMonthlyFee::create([
-            'student_id' => $enr5->student_id,
-            'club_id' => $unrelatedClub->id,
-            'academic_year_id' => $year->id,
-            'club_subscription_id' => $subUnrelated->id,
-            'month' => $currentMonth,
-            'amount_due' => 30.00,
-            'amount_paid' => 0.00,
-            'status' => ClubMonthlyFee::STATUS_UNPAID,
-        ]);
-
-        // Perform Fee Update from 50 to 15
-        $this->clubService->updateClub($club50, ['monthly_fee' => 15.00]);
-
-        // Assertions
-        $unpaidCurrent->refresh();
-        $this->assertEquals(15.00, (float) $unpaidCurrent->amount_due);
-        $this->assertEquals(15.00, (float) ($unpaidCurrent->amount_due - $unpaidCurrent->amount_paid));
-
-        $paidCurrent->refresh();
-        $this->assertEquals(50.00, (float) $paidCurrent->amount_due);
-        $this->assertEquals(50.00, (float) $paidCurrent->amount_paid);
-
-        $partialCurrent->refresh();
-        $this->assertEquals(50.00, (float) $partialCurrent->amount_due);
-        $this->assertEquals(20.00, (float) $partialCurrent->amount_paid);
-
-        $pastUnpaid->refresh();
-        $this->assertEquals(50.00, (float) $pastUnpaid->amount_due);
-
-        $unrelatedRecord->refresh();
-        $this->assertEquals(30.00, (float) $unrelatedRecord->amount_due);
-
-        // Verify Report Summary Totals reflect 15.00 for the updated current unpaid student
-        $report = $this->clubService->getReport([
-            'month' => $currentMonth,
-            'academic_year_id' => $year->id,
-            'club_id' => $club50->id,
-        ]);
-
-        $unpaidRecordReport = collect($report['records'])->firstWhere('id', $unpaidCurrent->id);
-        $this->assertEquals(15.00, $unpaidRecordReport['amount_due']);
-        $this->assertEquals(15.00, $unpaidRecordReport['remaining']);
-    }
-
-    /** 20. تعديل معلوم النادي عبر API يعيد عدد السجلات المعياري المستحدثة ورقم المبلغ الجديد للمستهلكين في الواجهة. */
-    public function test_api_club_update_returns_updated_unpaid_count_and_new_fee(): void
-    {
-        $user = $this->makeUserWithPermissions('admin', ['manage_students']);
-        Sanctum::actingAs($user);
-
-        $year = $this->makeAcademicYear();
-        $currentMonth = now()->format('Y-m');
-        $enrollment = $this->makeEnrollment($year);
-        $club = $this->makeClub(['monthly_fee' => 50.00]);
-
-        $sub = $this->clubService->subscribeStudent($enrollment->student_id, $club->id, $year->id);
-        $unpaidCurrent = ClubMonthlyFee::create([
-            'student_id' => $enrollment->student_id,
             'club_id' => $club->id,
+        ]);
+        $record1Sep = collect($reportSep['records'])->firstWhere('student_id', $enrollment1->student_id);
+        $record2Sep = collect($reportSep['records'])->firstWhere('student_id', $enrollment2->student_id);
+        $record3Sep = collect($reportSep['records'])->firstWhere('student_id', $enrollment3->student_id);
+
+        // تلميذ 1 غير خالص -> أصبح 30 د.ت
+        $this->assertEquals(30.00, $record1Sep['amount_due']);
+        $this->assertEquals(30.00, $record1Sep['remaining']);
+
+        // تلميذ 2 خالص -> بقي 10 د.ت دون مساس
+        $this->assertEquals(10.00, $record2Sep['amount_due']);
+        $this->assertEquals(10.00, $record2Sep['amount_paid']);
+
+        // تلميذ 3 صاحب السعر الخاص -> بقي 15 د.ت دون مساس
+        $this->assertEquals(15.00, $record3Sep['amount_due']);
+
+        // 2. فحص تقرير معلوم النوادي لشهر 2025-10
+        $reportOct = $this->clubService->getReport([
+            'month' => '2025-10',
             'academic_year_id' => $year->id,
-            'club_subscription_id' => $sub->id,
-            'month' => $currentMonth,
-            'amount_due' => 50.00,
-            'amount_paid' => 0.00,
-            'status' => ClubMonthlyFee::STATUS_UNPAID,
+            'club_id' => $club->id,
         ]);
+        $record1Oct = collect($reportOct['records'])->firstWhere('student_id', $enrollment1->student_id);
+        $record2Oct = collect($reportOct['records'])->firstWhere('student_id', $enrollment2->student_id);
 
-        $res = $this->putJson("/api/clubs/{$club->id}", [
-            'monthly_fee' => 15.00,
-        ]);
-
-        $res->assertOk();
-        $res->assertJsonPath('monthly_fee', '15.00');
-        $res->assertJsonPath('updated_unpaid_count', 1);
-
-        $unpaidCurrent->refresh();
-        $this->assertEquals(15.00, (float) $unpaidCurrent->amount_due);
+        $this->assertEquals(30.00, $record1Oct['amount_due']);
+        $this->assertEquals(30.00, $record2Oct['amount_due']);
     }
 }

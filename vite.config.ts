@@ -33,6 +33,13 @@ export default defineConfig({
                         || id.includes('/react-dom/')
                         || id.includes('/react-router-dom/')
                         || id.includes('/react-router/')
+                        // motion (Framer Motion) ينشئ سياقات React عند التحميل، فيجب أن
+                        // يُهيّأ في نفس حزمة React لا في vendor — وإلّا فاعتماد دائري
+                        // بين الحزمتين يجعل React غير مُعرّف وقت تهيئته (createContext على undefined).
+                        || id.includes('/motion/')
+                        || id.includes('/motion-dom/')
+                        || id.includes('/motion-utils/')
+                        || id.includes('/framer-motion/')
                     ) {
                         return 'react-vendor';
                     }

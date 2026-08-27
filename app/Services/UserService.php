@@ -54,4 +54,14 @@ class UserService
         $user->tokens()->delete();
         $user->delete();
     }
+
+    /**
+     * تعيين كلمة مرور جديدة مباشرةً (تغيير المشرف). يبطل كل الجلسات القائمة
+     * للمستخدم فيُلزَم بإعادة الدخول — نفس سلوك تغيير كلمة المرور في updateUser.
+     */
+    public function changePassword(User $user, string $password): void
+    {
+        $user->update(['password' => Hash::make($password)]);
+        $user->tokens()->delete();
+    }
 }

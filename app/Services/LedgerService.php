@@ -2,10 +2,14 @@
 
 namespace App\Services;
 
+use App\Models\AcademicYear;
 use App\Models\CashTransaction;
+use App\Models\ClubMonthlyFee;
 use App\Models\EmployeeAdvance;
 use App\Models\EmployeeAdvanceRepayment;
 use App\Models\Expense;
+use App\Models\OldEmployeeDebt;
+use App\Models\OldEmployeeDebtCollection;
 use App\Models\Payment;
 use App\Models\Salary;
 use App\Models\StudentFee;
@@ -40,19 +44,19 @@ class LedgerService
         return CashTransaction::updateOrCreate(
             [
                 'source_type' => $source->getMorphClass(),
-                'source_id'   => $source->getKey(),
-                'category'    => $category,
+                'source_id' => $source->getKey(),
+                'category' => $category,
             ],
             [
-                'transaction_date'    => $date,
-                'direction'           => $direction,
-                'amount'              => self::decimal($amount),
-                'academic_year_id'    => $academicYearId,
-                'description'         => $description,
-                'created_by'          => $createdBy,
+                'transaction_date' => $date,
+                'direction' => $direction,
+                'amount' => self::decimal($amount),
+                'academic_year_id' => $academicYearId,
+                'description' => $description,
+                'created_by' => $createdBy,
                 // إعادة الإسقاط تُعيد تفعيل السطر إن كان ملغى سابقاً.
-                'cancelled_at'        => null,
-                'cancelled_by'        => null,
+                'cancelled_at' => null,
+                'cancelled_by' => null,
                 'cancellation_reason' => null,
             ]
         );
@@ -80,10 +84,10 @@ class LedgerService
             ->where('source_id', $source->getKey())
             ->whereNull('cancelled_at')
             ->update([
-                'cancelled_at'        => now(),
-                'cancelled_by'        => $userId,
+                'cancelled_at' => now(),
+                'cancelled_by' => $userId,
                 'cancellation_reason' => $reason,
-                'updated_at'          => now(),
+                'updated_at' => now(),
             ]);
     }
 
@@ -99,10 +103,10 @@ class LedgerService
             ->whereNull('cancelled_at')
             ->when($keptCategories !== [], fn ($q) => $q->whereNotIn('category', $keptCategories))
             ->update([
-                'cancelled_at'        => now(),
-                'cancelled_by'        => $userId,
+                'cancelled_at' => now(),
+                'cancelled_by' => $userId,
                 'cancellation_reason' => 'إعادة احتساب بعد تعديل المستند',
-                'updated_at'          => now(),
+                'updated_at' => now(),
             ]);
     }
 
@@ -120,12 +124,18 @@ class LedgerService
         }
 
         $payment->loadMissing([
+            'paymentAllocations.studentFee.enrollment',
             'paymentAllocations.studentFee.feePlan',
             'paymentAllocations.studentFee.feeType',
             'enrollment',
         ]);
 
-        $buckets   = [];
+        // سنة الدفعة: تسجيلها إن وُجد، وإلا فالسنة النشطة — عليها يتبنّى
+        // تمييز «دَين سنة سابقة» عن «مدخول السنة الحالية».
+        $paymentYearId = $payment->enrollment?->academic_year_id
+            ?? AcademicYear::where('is_active', true)->value('id');
+
+        $buckets = [];
         $allocated = 0.0;
 
         foreach ($payment->paymentAllocations as $allocation) {
@@ -136,7 +146,27 @@ class LedgerService
             }
 
             $allocated += $amount;
-            $category = $this->categoryForFee($allocation->studentFee);
+            $fee = $allocation->studentFee;
+
+            // قبض دين من سنة سابقة ليس مدخولاً للسنة الحالية: يُسجَّل في الخزينة
+            // كبند مستقل (prior_year_debt) لا يدخل في الدخل الصافي ولا في المداخيل.
+            $feeYearId = $fee?->enrollment?->academic_year_id;
+
+            // الهدف الصريح manual_student_debt_id يحسم التصنيف وحده: تحصيل دَين
+            // قديم مدخل يدوياً — حتى لو كان رسم الجسر تحت تسجيل السنة الحالية
+            // (الإدخال الجماعي بلا تسجيلات سابقة). بلا هدف صريح يبقى التصنيف
+            // سنة التسجيل كما هو، فلا يتحول أي رسم عادي إلى دين قديم.
+            $isManualDebtTarget = (int) ($allocation->manual_student_debt_id ?? 0) > 0;
+
+            $isPriorYearDebt = $isManualDebtTarget
+                || ($feeYearId !== null
+                    && $paymentYearId !== null
+                    && (int) $feeYearId !== (int) $paymentYearId);
+
+            $category = $isPriorYearDebt
+                ? CashTransaction::CATEGORY_PRIOR_YEAR_DEBT
+                : $this->categoryForFee($fee);
+
             $buckets[$category] = ($buckets[$category] ?? 0.0) + $amount;
         }
 
@@ -148,7 +178,7 @@ class LedgerService
         }
 
         $academicYearId = $payment->enrollment?->academic_year_id;
-        $date           = $payment->payment_date?->toDateString()
+        $date = $payment->payment_date?->toDateString()
             ?? (string) $payment->payment_date;
 
         foreach ($buckets as $category => $amount) {
@@ -159,7 +189,7 @@ class LedgerService
                 amount: $amount,
                 date: $date,
                 academicYearId: $academicYearId,
-                description: 'دفعة رقم ' . $payment->id,
+                description: 'دفعة رقم '.$payment->id,
                 createdBy: $payment->created_by,
             );
         }
@@ -191,7 +221,7 @@ class LedgerService
             amount: (float) $salary->amount,
             date: $date,
             academicYearId: $salary->academic_year_id,
-            description: 'راتب: ' . ($salary->employee?->full_name ?? ('إطار #' . $salary->employee_id)),
+            description: 'راتب: '.($salary->employee?->full_name ?? ('إطار #'.$salary->employee_id)),
             createdBy: $salary->created_by,
         );
     }
@@ -222,7 +252,7 @@ class LedgerService
     /**
      * خلاص معلوم نادي تلميذ → مداخيل في بند معاليم النوادي.
      */
-    public function recordClubFeePayment(\App\Models\ClubMonthlyFee $monthlyFee): void
+    public function recordClubFeePayment(ClubMonthlyFee $monthlyFee): void
     {
         if ($monthlyFee->cancelled_at !== null || (float) $monthlyFee->amount_paid <= 0) {
             $this->cancelFor($monthlyFee, $monthlyFee->cancelled_by, $monthlyFee->cancellation_reason);
@@ -232,8 +262,8 @@ class LedgerService
 
         $monthlyFee->loadMissing(['student', 'club']);
 
-        $studentName = trim(($monthlyFee->student?->first_name ?? '') . ' ' . ($monthlyFee->student?->last_name ?? ''));
-        $description = 'معلوم نادي ' . ($monthlyFee->club?->name ?? '') . ': ' . $studentName . ' (' . $monthlyFee->month . ')';
+        $studentName = trim(($monthlyFee->student?->first_name ?? '').' '.($monthlyFee->student?->last_name ?? ''));
+        $description = 'معلوم نادي '.($monthlyFee->club?->name ?? '').': '.$studentName.' ('.$monthlyFee->month.')';
 
         $this->post(
             source: $monthlyFee,
@@ -273,7 +303,7 @@ class LedgerService
             amount: (float) $advance->amount,
             date: $advance->advance_date?->toDateString() ?? now()->toDateString(),
             academicYearId: $advance->academic_year_id,
-            description: $typeLabel . ': ' . ($advance->employee?->full_name ?? ('إطار #' . $advance->employee_id)),
+            description: $typeLabel.': '.($advance->employee?->full_name ?? ('إطار #'.$advance->employee_id)),
             createdBy: $advance->created_by,
         );
     }
@@ -288,7 +318,7 @@ class LedgerService
      */
     public function recordAdvanceRepayment(EmployeeAdvanceRepayment $repayment): void
     {
-        if ($repayment->cancelled_at !== null || !$repayment->affectsCash()) {
+        if ($repayment->cancelled_at !== null || ! $repayment->affectsCash()) {
             $this->cancelFor($repayment, $repayment->cancelled_by, $repayment->cancellation_reason);
 
             return;
@@ -303,7 +333,7 @@ class LedgerService
             amount: (float) $repayment->amount,
             date: $repayment->repaid_at?->toDateString() ?? now()->toDateString(),
             academicYearId: $repayment->academic_year_id,
-            description: 'خلاص سلفة: ' . ($repayment->employee?->full_name ?? ('إطار #' . $repayment->employee_id)),
+            description: 'خلاص سلفة: '.($repayment->employee?->full_name ?? ('إطار #'.$repayment->employee_id)),
             createdBy: $repayment->created_by,
         );
     }
@@ -332,6 +362,38 @@ class LedgerService
     }
 
     /**
+     * تحصيل دين قديم على إطار → قبض نقدي داخل الخزينة، لا مدخول تشغيلي ولا أجور.
+     *
+     * لا ينشئ Salary ولا Advance — يسجل حركة تحصيل داخلة مباشرة في الخزينة
+     * كـ old_liability_collection، مرتبطة بدفعة التحصيل (OldEmployeeDebtCollection).
+     */
+    public function recordOldEmployeeDebtCollection(OldEmployeeDebtCollection $collection): CashTransaction
+    {
+        $amount = (float) $collection->amount;
+        if ($amount <= 0) {
+            throw new \InvalidArgumentException('مبلغ التحصيل يجب أن يكون أكبر من صفر');
+        }
+
+        $collection->loadMissing('debt.employee');
+        $employeeName = $collection->debt?->employee?->full_name ?? ('إطار #'.($collection->debt?->employee_id ?? ''));
+        $description = 'تحصيل دين إطار قديم: '.$employeeName.($collection->notes ? ' — '.$collection->notes : '');
+
+        $date = $collection->payment_date?->toDateString()
+            ?? (string) $collection->payment_date;
+
+        return $this->post(
+            source: $collection,
+            category: CashTransaction::CATEGORY_OLD_LIABILITY_COLLECTION,
+            direction: CashTransaction::DIRECTION_IN,
+            amount: $amount,
+            date: $date,
+            academicYearId: $collection->debt?->academic_year_id,
+            description: $description,
+            createdBy: $collection->collected_by,
+        );
+    }
+
+    /**
      * تصنيف رسم التلميذ إلى بند مداخيل، بأولوية بنيوية لا نصّية:
      *   1) خطة الرسوم (fee_plans.frequency) للرسوم المُولّدة تلقائياً
      *   2) نوع الرسم (fee_types.ledger_category) للرسوم المُستخلَصة يدوياً
@@ -339,6 +401,10 @@ class LedgerService
      */
     private function categoryForFee(?StudentFee $fee): string
     {
+        if ($fee?->club_monthly_fee_id !== null) {
+            return CashTransaction::CATEGORY_CLUB_FEE;
+        }
+
         if ($fee?->feePlan) {
             return $fee->feePlan->frequency === 'yearly'
                 ? CashTransaction::CATEGORY_REGISTRATION_FEE

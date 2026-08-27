@@ -1,9 +1,11 @@
 <?php
+
 namespace App\Models;
+
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Enrollment extends Model
 {
@@ -21,33 +23,51 @@ class Enrollment extends Model
     {
         return $this->belongsTo(Student::class);
     }
+
     public function academicYear(): BelongsTo
     {
         return $this->belongsTo(AcademicYear::class);
     }
+
     public function level(): BelongsTo
     {
         return $this->belongsTo(Level::class);
     }
+
     public function section(): BelongsTo
     {
         return $this->belongsTo(Section::class);
     }
+
     public function previousEnrollment(): BelongsTo
     {
         return $this->belongsTo(Enrollment::class, 'previous_enrollment_id');
     }
+
     public function studentFees(): HasMany
     {
         return $this->hasMany(StudentFee::class);
     }
+
     public function clubSubscriptions(): HasMany
     {
         return $this->hasMany(ClubSubscription::class);
     }
+
     public function discounts(): HasMany
     {
         return $this->hasMany(EnrollmentDiscount::class);
+    }
+
+    public function monthlyDiscounts(): HasMany
+    {
+        return $this->hasMany(MonthlyDiscount::class);
+    }
+
+    /** أرصدة افتتاحية نُقلت بسبب ديون هذا التسجيل (كمصدر للدَّين). */
+    public function sourceOpeningBalances(): HasMany
+    {
+        return $this->hasMany(OpeningBalance::class, 'source_enrollment_id');
     }
 
     /**

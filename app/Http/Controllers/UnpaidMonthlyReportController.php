@@ -116,14 +116,27 @@ class UnpaidMonthlyReportController extends Controller
             ->filter()
             ->unique();
 
+        $fullWaiverEnrollmentIds = \App\Models\MonthlyDiscount::query()
+            ->where('academic_year_id', $year->id)
+            ->where('discount_type', \App\Models\MonthlyDiscount::TYPE_FULL_WAIVER)
+            ->active()
+            ->where('start_month', '<=', $data['month'])
+            ->where('end_month', '>=', $data['month'])
+            ->pluck('enrollment_id')
+            ->all();
+
+        $excludedEnrollmentIds = $paidEnrollmentIds->all();
+
         $enrollments = Enrollment::query()
             ->where('academic_year_id', $year->id)
             ->where('section_id', $section->id)
             ->where('status', 'active')
             ->whereDate('enrollment_date', '<=', $monthEnd)
-            ->whereNotIn('id', $paidEnrollmentIds)
-            ->with(['student.guardians' => fn ($query) => $query
-                ->orderByDesc('guardian_student.is_primary_contact')])
+            ->whereNotIn('id', $excludedEnrollmentIds)
+            ->with([
+                'student.guardians' => fn ($query) => $query->orderByDesc('guardian_student.is_primary_contact'),
+                'monthlyDiscounts' => fn ($query) => $query->active()->where('start_month', '<=', $data['month'])->where('end_month', '>=', $data['month']),
+            ])
             ->get()
             ->filter(fn (Enrollment $enrollment) => $enrollment->student !== null)
             ->unique('student_id')
@@ -131,12 +144,10 @@ class UnpaidMonthlyReportController extends Controller
                 $enrollment->student->first_name.' '.$enrollment->student->last_name
             ), SORT_NATURAL | SORT_FLAG_CASE)
             ->values()
-            ->map(function (Enrollment $enrollment) {
+            ->map(function (Enrollment $enrollment) use ($year) {
                 $student = $enrollment->student;
                 $guardian = $student->guardians->first();
 
-                // الأب والأم مفصولان عمداً: الواجهة تحتاج حجب كل حقل على حدة
-                // عند الطباعة والتوزيع، والحقل المدمج لا يُمكّن من ذلك.
                 $fatherName = trim(implode(' ', array_filter([
                     $guardian?->first_name ?? $student->guardian_first_name,
                     $guardian?->last_name ?? $student->guardian_last_name,
@@ -144,19 +155,63 @@ class UnpaidMonthlyReportController extends Controller
                 $fatherPhone = $guardian?->phone ?? $student->guardian_phone;
                 $motherName = trim((string) ($student->mother_name ?? ''));
 
+                // Calculate gross, discount, and net due directly from FeePlan
+                $monthlyFee = (float) \App\Models\FeePlan::query()
+                    ->where('academic_year_id', $year->id)
+                    ->where('level_id', $enrollment->level_id)
+                    ->where('frequency', 'monthly')
+                    ->sum('amount');
+
+                $fullWaiver = $enrollment->monthlyDiscounts
+                    ->first(fn ($d) => $d->discount_type === \App\Models\MonthlyDiscount::TYPE_FULL_WAIVER);
+                $monthlyDisc = $enrollment->monthlyDiscounts
+                    ->first(fn ($d) => in_array($d->discount_type, [\App\Models\MonthlyDiscount::TYPE_HUMANITARIAN_FIXED, \App\Models\MonthlyDiscount::TYPE_NORMAL_MONTHLY], true));
+
+                if ($fullWaiver) {
+                    $discountAmount = $monthlyFee;
+                    $discountType = 'full_waiver';
+                    $discountReason = $fullWaiver->reason;
+                    $status = 'waived';
+                    $statusLabel = 'معفى';
+                    $netDue = 0.0;
+                } elseif ($monthlyDisc) {
+                    $discountAmount = (float) $monthlyDisc->monthly_amount;
+                    $discountType = $monthlyDisc->discount_type;
+                    $discountReason = $monthlyDisc->reason;
+                    $status = 'discounted';
+                    $statusLabel = 'تخفيض جزئي';
+                    $netDue = max(0.0, round($monthlyFee - $discountAmount, 2));
+                } else {
+                    $annualDisc = $enrollment->activeDiscount($year->id);
+                    $discountAmount = $annualDisc ? (float) $annualDisc->amount : 0.0;
+                    $discountType = $annualDisc ? 'normal' : null;
+                    $discountReason = $annualDisc ? $annualDisc->reason : null;
+                    $status = 'unpaid';
+                    $statusLabel = 'غير خالص';
+                    $netDue = max(0.0, round($monthlyFee - $discountAmount, 2));
+                }
+
                 return [
-                    'enrollment_id' => $enrollment->id,
-                    'student_id' => $student->id,
-                    'student_code' => $student->student_code,
-                    'student_name' => trim($student->first_name.' '.$student->last_name),
-                    // يُحافَظ على الحقلين القديمين حتى لا تنكسر أي واجهة تقرأهما.
-                    'guardian_name' => $fatherName,
-                    'phone' => $fatherPhone ?? $student->mother_phone,
-                    'father_name' => $fatherName !== '' ? $fatherName : null,
-                    'father_phone' => $fatherPhone,
-                    'mother_name' => $motherName !== '' ? $motherName : null,
-                    'mother_phone' => $student->mother_phone,
+                    'enrollment_id'   => $enrollment->id,
+                    'student_id'      => $student->id,
+                    'student_code'    => $student->student_code,
+                    'student_name'    => trim($student->first_name.' '.$student->last_name),
+                    'guardian_name'   => $fatherName,
+                    'phone'           => $fatherPhone ?? $student->mother_phone,
+                    'father_name'     => $fatherName !== '' ? $fatherName : null,
+                    'father_phone'    => $fatherPhone,
+                    'mother_name'     => $motherName !== '' ? $motherName : null,
+                    'mother_phone'    => $student->mother_phone,
                     'enrollment_date' => $enrollment->enrollment_date?->toDateString(),
+                    'gross_amount'    => $monthlyFee,
+                    'discount_amount' => $discountAmount,
+                    'net_due'         => $netDue,
+                    'remaining_amount'=> $netDue,
+                    'discount_type'   => $discountType,
+                    'discount_reason' => $discountReason,
+                    'is_waived'       => $discountType === 'full_waiver',
+                    'status'          => $status,
+                    'status_label'    => $statusLabel,
                 ];
             });
 
@@ -177,9 +232,14 @@ class UnpaidMonthlyReportController extends Controller
             'report_date' => $generatedAt->toDateString(),
             'report_time' => $generatedAt->format('H:i:s'),
             'rows' => $enrollments,
-            'summary' => ['unpaid_students_count' => $enrollments->count()],
+            'summary' => [
+                'unpaid_students_count' => $enrollments->where('status', '!==', 'waived')->count(),
+                'waived_students_count' => $enrollments->where('status', '===', 'waived')->count(),
+                'total_students_count'  => $enrollments->count(),
+            ],
         ]);
     }
+
 
     private function academicYearMonths(AcademicYear $year): array
     {

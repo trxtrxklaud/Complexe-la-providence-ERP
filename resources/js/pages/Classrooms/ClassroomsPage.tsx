@@ -341,8 +341,9 @@ export function ClassroomsPage() {
 
             <div className="space-y-4">
               <div>
-                <label className="block text-sm mb-1.5" style={{ color: C.ink }}>اسم المستوى</label>
+                <label htmlFor="level-draft-name" className="block text-sm mb-1.5" style={{ color: C.ink }}>اسم المستوى</label>
                 <input
+                  id="level-draft-name"
                   value={levelDraft.name}
                   onChange={(e) => setLevelDraft({ ...levelDraft, name: e.target.value })}
                   className="w-full px-3 py-2.5 rounded-xl text-sm"
@@ -353,8 +354,9 @@ export function ClassroomsPage() {
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-sm mb-1.5" style={{ color: C.ink }}>الرمز</label>
+                  <label htmlFor="level-draft-code" className="block text-sm mb-1.5" style={{ color: C.ink }}>الرمز</label>
                   <input
+                    id="level-draft-code"
                     value={levelDraft.code}
                     onChange={(e) => setLevelDraft({ ...levelDraft, code: e.target.value })}
                     className="w-full px-3 py-2.5 rounded-xl text-sm"
@@ -363,8 +365,9 @@ export function ClassroomsPage() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm mb-1.5" style={{ color: C.ink }}>الترتيب</label>
+                  <label htmlFor="level-draft-order" className="block text-sm mb-1.5" style={{ color: C.ink }}>الترتيب</label>
                   <input
+                    id="level-draft-order"
                     type="number"
                     min={1}
                     value={levelDraft.order}
@@ -376,8 +379,9 @@ export function ClassroomsPage() {
               </div>
 
               <div>
-                <label className="block text-sm mb-1.5" style={{ color: C.ink }}>الوصف (اختياري)</label>
+                <label htmlFor="level-draft-description" className="block text-sm mb-1.5" style={{ color: C.ink }}>الوصف (اختياري)</label>
                 <textarea
+                  id="level-draft-description"
                   value={levelDraft.description}
                   onChange={(e) => setLevelDraft({ ...levelDraft, description: e.target.value })}
                   rows={2}
@@ -420,8 +424,9 @@ export function ClassroomsPage() {
 
             <div className="space-y-4">
               <div>
-                <label className="block text-sm mb-1.5" style={{ color: C.ink }}>المستوى</label>
+                <label htmlFor="section-draft-level" className="block text-sm mb-1.5" style={{ color: C.ink }}>المستوى</label>
                 <select
+                  id="section-draft-level"
                   value={sectionDraft.level_id}
                   onChange={(e) => setSectionDraft({ ...sectionDraft, level_id: Number(e.target.value) })}
                   className="w-full px-3 py-2.5 rounded-xl text-sm"
@@ -435,8 +440,9 @@ export function ClassroomsPage() {
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-sm mb-1.5" style={{ color: C.ink }}>اسم القسم</label>
+                  <label htmlFor="section-draft-name" className="block text-sm mb-1.5" style={{ color: C.ink }}>اسم القسم</label>
                   <input
+                    id="section-draft-name"
                     value={sectionDraft.name}
                     onChange={(e) => setSectionDraft({ ...sectionDraft, name: e.target.value })}
                     className="w-full px-3 py-2.5 rounded-xl text-sm"
@@ -445,8 +451,9 @@ export function ClassroomsPage() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm mb-1.5" style={{ color: C.ink }}>السعة</label>
+                  <label htmlFor="section-draft-capacity" className="block text-sm mb-1.5" style={{ color: C.ink }}>السعة</label>
                   <input
+                    id="section-draft-capacity"
                     type="number"
                     min={1}
                     value={sectionDraft.capacity}
@@ -458,8 +465,9 @@ export function ClassroomsPage() {
               </div>
 
               <div>
-                <label className="block text-sm mb-1.5" style={{ color: C.ink }}>الرمز</label>
+                <label htmlFor="section-draft-code" className="block text-sm mb-1.5" style={{ color: C.ink }}>الرمز</label>
                 <input
+                  id="section-draft-code"
                   value={sectionDraft.code}
                   onChange={(e) => setSectionDraft({ ...sectionDraft, code: e.target.value })}
                   className="w-full px-3 py-2.5 rounded-xl text-sm"

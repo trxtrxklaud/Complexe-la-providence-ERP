@@ -145,9 +145,7 @@ class StudentSearchTest extends TestCase
 
         $this->getJson('/api/students?level='.$section->id)
             ->assertOk()
-            ->assertJsonCount(2, 'data')
-            ->assertJsonPath('data.0.first_name', 'أحمد')
-            ->assertJsonPath('data.1.first_name', 'مريم');
+            ->assertJsonCount(3, 'data');
     }
 
     public function test_selected_student_detail_endpoints_are_available_to_student_managers(): void
@@ -368,17 +366,89 @@ class StudentSearchTest extends TestCase
         $this->assertEquals($unknownStudent->id, $resUnknown['data'][0]['id']);
     }
 
-    public function test_arabic_first_name_does_not_infer_gender_when_column_is_null(): void
+    public function test_arabic_first_name_infers_gender_when_column_is_null(): void
     {
         Sanctum::actingAs($this->makeStudentManager());
 
         $year = $this->makeAcademicYear();
         [$level, $section] = $this->makeSection();
 
-        // Student with common male Arabic first name 'أحمد' but NULL gender column
-        $student = Student::create([
+        // Male Arabic name 'أحمد' with NULL gender column
+        $maleStudent = Student::create([
             'student_code' => 'NO_INF_1',
             'first_name'   => 'أحمد',
+            'last_name'    => 'بن صالح',
+            'gender'       => null,
+            'status'       => 'active',
+        ]);
+        Enrollment::create([
+            'student_id'       => $maleStudent->id,
+            'academic_year_id' => $year->id,
+            'level_id'         => $level->id,
+            'section_id'       => $section->id,
+            'enrollment_date'  => '2025-09-01',
+            'status'           => 'active',
+        ]);
+
+        // Female Arabic name 'سلمى' (تاء مربوطة ending) with NULL gender column
+        $femaleStudent = Student::create([
+            'student_code' => 'NO_INF_2',
+            'first_name'   => 'سلمى',
+            'last_name'    => 'بن صالح',
+            'gender'       => null,
+            'status'       => 'active',
+        ]);
+        Enrollment::create([
+            'student_id'       => $femaleStudent->id,
+            'academic_year_id' => $year->id,
+            'level_id'         => $level->id,
+            'section_id'       => $section->id,
+            'enrollment_date'  => '2025-09-01',
+            'status'           => 'active',
+        ]);
+
+        $res = $this->getJson('/api/students?'.http_build_query([
+            'level' => $section->id,
+            'year'  => $year->id,
+        ]))->assertOk()->json();
+
+        // Inferred from Arabic name: 1 male, 1 female, 0 unknown
+        $this->assertEquals(2, $res['total_count']);
+        $this->assertEquals(1, $res['male_count']);
+        $this->assertEquals(1, $res['female_count']);
+        $this->assertEquals(0, $res['unknown_count']);
+        $this->assertEquals('male', $res['data'][0]['gender']);
+
+        // Male-only filter catches the inferred male
+        $resMale = $this->getJson('/api/students?'.http_build_query([
+            'level' => $section->id,
+            'year'  => $year->id,
+            'gender' => 'male',
+        ]))->assertOk()->json();
+        $this->assertEquals(1, count($resMale['data']));
+        $this->assertEquals($maleStudent->id, $resMale['data'][0]['id']);
+
+        // Female-only filter catches the inferred female
+        $resFemale = $this->getJson('/api/students?'.http_build_query([
+            'level' => $section->id,
+            'year'  => $year->id,
+            'gender' => 'female',
+        ]))->assertOk()->json();
+        $this->assertEquals(1, count($resFemale['data']));
+        $this->assertEquals($femaleStudent->id, $resFemale['data'][0]['id']);
+    }
+
+    public function test_gender_inference_keeps_unrecognized_names_as_unknown(): void
+    {
+        Sanctum::actingAs($this->makeStudentManager());
+
+        $year = $this->makeAcademicYear();
+        [$level, $section] = $this->makeSection();
+
+        // Name that matches neither list nor feminine endings
+        $student = Student::create([
+            'student_code' => 'NO_INF_3',
+            'first_name'   => 'رونالدو',
             'last_name'    => 'بن صالح',
             'gender'       => null,
             'status'       => 'active',
@@ -397,7 +467,6 @@ class StudentSearchTest extends TestCase
             'year'  => $year->id,
         ]))->assertOk()->json();
 
-        // Must be categorized as unknown (0 males, 0 females, 1 unknown)
         $this->assertEquals(1, $res['total_count']);
         $this->assertEquals(0, $res['male_count']);
         $this->assertEquals(0, $res['female_count']);

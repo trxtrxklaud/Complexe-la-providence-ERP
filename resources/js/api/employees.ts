@@ -1,5 +1,41 @@
 import { API_BASE, getHeaders } from './http';
 
+/** تصنيفات الإطارات الستة. */
+export type StaffType =
+  | 'supervisor'
+  | 'worker'
+  | 'manager'
+  | 'club_animator'
+  | 'hourly_teacher'
+  | 'monthly_teacher';
+
+export const STAFF_TYPE_LABELS: Record<StaffType, string> = {
+  supervisor: 'قيم / قيمة',
+  worker: 'عامل',
+  manager: 'مدير / مديرة',
+  club_animator: 'منشط / منشطة نوادي',
+  hourly_teacher: 'معلم / معلمة بالساعة',
+  monthly_teacher: 'معلم / معلمة بالشهر',
+};
+
+/** ألوان شارات التصنيف في قائمة الإطارات. */
+export const STAFF_TYPE_COLORS: Record<StaffType, string> = {
+  supervisor: '#2563EB',
+  worker: '#D97706',
+  manager: '#7C3AED',
+  club_animator: '#059669',
+  hourly_teacher: '#DC2626',
+  monthly_teacher: '#0891B2',
+};
+
+/** نوعا الأجر. */
+export type SalaryType = 'monthly' | 'hourly';
+
+export const SALARY_TYPE_LABELS: Record<SalaryType, string> = {
+  monthly: 'شهري ثابت',
+  hourly: 'بالساعة',
+};
+
 export interface Employee {
   id: number;
   first_name: string;
@@ -7,7 +43,12 @@ export interface Employee {
   phone?: string | null;
   email?: string | null;
   job_title?: string | null;
+  staff_type?: StaffType | null;
+  salary_type?: SalaryType | null;
+  hourly_rate?: string | number | null;
+  monthly_salary?: string | number | null;
   default_salary?: string | number | null;
+  hire_date?: string | null;
   is_active: boolean;
   notes?: string | null;
 }
@@ -270,4 +311,78 @@ export async function cancelSalary(id: number, reason: string): Promise<Salary> 
   return parse(await fetch(`${API_BASE}/salaries/${id}/cancel`, {
     method: 'POST', headers: getHeaders(), body: JSON.stringify({ reason }),
   }));
+}
+
+/** أنواع إدخال ساعات المعلم الساعي. */
+export type HoursNoteType = 'normal' | 'absence' | 'replacement' | 'extra';
+
+export const HOURS_NOTE_LABELS: Record<HoursNoteType, string> = {
+  normal: 'عادي',
+  absence: 'غياب',
+  replacement: 'تعويض',
+  extra: 'إضافي',
+};
+
+export interface DailyHoursRow {
+  id: number | null;
+  date: string;
+  in_month: boolean;
+  hours: number | string;
+  note_type: HoursNoteType;
+  notes: string | null;
+}
+
+export interface WeeklyHoursWeek {
+  week_start: string;
+  weekly_hours: number;
+  days: DailyHoursRow[];
+}
+
+/** ملخص شهر المعلم الساعي: الساعات والراتب المحتسب وعدّادا العمل والغياب. */
+export interface HoursMonthlySummary {
+  total_hours: number;
+  total_salary: number;
+  hourly_rate: number;
+  work_days: number;
+  absence_days: number;
+  entries: number;
+}
+
+export interface HoursGrid {
+  year: number;
+  month: number;
+  weeks: WeeklyHoursWeek[];
+  summary: HoursMonthlySummary;
+}
+
+/** الشبكة الأسبوعية لشهر: GET /employees/{id}/hours?month=YYYY-MM */
+export async function getEmployeeHours(
+  employeeId: number,
+  month: string,
+): Promise<HoursGrid> {
+  return parse(await fetch(
+    `${API_BASE}/employees/${employeeId}/hours?month=${month}`,
+    { headers: getHeaders() },
+  ));
+}
+
+/** تسجيل/تعديل ساعات يوم واحد (upsert بموجب UNIQUE employee_id + work_date). */
+export async function saveEmployeeHours(
+  employeeId: number,
+  data: { work_date: string; hours: number; note_type: HoursNoteType; notes?: string },
+): Promise<DailyHoursRow> {
+  return parse(await fetch(`${API_BASE}/employees/${employeeId}/hours`, {
+    method: 'POST', headers: getHeaders(), body: JSON.stringify(data),
+  }));
+}
+
+/** ملخص شهر المعلم الساعي — ما يقترحه النظام للراتب دون أن يخلّص. */
+export async function getEmployeeMonthlySummary(
+  employeeId: number,
+  month: string,
+): Promise<HoursMonthlySummary> {
+  return parse(await fetch(
+    `${API_BASE}/employees/${employeeId}/hours/monthly-summary?month=${month}`,
+    { headers: getHeaders() },
+  ));
 }

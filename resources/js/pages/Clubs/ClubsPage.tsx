@@ -31,6 +31,7 @@ export default function ClubsPage() {
   const [clubFee, setClubFee] = useState<number | ''>('');
   const [clubActive, setClubActive] = useState(true);
   const [selectedLevels, setSelectedLevels] = useState<number[]>([]);
+  const [selectedSections, setSelectedSections] = useState<number[]>([]);
   const [savingClub, setSavingClub] = useState(false);
 
   // Subscriptions Modal State
@@ -73,6 +74,7 @@ export default function ClubsPage() {
     setClubFee('');
     setClubActive(true);
     setSelectedLevels([]);
+    setSelectedSections([]);
     setShowClubModal(true);
   };
 
@@ -83,6 +85,7 @@ export default function ClubsPage() {
     setClubFee(Number(club.monthly_fee));
     setClubActive(club.is_active);
     setSelectedLevels(club.levels ? club.levels.map((l) => l.id) : []);
+    setSelectedSections(club.sections ? club.sections.map((s) => s.id) : []);
     setShowClubModal(true);
   };
 
@@ -101,6 +104,7 @@ export default function ClubsPage() {
           monthly_fee: Number(clubFee),
           is_active: clubActive,
           level_ids: selectedLevels,
+          section_ids: selectedSections,
         });
         const updatedCount = (savedRes as any)?.updated_unpaid_count ?? 0;
         const feeFormatted = Number(clubFee).toFixed(2);
@@ -116,6 +120,7 @@ export default function ClubsPage() {
           monthly_fee: Number(clubFee),
           is_active: clubActive,
           level_ids: selectedLevels,
+          section_ids: selectedSections,
         });
         setSuccessMsg(`تم إنشاء النادي بنجاح بمبلغ ${Number(clubFee).toFixed(2)} د.ت`);
       }
@@ -191,12 +196,16 @@ export default function ClubsPage() {
     }
   };
 
+  const allSections = levels.flatMap((l) =>
+    (l.sections || []).map((s) => ({ ...s, levelName: l.name }))
+  );
+
   return (
     <div className="space-y-6 dir-rtl">
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-gray-800">إدارة النوادي المدرسية</h1>
-          <p className="text-sm text-gray-500">تعريف النوادي، ضبط المعلوم الشهري، وتحديد المستويات والتلاميذ المسجلين</p>
+          <p className="text-sm text-gray-500">تعريف النوادي، ضبط المعلوم الشهري، وتحديد الأقسام والمستويات المسجلة</p>
         </div>
         <button
           onClick={openCreateModal}
@@ -247,15 +256,23 @@ export default function ClubsPage() {
                 </div>
 
                 <div className="text-xs text-gray-500">
-                  <span className="font-semibold block mb-1">المستويات المتاحة:</span>
-                  {c.levels && c.levels.length > 0 ? (
+                  <span className="font-semibold block mb-1">الأقسام المسجلة في النادي:</span>
+                  {c.sections && c.sections.length > 0 ? (
+                    <div className="flex flex-wrap gap-1">
+                      {c.sections.map((s) => (
+                        <span key={s.id} className="px-2 py-0.5 bg-emerald-50 text-emerald-800 border border-emerald-200 rounded font-medium">
+                          {s.name}
+                        </span>
+                      ))}
+                    </div>
+                  ) : c.levels && c.levels.length > 0 ? (
                     <div className="flex flex-wrap gap-1">
                       {c.levels.map((l) => (
                         <span key={l.id} className="px-2 py-0.5 bg-gray-100 rounded text-gray-700">{l.name}</span>
                       ))}
                     </div>
                   ) : (
-                    <span className="text-gray-400">متاح لكل المستويات</span>
+                    <span className="text-gray-400">متاح لجميع الأقسام</span>
                   )}
                 </div>
               </div>
@@ -285,7 +302,7 @@ export default function ClubsPage() {
       {/* Create/Edit Club Modal */}
       {showClubModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-xl shadow-xl max-w-md w-full p-6 space-y-4 text-right">
+          <div className="bg-white rounded-xl shadow-xl max-w-lg w-full p-6 space-y-4 text-right">
             <h3 className="text-lg font-bold text-gray-800">{editingClub ? 'تعديل بيانات النادي' : 'إضافة نادي جديد'}</h3>
             <form onSubmit={handleSaveClub} className="space-y-4 text-sm">
               <div>
@@ -294,7 +311,7 @@ export default function ClubsPage() {
                   type="text"
                   value={clubName}
                   onChange={(e) => setClubName(e.target.value)}
-                  className="w-full border-gray-300 rounded-lg p-2 bg-gray-50"
+                  className="w-full border border-gray-300 rounded-lg p-2 bg-gray-50"
                   required
                 />
               </div>
@@ -304,7 +321,7 @@ export default function ClubsPage() {
                 <textarea
                   value={clubDesc}
                   onChange={(e) => setClubDesc(e.target.value)}
-                  className="w-full border-gray-300 rounded-lg p-2 bg-gray-50"
+                  className="w-full border border-gray-300 rounded-lg p-2 bg-gray-50"
                   rows={2}
                 />
               </div>
@@ -317,28 +334,70 @@ export default function ClubsPage() {
                   min="0"
                   value={clubFee}
                   onChange={(e) => setClubFee(e.target.value ? Number(e.target.value) : '')}
-                  className="w-full border-gray-300 rounded-lg p-2 bg-gray-50"
+                  className="w-full border border-gray-300 rounded-lg p-2 bg-gray-50"
                   required
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-gray-600 mb-1">المستويات المسموح لها بالدراسة</label>
-                <div className="max-h-36 overflow-y-auto border border-gray-200 rounded-lg p-2 space-y-1">
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-xs font-semibold text-gray-600">الأقسام المسجلة في هذا النادي</label>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (selectedSections.length === allSections.length) {
+                        setSelectedSections([]);
+                      } else {
+                        setSelectedSections(allSections.map((s) => s.id));
+                      }
+                    }}
+                    className="text-xs text-[#3B4A36] hover:underline"
+                  >
+                    {selectedSections.length === allSections.length ? 'إلغاء تحديد الكل' : 'تحديد كل الأقسام'}
+                  </button>
+                </div>
+                <div className="max-h-44 overflow-y-auto border border-gray-200 rounded-lg p-2 space-y-2">
                   {levels.map((l) => (
-                    <label key={l.id} className="flex items-center gap-2 text-xs cursor-pointer hover:bg-gray-50 p-1 rounded">
-                      <input
-                        type="checkbox"
-                        checked={selectedLevels.includes(l.id)}
-                        onChange={(e) => {
-                          if (e.target.checked) setSelectedLevels([...selectedLevels, l.id]);
-                          else setSelectedLevels(selectedLevels.filter((id) => id !== l.id));
-                        }}
-                      />
-                      <span>{l.name}</span>
-                    </label>
+                    <div key={l.id} className="space-y-1">
+                      <div className="text-xs font-bold text-gray-700 bg-gray-100 px-2 py-1 rounded flex justify-between items-center">
+                        <span>{l.name}</span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const secIds = (l.sections || []).map((s) => s.id);
+                            const allSelected = secIds.every((id) => selectedSections.includes(id));
+                            if (allSelected) {
+                              setSelectedSections(selectedSections.filter((id) => !secIds.includes(id)));
+                            } else {
+                              setSelectedSections(Array.from(new Set([...selectedSections, ...secIds])));
+                            }
+                          }}
+                          className="text-[11px] text-blue-600 font-normal hover:underline"
+                        >
+                          تحديد/إلغاء القسم
+                        </button>
+                      </div>
+                      <div className="grid grid-cols-2 gap-1 pr-2">
+                        {(l.sections || []).map((s) => (
+                          <label key={s.id} className="flex items-center gap-2 text-xs cursor-pointer hover:bg-gray-50 p-1 rounded">
+                            <input
+                              type="checkbox"
+                              checked={selectedSections.includes(s.id)}
+                              onChange={(e) => {
+                                if (e.target.checked) setSelectedSections([...selectedSections, s.id]);
+                                else setSelectedSections(selectedSections.filter((id) => id !== s.id));
+                              }}
+                            />
+                            <span>{s.name}</span>
+                          </label>
+                        ))}
+                      </div>
+                    </div>
                   ))}
                 </div>
+                <p className="text-[11px] text-gray-500 mt-1">
+                  كل قسم يتم تحديده هنا، يظهر معلوم النادي آلياً لجميع تلاميذه عند الدخول لشاشة الاستخلاص، وإلغاء القسم يحذفه فوراً من الاستخلاص.
+                </p>
               </div>
 
               <div className="flex items-center gap-2">
