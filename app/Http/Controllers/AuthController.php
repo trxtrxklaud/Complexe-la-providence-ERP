@@ -6,6 +6,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
 use App\Models\User;
+use App\Services\AuditService;
 
 class AuthController extends Controller
 {
@@ -36,6 +37,11 @@ class AuthController extends Controller
 
         $token = $user->createToken('auth_token', $effectivePermissions)->plainTextToken;
 
+        // تسجيل الدخول عبر رمز مميّز لا يمرّ بحارس، فلا منفّذ مضبوطاً بعد؛
+        // نضبطه صراحةً كي يلتقط سجل التدقيق هوية الداخل.
+        Auth::setUser($user);
+        AuditService::log('login', 'تسجيل الدخول إلى النظام');
+
         $userArray = $user->toArray();
         $userArray['effective_permissions'] = $effectivePermissions;
 
@@ -49,6 +55,8 @@ class AuthController extends Controller
 
     public function logout(Request $request)
     {
+        AuditService::log('logout', 'تسجيل الخروج من النظام');
+
         $request->user()->currentAccessToken()->delete();
 
         return response()->json([

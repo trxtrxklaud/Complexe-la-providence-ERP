@@ -7,6 +7,7 @@ use App\Models\AcademicYear;
 use App\Models\Enrollment;
 use App\Models\Section;
 use App\Models\Student;
+use App\Services\AuditService;
 use App\Services\EnrollmentService;
 use App\Services\RegistrationPaymentService;
 use App\Services\StudentService;
@@ -297,6 +298,8 @@ class StudentController extends Controller
                 return $enrollment;
             });
 
+            AuditService::log('student.create', 'تسجيل تلميذ جديد: '.trim($validated['first_name'].' '.$validated['last_name']), $enrollment->student, ['enrollment_id' => $enrollment->id]);
+
             return response()->json([
                 'message' => 'تم تسجيل التلميذ بنجاح',
                 'enrollment' => $enrollment->load(['student', 'level', 'section']),
@@ -332,6 +335,8 @@ class StudentController extends Controller
 
         $student->update($validated);
 
+        AuditService::log('student.update', 'تعديل بيانات التلميذ: '.trim($student->first_name.' '.$student->last_name), $student, ['fields' => array_keys($validated)]);
+
         return response()->json($student->fresh());
     }
 
@@ -352,6 +357,8 @@ class StudentController extends Controller
         }
 
         $student->delete();
+
+        AuditService::log('student.delete', 'حذف التلميذ: '.trim($student->first_name.' '.$student->last_name), $student);
 
         return response()->json(null, 204);
     }

@@ -6,6 +6,7 @@ use App\Http\Requests\StoreUserRequest;
 use App\Http\Requests\UpdateUserRequest;
 use App\Models\Role;
 use App\Models\User;
+use App\Services\AuditService;
 use App\Services\UserService;
 use Illuminate\Http\Request;
 
@@ -27,7 +28,11 @@ class UserController extends Controller
 
     public function store(StoreUserRequest $request)
     {
-        return response()->json($this->userService->createUser($request->validated()), 201);
+        $user = $this->userService->createUser($request->validated());
+
+        AuditService::log('user.create', 'إنشاء مستخدم: '.trim($user->first_name.' '.$user->last_name), $user);
+
+        return response()->json($user, 201);
     }
 
     public function show(User $user)
@@ -43,7 +48,11 @@ class UserController extends Controller
             ], 422);
         }
 
-        return response()->json($this->userService->updateUser($user, $request->validated()));
+        $updated = $this->userService->updateUser($user, $request->validated());
+
+        AuditService::log('user.update', 'تعديل مستخدم: '.trim($updated->first_name.' '.$updated->last_name), $updated, ['fields' => array_keys($request->validated())]);
+
+        return response()->json($updated);
     }
 
     public function destroy(Request $request, User $user)
