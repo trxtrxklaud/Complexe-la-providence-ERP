@@ -1,4 +1,4 @@
-import { Plus, Trash2 } from 'lucide-react';
+import { Pencil, Plus, Trash2 } from 'lucide-react';
 import type { Employee } from '../../api/employees';
 import { STAFF_TYPE_LABELS, STAFF_TYPE_COLORS, SALARY_TYPE_LABELS } from '../../api/employees';
 import { C, money } from './shared';
@@ -6,11 +6,12 @@ import { C, money } from './shared';
 interface Props {
   employees: Employee[];
   onNewEmployee: () => void;
+  onEditEmployee: (employee: Employee) => void;
   onDeleteEmployee: (employee: Employee) => void;
 }
 
 /** قائمة الإطارات مع شارة ملونة للتصنيف ونوع الأجر. */
-export function StaffTab({ employees, onNewEmployee, onDeleteEmployee }: Props) {
+export function StaffTab({ employees, onNewEmployee, onEditEmployee, onDeleteEmployee }: Props) {
   return (
     <>
       <div className="flex justify-end">
@@ -70,10 +71,24 @@ export function StaffTab({ employees, onNewEmployee, onDeleteEmployee }: Props) 
                   <td>{rate}</td>
                   <td>{e.default_salary != null ? money(e.default_salary) : '—'}</td>
                   <td>
-                    <button onClick={() => onDeleteEmployee(e)} title="حذف الإطار"
-                      className="p-2" style={{ color: C.dangerBtn }}>
-                      <Trash2 size={16} />
-                    </button>
+                    <div className="flex items-center gap-1">
+                      <button
+                        onClick={() => onEditEmployee(e)}
+                        title="تعديل بيانات الإطار"
+                        className="p-2 rounded-lg hover:bg-gray-50"
+                        style={{ color: C.forest }}
+                      >
+                        <Pencil size={16} />
+                      </button>
+                      <button
+                        onClick={() => onDeleteEmployee(e)}
+                        title="حذف الإطار"
+                        className="p-2 rounded-lg hover:bg-gray-50"
+                        style={{ color: C.dangerBtn }}
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                    </div>
                   </td>
                 </tr>
               );
