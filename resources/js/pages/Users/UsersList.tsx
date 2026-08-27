@@ -2,9 +2,10 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { fetchUsers, deleteUser, User } from '../../api/users';
 import { useAuth } from '../../contexts/AuthContext';
-import { Plus, Edit2, Trash2, AlertCircle, Shield } from 'lucide-react';
+import { Plus, Edit2, Trash2, AlertCircle, Shield, KeyRound } from 'lucide-react';
 import { TableRowsSkeleton } from '../../components/DataSkeleton';
 import { UserDirectPermissionsModal } from '../../components/Users/UserDirectPermissionsModal';
+import { ChangePasswordModal } from '../../components/Users/ChangePasswordModal';
 import { useToast } from '../../components/ui/Toast';
 
 const C = {
@@ -21,6 +22,7 @@ export function UsersList() {
     const [loading, setLoading] = useState(true);
     const [error, setError]   = useState<string | null>(null);
     const [selectedUserForPermissions, setSelectedUserForPermissions] = useState<{ id: number; name: string } | null>(null);
+    const [selectedUserForPassword, setSelectedUserForPassword] = useState<{ id: number; name: string } | null>(null);
 
     const { user: currentUser, hasPermission } = useAuth();
     const toast = useToast();
@@ -153,6 +155,13 @@ export function UsersList() {
                                                     >
                                                         <Edit2 size={17} />
                                                     </Link>
+                                                    <button
+                                                        onClick={() => setSelectedUserForPassword({ id: user.id, name: `${user.first_name} ${user.last_name}` })}
+                                                        className="p-2 rounded-lg hover:bg-amber-50 text-amber-600 transition"
+                                                        title="تغيير كلمة المرور"
+                                                    >
+                                                        <KeyRound size={17} />
+                                                    </button>
                                                     {user.id !== currentUser?.id && (
                                                         <button
                                                             onClick={() => handleDelete(user.id)}
@@ -179,6 +188,15 @@ export function UsersList() {
                     userId={selectedUserForPermissions.id}
                     userName={selectedUserForPermissions.name}
                     onClose={() => setSelectedUserForPermissions(null)}
+                />
+            )}
+
+            {/* Change Password Modal */}
+            {selectedUserForPassword && (
+                <ChangePasswordModal
+                    userId={selectedUserForPassword.id}
+                    userName={selectedUserForPassword.name}
+                    onClose={() => setSelectedUserForPassword(null)}
                 />
             )}
         </div>

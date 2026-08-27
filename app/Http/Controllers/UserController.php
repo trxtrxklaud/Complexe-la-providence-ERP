@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Requests\ChangePasswordRequest;
 use App\Http\Requests\StoreUserRequest;
 use App\Http\Requests\UpdateUserRequest;
 use App\Models\Role;
@@ -53,6 +54,18 @@ class UserController extends Controller
         AuditService::log('user.update', 'تعديل مستخدم: '.trim($updated->first_name.' '.$updated->last_name), $updated, ['fields' => array_keys($request->validated())]);
 
         return response()->json($updated);
+    }
+
+    /**
+     * تغيير كلمة مرور مستخدم مباشرةً من قِبل المشرف — دون كلمة المرور القديمة.
+     */
+    public function changePassword(ChangePasswordRequest $request, User $user)
+    {
+        $this->userService->changePassword($user, $request->validated()['password']);
+
+        AuditService::log('user.password_changed', 'تغيير كلمة مرور المستخدم: '.trim($user->first_name.' '.$user->last_name), $user);
+
+        return response()->json(['message' => 'تم تغيير كلمة المرور بنجاح']);
     }
 
     public function destroy(Request $request, User $user)
