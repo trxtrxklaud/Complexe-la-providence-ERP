@@ -151,3 +151,25 @@ export function collectFamilyPayment(familyId: number | string, payload: FamilyC
     fallbackMessage: 'تعذّر تنفيذ الاستخلاص الجماعي للعائلة',
   });
 }
+
+export interface FamilyOldDebtStudent {
+  student_id: number;
+  student_name: string;
+  student_code?: string;
+  has_debt: boolean;
+  amount: number;
+  debts_count: number;
+}
+
+export interface FamilyOldDebtsResponse {
+  students: Record<string, FamilyOldDebtStudent>;
+  count: number;
+  total: number;
+}
+
+// تنبيه الديون القديمة — قراءة فقط، لا يحرّك أي مبلغ ولا يغيّر الاستخلاص.
+export function fetchFamilyOldDebts(familyId: number | string) {
+  return apiFetch<FamilyOldDebtsResponse>(`/families/${familyId}/old-debts`, {
+    fallbackMessage: 'تعذّر تحميل تنبيه الديون القديمة',
+  });
+}

@@ -243,6 +243,9 @@ Route::middleware(['auth:sanctum', 'active', 'throttle:120,1'])->group(function 
         Route::get('/families', [FamilyController::class, 'index']);
         Route::get('/families/{family}', [FamilyController::class, 'show']);
         Route::post('/families/{family}/collect', [FamilyController::class, 'collect']);
+        // تنبيه الديون القديمة لأبناء العائلة — قراءة فقط في manual_student_debts
+        // لبانر غير حاجب؛ لا ينشئ دفعة ولا قيدا ولا يعدّل أي رصيد.
+        Route::get('/families/{family}/old-debts', [FamilyController::class, 'oldDebts']);
 
         Route::get('/enrollments/{enrollment}/ledger', [CollectionController::class, 'ledger']);
 

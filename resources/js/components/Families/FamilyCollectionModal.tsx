@@ -1,13 +1,16 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   X, CheckSquare, Square, DollarSign, Loader2, AlertCircle, Award, CheckCircle2,
-  Calendar, Shield, User, Sparkles
+  Calendar, Shield, User, Sparkles, AlertTriangle
 } from 'lucide-react';
 import {
   type FamilyFullDetails,
   type FamilyStudentDetail,
   type StudentAllocationInput,
-  collectFamilyPayment
+  type FamilyOldDebtsResponse,
+  type FamilyOldDebtStudent,
+  collectFamilyPayment,
+  fetchFamilyOldDebts
 } from '../../api/families';
 import type { ReceiptData } from '../../pages/Payments/ReceiptModal';
 
@@ -40,6 +43,21 @@ export function FamilyCollectionModal({ family, onClose, onSuccess }: Props) {
   const [notes, setNotes] = useState<string>('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // تنبيه الديون القديمة (قراءة فقط): يُجلب مرة واحدة عند فتح النافذة أو تغيّر
+  // العائلة، ولا يُعاد مع كل تعديل مبلغ. فشله لا يعطّل الاستخلاص إطلاقاً.
+  const [oldDebts, setOldDebts] = useState<FamilyOldDebtsResponse | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    fetchFamilyOldDebts(family.id)
+      .then((res) => { if (active) setOldDebts(res); })
+      .catch((err) => {
+        console.error('family old-debts warning failed', err);
+        if (active) setOldDebts(null);
+      });
+    return () => { active = false; };
+  }, [family.id]);
 
   // تبديل اختيار شهر دراسي لتلميذ
   const toggleStudentMonth = (student: FamilyStudentDetail, monthKey: string) => {
@@ -258,6 +276,29 @@ export function FamilyCollectionModal({ family, onClose, onSuccess }: Props) {
             <div className="p-4 rounded-2xl bg-red-50 text-red-700 text-xs sm:text-sm flex items-center gap-3 border border-red-200 shadow-xs">
               <AlertCircle size={20} className="shrink-0" />
               <span>{error}</span>
+            </div>
+          )}
+
+          {/* تنبيه غير حاجب للديون القديمة — معلوماتي فقط، لا يغيّر مبلغ الاستخلاص ولا يعطّله */}
+          {oldDebts && oldDebts.count > 0 && (
+            <div className="p-4 rounded-2xl bg-amber-50 text-amber-900 text-xs sm:text-sm border border-amber-300 shadow-xs">
+              <div className="flex items-start gap-3">
+                <AlertTriangle size={20} className="shrink-0 text-amber-600 mt-0.5" />
+                <div className="space-y-1.5 flex-1">
+                  <div className="font-bold">تنبيه: على بعض التلاميذ ديون قديمة.</div>
+                  <div>
+                    الإجمالي المتبقي: <span dir="ltr" className="font-bold">{money(oldDebts.total)} د.ت</span> • عدد التلاميذ: {oldDebts.count}
+                  </div>
+                  <ul className="space-y-0.5">
+                    {(Object.values(oldDebts.students) as FamilyOldDebtStudent[]).map((s) => (
+                      <li key={s.student_id}>
+                        • {s.student_name}{s.student_code ? ` (${s.student_code})` : ''} — المتبقي: <span dir="ltr">{money(s.amount)} د.ت</span> ({s.debts_count} دين)
+                      </li>
+                    ))}
+                  </ul>
+                  <p className="text-amber-700">هذا التنبيه للمعلومات فقط ولا يُضاف إلى مبلغ الاستخلاص الحالي.</p>
+                </div>
+              </div>
             </div>
           )}
 
