@@ -95,6 +95,76 @@ class EmployeeLiabilityController extends Controller
     }
 
     /**
+     * تعديل التزام قديم:
+     * - إذا كان ملغى: يُرفض (422).
+     * - إذا كان للدين تحصيل (paid > 0): يُسمح بتعديل الملاحظات فقط؛ أي حقل مالي يُرفض صراحة بـ 422 عبر prohibited.
+     * - إذا كان غير محصل (paid == 0): يُسمح بتعديل المبلغ والنوع والوصف والملاحظات مع التحقق من النوع مقابل تصنيف الإطار.
+     * - لا ينشئ CashTransaction أو Salary أو EmployeeAdvance أبداً.
+     */
+    public function update(Request $request, EmployeeLiability $liability): JsonResponse
+    {
+        if ($liability->isCancelled()) {
+            return response()->json(['message' => 'هذا الالتزام ملغى مسبقاً ولا يمكن تعديله'], 422);
+        }
+
+        if ($liability->paid() > 0) {
+            $data = $request->validate([
+                'original_amount' => ['prohibited'],
+                'liability_type' => ['prohibited'],
+                'description' => ['prohibited'],
+                'notes' => ['nullable', 'string', 'max:2000'],
+            ], [
+                'original_amount.prohibited' => 'لا يمكن تغيير المبلغ بعد وجود تحصيل.',
+                'liability_type.prohibited' => 'لا يمكن تغيير نوع الالتزام بعد وجود تحصيل.',
+                'description.prohibited' => 'لا يمكن تغيير الوصف المالي بعد وجود تحصيل.',
+            ]);
+
+            $liability->update([
+                'notes' => $data['notes'] ?? null,
+            ]);
+
+            return response()->json($liability->fresh()->load([
+                'employee:id,first_name,last_name,job_title,staff_type',
+                'academicYear:id,name',
+                'createdBy:id,first_name,last_name',
+                'cancelledBy:id,first_name,last_name',
+            ]));
+        }
+
+        $data = $request->validate([
+            'original_amount' => ['sometimes', 'required', 'numeric', 'min:0.01', 'max:1000000'],
+            'liability_type' => ['sometimes', 'required', 'string', 'in:'.implode(',', EmployeeLiability::LIABILITY_TYPES)],
+            'description' => ['nullable', 'string', 'max:255'],
+            'notes' => ['nullable', 'string', 'max:2000'],
+        ]);
+
+        if (isset($data['liability_type'])) {
+            $emp = $liability->employee ?? \App\Models\Employee::find($liability->employee_id);
+            if ($emp) {
+                $allowed = match ($emp->staff_type) {
+                    'worker' => ['debt'],
+                    'hourly_teacher', 'monthly_teacher', 'club_animator' => ['debt', 'advance'],
+                    default => ['debt'],
+                };
+                if (! in_array($data['liability_type'], $allowed, true)) {
+                    return response()->json([
+                        'message' => 'نوع الالتزام غير مسموح لهذا الصنف من الموظفين',
+                    ], 422);
+                }
+            }
+        }
+
+        $liability->update($data);
+
+        return response()->json($liability->fresh()->load([
+            'employee:id,first_name,last_name,job_title,staff_type',
+            'academicYear:id,name',
+            'createdBy:id,first_name,last_name',
+            'cancelledBy:id,first_name,last_name',
+        ]));
+    }
+
+    /**
      * تحصيل دين قديم على إطار/عامل — قبض داخل فقط، لا راتب ولا مصروف.
      *
      * الفئة old_liability_collection / IN — تدخل cash_in ولا تدخل

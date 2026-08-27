@@ -174,6 +174,22 @@ export function createEmployeeLiability(payload: EmployeeLiabilityInput): Promis
   });
 }
 
+export function updateEmployeeLiability(
+  id: number,
+  payload: {
+    original_amount?: number;
+    liability_type?: string;
+    description?: string;
+    notes?: string | null;
+  }
+): Promise<EmployeeLiability> {
+  return apiFetch<EmployeeLiability>('/employee-liabilities/' + id, {
+    method: 'PUT',
+    body: payload,
+    fallbackMessage: 'تعذّر تعديل المستحقّ',
+  });
+}
+
 export function payEmployeeLiability(
   id: number,
   payload: { amount: number; paid_at?: string; method?: string | null; reference?: string | null; notes?: string | null }
