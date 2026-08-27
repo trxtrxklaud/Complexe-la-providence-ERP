@@ -91,6 +91,18 @@ export const paymentsApi = {
     }
     return res.json();
   },
+
+  async reprint(id: number): Promise<Payment> {
+    const res = await fetch(API_BASE + '/payments/' + id + '/reprint', {
+      method: 'POST',
+      headers: getHeaders(),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.message || 'تعذر إعادة طباعة الوصل');
+    }
+    return res.json();
+  },
 };
 
 export const studentFeesApi = {

@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Printer, X, Ban, UserCheck, ShieldCheck } from 'lucide-react';
+import { paymentsApi } from '../../api/payments';
 
 const METHOD_LABELS: Record<string, string> = {
   cash: 'نقداً',
@@ -94,6 +95,7 @@ export type ReceiptViewMode = 'both' | 'guardian' | 'admin';
  */
 export function ReceiptModal({ receipt, cashierName, onClose, onDelete }: Props) {
   const [viewMode, setViewMode] = useState<ReceiptViewMode>('both');
+  const [reprinting, setReprinting] = useState(false);
   const total = receipt.total ?? receipt.amount;
   const method = receipt.method_label || METHOD_LABELS[String(receipt.method)] || receipt.method || '—';
   const cashier = receipt.user_name || cashierName || '—';
@@ -184,11 +186,28 @@ export function ReceiptModal({ receipt, cashierName, onClose, onDelete }: Props)
           <div className="flex gap-2">
             <button
               type="button"
-              onClick={() => window.print()}
-              className="flex items-center gap-2 px-4 py-2 rounded-xl text-white text-sm font-bold shadow-xs transition"
+              disabled={reprinting}
+              onClick={async () => {
+                const pid = receipt.payment_id ? Number(receipt.payment_id) : null;
+                if (!pid) {
+                  window.print();
+                  return;
+                }
+                setReprinting(true);
+                try {
+                  await paymentsApi.reprint(pid);
+                  window.print();
+                } catch (e: any) {
+                  alert(e.message || 'تعذر إعادة طباعة الوصل');
+                  return;
+                } finally {
+                  setReprinting(false);
+                }
+              }}
+              className="flex items-center gap-2 px-4 py-2 rounded-xl text-white text-sm font-bold shadow-xs transition disabled:opacity-50"
               style={{ background: TEAL }}
             >
-              <Printer size={16} /> طباعة
+              <Printer size={16} /> {reprinting ? 'جارٍ...' : 'إعادة طباعة'}
             </button>
             {onDelete && (
               <button

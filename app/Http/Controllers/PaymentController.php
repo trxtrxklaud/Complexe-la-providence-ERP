@@ -151,6 +151,31 @@ class PaymentController extends Controller
         );
     }
 
+    public function reprint(Request $request, Payment $payment): JsonResponse
+    {
+        if (!$this->canSeeAllPayments($request) && (int) $payment->created_by !== (int) $request->user()->id) {
+            abort(403, 'لا تملك صلاحية إعادة طباعة هذا الوصل');
+        }
+        // الملغى مسموح — يظهر كـ ملغى في ReceiptModal (cancelled_at/status)، لا نغير المالية
+        $receipt = $payment->load([
+            'student:id,first_name,last_name,student_code',
+            'enrollment.academicYear:id,name',
+            'enrollment.level:id,name',
+            'createdBy:id,first_name,last_name',
+            'cancelledBy:id,first_name,last_name',
+            'paymentAllocations.studentFee:id,description,amount_due,due_date,status',
+        ]);
+        \App\Services\AuditService::log('receipt_reprinted', 'إعادة طباعة وصل رقم #'.$payment->id, $payment, [
+            'payment_id' => $payment->id,
+            'student_id' => $payment->student_id,
+            'receipt_number' => '#'.$payment->id,
+            'user_id' => $request->user()->id,
+            'timestamp' => now()->toIso8601String(),
+        ]);
+
+        return response()->json($receipt);
+    }
+
     /**
      * إلغاء موثّق بدل الحذف النهائي: يبقى سجل الدفعة (للقسم «الوصولات الملغاة») مع سبب الإلغاء
      * والمنفّذ وتاريخه، وتُلغى معها أسطر الدفتر النقدي حتى لا تظهر في أي تقرير مالي.

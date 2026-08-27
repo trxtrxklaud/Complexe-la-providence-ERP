@@ -223,6 +223,7 @@ Route::middleware(['auth:sanctum', 'active', 'throttle:120,1'])->group(function 
         // «ما تم استخلاصه» — ذاتيّ النطاق؛ يسبق apiResource كي لا يلتقطه GET /payments/{payment}.
         Route::get('/payments/my-collections', [PaymentController::class, 'myCollections']);
         Route::apiResource('/payments', PaymentController::class)->except(['update', 'destroy']);
+        Route::post('/payments/{payment}/reprint', [PaymentController::class, 'reprint']);
         Route::post('/payments/{payment}/cancel', [PaymentController::class, 'cancel']);
         Route::get('/fee-types', [FeeTypeController::class, 'index']);
 
