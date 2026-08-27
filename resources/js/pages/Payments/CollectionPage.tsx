@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
-import { CreditCard, Loader2, AlertCircle } from 'lucide-react';
+import { CreditCard, Loader2, AlertCircle, Printer } from 'lucide-react';
 import { getFeeTypes } from '../../api/feeTypes';
 import {
   collectPayment,
@@ -460,6 +460,29 @@ export function CollectionPage() {
     if (ok) setReceipt(null);
   }
 
+  async function handleReprintFromHistory(paymentId: number) {
+    try {
+      const p: any = await paymentsApi.show(paymentId);
+      setReceipt({
+        payment_id: p.id,
+        student_name: p.student ? `${p.student.first_name} ${p.student.last_name}` : '—',
+        student_code: p.student?.student_code,
+        payment_date: p.payment_date,
+        method: p.method,
+        amount: p.amount,
+        total: p.amount,
+        items: (p.payment_allocations || []).map((a: any) => ({
+          description: a.student_fee?.description || 'معلوم',
+          amount: a.amount_allocated,
+        })),
+        cancelled_at: p.cancelled_at,
+        cancellation_reason: p.cancellation_reason,
+      });
+    } catch (e: any) {
+      alert(e.message || 'تعذر تحميل الوصل');
+    }
+  }
+
   return (
     <div className="p-6 md:p-8" dir="rtl" style={{ background: '#F4F6F1', minHeight: '100vh' }}>
       <style>{`
@@ -741,12 +764,21 @@ export function CollectionPage() {
                           <td>{METHOD_LABELS[r.method] || r.method}</td>
                           <td>{r.created_by || r.user_name || '—'}</td>
                           <td>
-                            <button
-                              type="button"
-                              className="text-xs px-2 py-1 rounded-lg text-white"
-                              style={{ background: '#DC2626' }}
-                              onClick={() => handleCancelPayment(r.payment_id)}
-                            >إلغاء</button>
+                            <div className="flex gap-1">
+                              <button
+                                type="button"
+                                className="p-1.5 rounded-lg border hover:bg-slate-50"
+                                style={{ borderColor: '#EDF1E8', color: C.forest }}
+                                onClick={() => handleReprintFromHistory(r.payment_id)}
+                                title="طباعة"
+                              ><Printer size={14} /></button>
+                              <button
+                                type="button"
+                                className="text-xs px-2 py-1 rounded-lg text-white"
+                                style={{ background: '#DC2626' }}
+                                onClick={() => handleCancelPayment(r.payment_id)}
+                              >إلغاء</button>
+                            </div>
                           </td>
                         </tr>
                       ))}

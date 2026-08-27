@@ -198,7 +198,7 @@ export function ReceiptModal({ receipt, cashierName, onClose, onDelete }: Props)
                   await paymentsApi.reprint(pid);
                   window.print();
                 } catch (e: any) {
-                  alert(e.message || 'تعذر إعادة طباعة الوصل');
+                  alert(e.message || 'تعذر طباعة الوصل');
                   return;
                 } finally {
                   setReprinting(false);
@@ -207,7 +207,7 @@ export function ReceiptModal({ receipt, cashierName, onClose, onDelete }: Props)
               className="flex items-center gap-2 px-4 py-2 rounded-xl text-white text-sm font-bold shadow-xs transition disabled:opacity-50"
               style={{ background: TEAL }}
             >
-              <Printer size={16} /> {reprinting ? 'جارٍ...' : 'إعادة طباعة'}
+              <Printer size={16} /> {reprinting ? 'جارٍ...' : 'طباعة'}
             </button>
             {onDelete && (
               <button
