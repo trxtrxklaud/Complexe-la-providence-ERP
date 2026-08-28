@@ -312,7 +312,7 @@ export function CollectionPage() {
   // التخفيض تم خصمه مسبقاً داخل المعاينة: حيث يتم احتساب الصافي المتبقي من enrollment_discounts.
   // لذلك يتم جمع المتبقي للشهري والإضافات والمتخلدات السابقة مباشرة دون خصم إضافي.
   const total = itemsTotal + priorTotal;
-  const blockedByFullWaiver = Boolean(previewData?.is_fully_waived) && clubTotal <= 0 && priorTotal <= 0;
+  const blockedByFullWaiver = (Boolean(previewData?.is_fully_waived) || Boolean(previewData?.fee_plan_missing)) && clubTotal <= 0 && priorTotal <= 0;
 
   async function handleSave() {
     if (!picked) return;
@@ -557,14 +557,18 @@ export function CollectionPage() {
           <>
             {previewData && (
               <div className={`p-4 rounded-2xl border ${
-                previewData.is_fully_waived
+                previewData.fee_plan_missing
+                  ? 'bg-rose-50 border-rose-300 text-rose-900'
+                  : previewData.is_fully_waived
                   ? 'bg-emerald-50 border-emerald-300 text-emerald-900'
                   : previewData.discount_type === 'humanitarian_fixed'
                   ? 'bg-amber-50 border-amber-300 text-amber-900'
                   : 'bg-blue-50 border-blue-300 text-blue-900'
               }`}>
                 <div className="font-bold text-sm mb-1">
-                  {previewData.is_fully_waived
+                  {previewData.fee_plan_missing
+                    ? '⚠️ تنبيه إعدادات: ' + (previewData.fee_plan_missing_message || 'لا توجد خطة رسوم شهرية مضبوطة للسنة الدراسية والمستوى الحاليين.')
+                    : previewData.is_fully_waived
                     ? 'تخفيض كلي — تم إعفاء التلميذ كلياً (0 د.ت) لهذا الشهر ضمن قرارات الإدارة'
                     : previewData.discount_type === 'humanitarian_fixed'
                     ? 'تخفيض إنساني خاص مطبق'
@@ -573,7 +577,9 @@ export function CollectionPage() {
                     : 'لا يوجد تخفيض على هذا التسجيل'}
                 </div>
                 <div className="text-xs space-y-0.5">
-                  <div>المبلغ الأصلي: {previewData.gross_amount} د.ت | التخفيض: {previewData.discount_amount} د.ت | الصافي المستحق: {previewData.remaining_amount} د.ت</div>
+                  {!previewData.fee_plan_missing && (
+                    <div>المبلغ الأصلي: {previewData.gross_amount} د.ت | التخفيض: {previewData.discount_amount} د.ت | الصافي المستحق: {previewData.remaining_amount} د.ت</div>
+                  )}
                   {previewData.discount_reason && <div>السبب: {previewData.discount_reason}</div>}
                 </div>
               </div>
@@ -585,7 +591,7 @@ export function CollectionPage() {
                 type="number"
                 min="0"
                 step="0.01"
-                disabled={Boolean(previewData?.is_fully_waived)}
+                disabled={Boolean(previewData?.is_fully_waived || previewData?.fee_plan_missing)}
                 value={monthlyPrice}
                 onChange={(e) => setMonthlyPrice(e.target.value)}
                 className="w-full mt-1 border rounded-xl px-3 py-2 text-sm disabled:bg-slate-100 disabled:text-slate-400"
@@ -593,7 +599,11 @@ export function CollectionPage() {
                 placeholder="مثال: 150"
               />
               <p className="text-xs mt-1" style={{ color: C.muted }}>
-                {previewData?.is_fully_waived ? 'التلميذ معفى كلياً لهذا الشهر ولا يتوجب دفع معلوم' : 'المبلغ الصافي المطلوب للشهر المحدد بعد تطبيق التخفيضات'}
+                {previewData?.fee_plan_missing
+                  ? 'يرجى ضبط خطة الرسوم (Fee Plans) للسنة والمستوى الحاليين من لوحة الإعدادات'
+                  : previewData?.is_fully_waived
+                  ? 'التلميذ معفى كلياً لهذا الشهر ولا يتوجب دفع معلوم'
+                  : 'المبلغ الصافي المطلوب للشهر المحدد بعد تطبيق التخفيضات'}
               </p>
             </div>
 

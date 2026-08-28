@@ -186,6 +186,8 @@ export type CollectionPreview = {
   amount_paid: number;
   remaining_amount: number;
   is_fully_waived: boolean;
+  fee_plan_missing?: boolean;
+  fee_plan_missing_message?: string | null;
   discount_reason: string | null;
   can_collect: boolean;
   items: Array<{

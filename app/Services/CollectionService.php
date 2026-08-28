@@ -658,6 +658,8 @@ class CollectionService
             $grossPerMonth = $feeType ? (float) $feeType->price : 0.0;
         }
 
+        $feePlanMissing = ($grossPerMonth <= 0.0);
+
         $items = [];
         $totalGross = 0.0;
         $totalDiscount = 0.0;
@@ -834,9 +836,11 @@ class CollectionService
             'net_due' => round($totalNetDue, 2),
             'amount_paid' => round($totalPaid, 2),
             'remaining_amount' => round($totalRemaining, 2),
-            'is_fully_waived' => $hasFullWaiver || round($totalRemaining, 2) <= 0.0,
+            'is_fully_waived' => $hasFullWaiver,
+            'fee_plan_missing' => $feePlanMissing,
+            'fee_plan_missing_message' => $feePlanMissing ? 'لا توجد خطة رسوم شهرية مضبوطة للسنة الدراسية والمستوى الحاليين.' : null,
             'discount_reason' => $activeDiscountReason,
-            'can_collect' => ! $hasFullWaiver && round($totalRemaining, 2) > 0.0,
+            'can_collect' => ! $hasFullWaiver && ! $feePlanMissing && round($totalRemaining, 2) > 0.0,
             'items' => $items,
             'club_items' => $clubItems,
             'club_remaining_amount' => round((float) array_sum(array_column($clubItems, 'remaining_amount')), 2),
