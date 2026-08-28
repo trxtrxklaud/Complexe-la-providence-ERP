@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\Enrollment;
 use App\Models\EnrollmentDiscount;
 use App\Models\FeePlan;
+use App\Services\AuditService;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -76,7 +77,7 @@ class DiscountService
                 ? round(($amount / $annualFees) * 100, 2)
                 : null;
 
-            return EnrollmentDiscount::create([
+            $discount = EnrollmentDiscount::create([
                 'enrollment_id'    => $enrollment->id,
                 'academic_year_id' => $yearId,
                 'amount'           => $amount,
@@ -85,6 +86,20 @@ class DiscountService
                 'applied_date'     => $appliedDate,
                 'created_by'       => $createdBy,
             ]);
+
+            AuditService::log(
+                'discount.create',
+                'منح تخفيض سنوي بمبلغ '.$discount->amount.' د.ت للتسجيل #'.$enrollment->id,
+                $discount,
+                [
+                    'enrollment_id'    => $enrollment->id,
+                    'amount'           => (float) $discount->amount,
+                    'academic_year_id' => $yearId,
+                    'created_by'       => $createdBy,
+                ]
+            );
+
+            return $discount;
         });
     }
 
@@ -138,6 +153,17 @@ class DiscountService
                 'cancelled_by'        => $cancelledBy,
                 'cancellation_reason' => $reason,
             ]);
+
+            AuditService::log(
+                'discount.cancel',
+                'إلغاء تخفيض سنوي #'.$discount->id.' — السبب: '.$reason,
+                $discount,
+                [
+                    'discount_id'  => $discount->id,
+                    'reason'       => $reason,
+                    'cancelled_by' => $cancelledBy,
+                ]
+            );
 
             return $discount->refresh();
         });

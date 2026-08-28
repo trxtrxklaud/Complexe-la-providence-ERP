@@ -170,6 +170,12 @@ class LedgerService
             $buckets[$category] = ($buckets[$category] ?? 0.0) + $amount;
         }
 
+        if ($allocated > (float) $payment->amount + 0.01) {
+            throw new \DomainException(
+                'مجموع التوزيعات ('.number_format($allocated, 2, '.', '').') يتجاوز مبلغ الدفعة ('.number_format((float) $payment->amount, 2, '.', '').')'
+            );
+        }
+
         $remainder = round((float) $payment->amount - $allocated, 2);
 
         if ($remainder > 0) {

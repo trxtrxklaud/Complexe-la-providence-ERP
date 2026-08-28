@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\FeeWaiver;
 use App\Models\StudentFee;
+use App\Services\AuditService;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -51,6 +52,18 @@ class FeeWaiverService
                 'created_by'     => $userId,
             ]);
 
+            AuditService::log(
+                'fee_waiver.create',
+                'تنازل عن رسم #'.$waiver->student_fee_id.' بمبلغ '.$waiver->amount.' د.ت — السبب: '.$reason,
+                $waiver,
+                [
+                    'student_fee_id' => $locked->id,
+                    'amount'         => (float) $waiver->amount,
+                    'reason'         => $reason,
+                    'created_by'     => $userId,
+                ]
+            );
+
             $this->syncStatus($locked);
 
             return $waiver;
@@ -78,6 +91,17 @@ class FeeWaiverService
                 'cancelled_by'        => $userId,
                 'cancellation_reason' => $reason,
             ]);
+
+            AuditService::log(
+                'fee_waiver.cancel',
+                'إلغاء تنازل #'.$waiver->id.' — السبب: '.$reason,
+                $waiver,
+                [
+                    'waiver_id'    => $waiver->id,
+                    'reason'       => $reason,
+                    'cancelled_by' => $userId,
+                ]
+            );
 
             $fee = StudentFee::find($waiver->student_fee_id);
 
