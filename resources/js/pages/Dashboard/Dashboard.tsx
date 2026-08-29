@@ -893,66 +893,84 @@ export default function Dashboard() {
               </div>
 
               <div className={`grid grid-cols-1 gap-6 ${unspecified > 0 ? 'md:grid-cols-3' : 'md:grid-cols-2'}`}>
-                {/* دائرة الإناث — وردي / أحمر أنيق */}
+                {/* بطاقة الإناث — مع صورة التلميذة بالميدعة المدرسية */}
                 <div
-                  className='flex flex-col items-center justify-center p-6 rounded-2xl border transition-transform hover:-translate-y-0.5'
+                  className='flex flex-col sm:flex-row items-center justify-between gap-6 p-6 rounded-3xl border transition-all hover:shadow-md'
                   style={{ backgroundColor: '#FFF1F2', borderColor: '#FFE4E6' }}
                 >
+                  <div className='flex items-center gap-4'>
+                    <div className='relative shrink-0'>
+                      <img
+                        src='/image/schoolgirl.jpg'
+                        alt='تلميذة بميدعة مدرسية'
+                        className='w-20 h-20 rounded-2xl object-cover shadow-md border-2 border-white ring-2 ring-[#E11D48]/25'
+                      />
+                      <span className='absolute -bottom-1.5 -right-1.5 w-6 h-6 rounded-full bg-[#E11D48] text-white flex items-center justify-center text-xs font-black shadow-sm'>
+                        ♀
+                      </span>
+                    </div>
+                    <div>
+                      <p className='text-xs font-bold' style={{ color: '#9F1239' }}>
+                        عدد الإناث
+                      </p>
+                      <p className='mt-1 text-3xl font-extrabold tracking-tight' style={{ color: '#E11D48', ...NUM }}>
+                        <AnimatedInt value={females} /> <span className='text-xs font-semibold'>تلميذة</span>
+                      </p>
+                    </div>
+                  </div>
+
                   <RatioDonut
-                    size={130}
-                    stroke={12}
+                    size={100}
+                    stroke={10}
                     progress={femaleProgress}
                     track='#FFE4E6'
                     color='#E11D48'
                     label={`نسبة الإناث ${femalePctNum.toFixed(1)}%`}
                   >
-                    <span className='text-2xl font-black' style={{ color: '#E11D48', ...NUM }}>
+                    <span className='text-lg font-black' style={{ color: '#E11D48', ...NUM }}>
                       {femalePctNum.toFixed(1)}٪
                     </span>
-                    <span className='text-[11px] font-bold mt-0.5' style={{ color: '#9F1239' }}>
-                      إناث
-                    </span>
                   </RatioDonut>
-
-                  <div className='mt-4 text-center'>
-                    <p className='text-xs font-bold' style={{ color: '#9F1239' }}>
-                      عدد الإناث (بنات)
-                    </p>
-                    <p className='mt-1 text-2xl font-extrabold tracking-tight' style={{ color: '#E11D48', ...NUM }}>
-                      <AnimatedInt value={females} /> <span className='text-xs font-semibold'>تلميذة</span>
-                    </p>
-                  </div>
                 </div>
 
-                {/* دائرة الذكور — أزرق ملكي أنيق */}
+                {/* بطاقة الذكور — مع صورة التلميذ بالميدعة المدرسية */}
                 <div
-                  className='flex flex-col items-center justify-center p-6 rounded-2xl border transition-transform hover:-translate-y-0.5'
+                  className='flex flex-col sm:flex-row items-center justify-between gap-6 p-6 rounded-3xl border transition-all hover:shadow-md'
                   style={{ backgroundColor: '#EFF6FF', borderColor: '#DBEAFE' }}
                 >
+                  <div className='flex items-center gap-4'>
+                    <div className='relative shrink-0'>
+                      <img
+                        src='/image/schoolboy.jpg'
+                        alt='تلميذ بميدعة مدرسية'
+                        className='w-20 h-20 rounded-2xl object-cover shadow-md border-2 border-white ring-2 ring-[#2563EB]/25'
+                      />
+                      <span className='absolute -bottom-1.5 -right-1.5 w-6 h-6 rounded-full bg-[#2563EB] text-white flex items-center justify-center text-xs font-black shadow-sm'>
+                        ♂
+                      </span>
+                    </div>
+                    <div>
+                      <p className='text-xs font-bold' style={{ color: '#1E40AF' }}>
+                        عدد الذكور
+                      </p>
+                      <p className='mt-1 text-3xl font-extrabold tracking-tight' style={{ color: '#2563EB', ...NUM }}>
+                        <AnimatedInt value={males} /> <span className='text-xs font-semibold'>تلميذ</span>
+                      </p>
+                    </div>
+                  </div>
+
                   <RatioDonut
-                    size={130}
-                    stroke={12}
+                    size={100}
+                    stroke={10}
                     progress={maleProgress}
                     track='#DBEAFE'
                     color='#2563EB'
                     label={`نسبة الذكور ${malePctNum.toFixed(1)}%`}
                   >
-                    <span className='text-2xl font-black' style={{ color: '#2563EB', ...NUM }}>
+                    <span className='text-lg font-black' style={{ color: '#2563EB', ...NUM }}>
                       {malePctNum.toFixed(1)}٪
                     </span>
-                    <span className='text-[11px] font-bold mt-0.5' style={{ color: '#1E40AF' }}>
-                      ذكور
-                    </span>
                   </RatioDonut>
-
-                  <div className='mt-4 text-center'>
-                    <p className='text-xs font-bold' style={{ color: '#1E40AF' }}>
-                      عدد الذكور (بنين)
-                    </p>
-                    <p className='mt-1 text-2xl font-extrabold tracking-tight' style={{ color: '#2563EB', ...NUM }}>
-                      <AnimatedInt value={males} /> <span className='text-xs font-semibold'>تلميذ</span>
-                    </p>
-                  </div>
                 </div>
 
                 {/* غير محدد (إذا وُجد) */}
