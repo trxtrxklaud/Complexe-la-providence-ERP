@@ -154,11 +154,11 @@ function RatioDonut({
     <div
       role='img'
       aria-label={label}
-      className='relative inline-flex items-center justify-center'
+      className='relative inline-flex items-center justify-center transition-transform duration-300 hover:scale-[1.02]'
       style={{ width: size, maxWidth: '100%', aspectRatio: '1 / 1' }}
     >
       <svg viewBox={`0 0 ${size} ${size}`} width='100%' height='100%' className='block' aria-hidden='true' focusable='false'>
-        <circle cx={cx} cy={cy} r={r} fill='none' stroke={track} strokeWidth={stroke} />
+        <circle cx={cx} cy={cy} r={r} fill='none' stroke={track} strokeWidth={stroke} opacity={0.85} />
         <motion.circle
           cx={cx}
           cy={cy}
@@ -172,9 +172,10 @@ function RatioDonut({
           initial={{ strokeDashoffset: reduce ? target : c }}
           animate={{ strokeDashoffset: target }}
           transition={{ duration: reduce ? 0 : 1.1, ease: [0.16, 1, 0.3, 1], delay: reduce ? 0 : delay }}
+          style={{ filter: 'drop-shadow(0 2px 5px rgba(0,0,0,0.10))' }}
         />
       </svg>
-      <div className='absolute inset-0 flex flex-col items-center justify-center px-4 text-center'>{children}</div>
+      <div className='absolute inset-0 flex flex-col items-center justify-center px-3 text-center pointer-events-none'>{children}</div>
     </div>
   );
 }
@@ -368,29 +369,31 @@ function StatCard({
   return (
     <motion.div
       variants={cardRise}
-      className='card-interactive shadow-card flex flex-col rounded-3xl border bg-white p-6'
-      style={{ borderColor: C.hair }}
+      className='card-interactive group relative flex flex-col justify-between rounded-3xl border bg-white p-6 transition-all duration-300 hover:-translate-y-1 hover:shadow-lg'
+      style={{ borderColor: C.hair, boxShadow: '0 4px 20px -4px rgba(0,0,0,0.03)' }}
     >
-      <div className='flex items-center gap-3'>
-        <span
-          className='inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl'
-          style={{ backgroundColor: chipBg, color: chipColor }}
-          aria-hidden='true'
+      <div>
+        <div className='flex items-center justify-between gap-3'>
+          <p className='text-[14px] font-bold tracking-tight' style={{ color: C.ink }}>
+            {label}
+          </p>
+          <span
+            className='inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl transition-transform duration-300 group-hover:scale-110 shadow-sm'
+            style={{ backgroundColor: chipBg, color: chipColor }}
+            aria-hidden='true'
+          >
+            <Icon size={19} />
+          </span>
+        </div>
+        <p
+          className='mt-4 text-[32px] md:text-[34px] leading-none font-extrabold tracking-tight'
+          style={{ color: valueColor ?? C.ink, fontFamily: 'var(--font-display)', ...NUM }}
         >
-          <Icon size={18} />
-        </span>
-        <p className='text-[14px] font-bold' style={{ color: C.ink }}>
-          {label}
+          {value}
         </p>
       </div>
-      <p
-        className='mt-3.5 text-[32px] md:text-[34px] leading-none font-extrabold tracking-tight'
-        style={{ color: valueColor ?? C.ink, fontFamily: 'var(--font-display)', ...NUM }}
-      >
-        {value}
-      </p>
       {hint && (
-        <p className='mt-3 text-xs leading-relaxed' style={{ color: C.muted }}>
+        <p className='mt-4 text-xs font-medium leading-relaxed' style={{ color: C.muted }}>
           {hint}
         </p>
       )}
@@ -455,65 +458,71 @@ function EnrollmentDonutCard({
   return (
     <motion.div
       variants={cardRise}
-      className='card-interactive shadow-card flex h-full flex-col rounded-3xl border bg-white p-6 md:p-8'
-      style={{ borderColor: C.hair }}
+      className='card-interactive relative flex h-full flex-col justify-between rounded-3xl border bg-gradient-to-b from-white to-[#FBFBF9] p-6 md:p-8 transition-all duration-300 hover:shadow-lg'
+      style={{ borderColor: C.hair, boxShadow: '0 4px 20px -4px rgba(0,0,0,0.04)' }}
     >
-      <div className='flex items-center gap-3'>
-        <span
-          className='inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl'
-          style={{ backgroundColor: C.goldSoft, color: C.goldDeep }}
-          aria-hidden='true'
-        >
-          <GraduationCap size={18} />
-        </span>
-        <div>
-          <h2 className='text-[15px] font-bold' style={{ color: C.ink }}>
-            نسبة الترسيم
-          </h2>
-          <p className='mt-0.5 text-xs' style={{ color: C.muted }}>
-            السنة النشطة: {yearName}
-          </p>
+      <div className='flex items-center justify-between gap-3'>
+        <div className='flex items-center gap-3'>
+          <span
+            className='inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl shadow-sm'
+            style={{ backgroundColor: C.goldSoft, color: C.goldDeep }}
+            aria-hidden='true'
+          >
+            <GraduationCap size={20} />
+          </span>
+          <div>
+            <h2 className='text-[16px] font-bold tracking-tight' style={{ color: C.ink }}>
+              نسبة الترسيم
+            </h2>
+            <p className='mt-0.5 text-xs font-semibold' style={{ color: C.muted }}>
+              السنة النشطة: {yearName}
+            </p>
+          </div>
         </div>
+
+        <span className='inline-flex items-center px-3 py-1 rounded-full text-xs font-bold' style={{ backgroundColor: C.goldSoft, color: C.goldDeep }}>
+          {pct.toFixed(1)}٪
+        </span>
       </div>
 
-      <div className='mt-6 flex flex-1 items-center justify-center'>
+      <div className='my-6 flex flex-1 items-center justify-center'>
         <RatioDonut
-          size={200}
-          stroke={16}
+          size={210}
+          stroke={18}
           progress={progress}
           track={C.track}
           color={C.gold}
           label={`نسبة التلاميذ الذين دفعوا الترسيم ${pct.toFixed(1)} بالمئة من إجمالي ${total} تلميذاً`}
         >
           <span
-            className='text-[36px] leading-none font-extrabold'
+            className='text-[38px] leading-none font-extrabold tracking-tight'
             style={{ color: C.ink, fontFamily: 'var(--font-display)', ...NUM }}
           >
             <AnimatedInt value={total} />
           </span>
-          <span className='mt-2 text-xs' style={{ color: C.muted }}>
+          <span className='mt-2 text-xs font-semibold' style={{ color: C.muted }}>
             إجمالي التلاميذ
           </span>
-          <span className='mt-2 text-sm font-bold' style={{ color: C.goldDeep, ...NUM }}>
-            {pct.toFixed(1)}٪ دَفعوا الترسيم
+          <span className='mt-2 text-xs font-extrabold px-2.5 py-0.5 rounded-full' style={{ backgroundColor: C.goldSoft, color: C.goldDeep, ...NUM }}>
+            {pct.toFixed(1)}٪ تم الترسيم
           </span>
         </RatioDonut>
       </div>
 
-      <div className='mt-6 grid grid-cols-2 gap-3'>
-        <div className='rounded-2xl p-4' style={{ backgroundColor: C.soft }}>
-          <p className='flex items-center gap-2 text-xs' style={{ color: C.muted }}>
+      <div className='grid grid-cols-2 gap-3.5'>
+        <div className='rounded-2xl p-4 border transition-transform hover:scale-[1.02]' style={{ backgroundColor: '#FDFBF7', borderColor: '#F4EAD0' }}>
+          <p className='flex items-center gap-2 text-xs font-bold' style={{ color: C.goldDeep }}>
             <LegendDot color={C.gold} /> دَفعوا الترسيم
           </p>
-          <p className='mt-2 text-[20px] leading-none font-bold' style={{ color: C.goldDeep, ...NUM }}>
+          <p className='mt-2 text-[22px] leading-none font-extrabold' style={{ color: C.goldDeep, ...NUM }}>
             {safePaid}
           </p>
         </div>
-        <div className='rounded-2xl p-4' style={{ backgroundColor: C.soft }}>
-          <p className='flex items-center gap-2 text-xs' style={{ color: C.muted }}>
+        <div className='rounded-2xl p-4 border transition-transform hover:scale-[1.02]' style={{ backgroundColor: '#F7F9F5', borderColor: '#E3EBDB' }}>
+          <p className='flex items-center gap-2 text-xs font-bold' style={{ color: C.forest }}>
             <LegendDot color={C.forest} /> لم يدفعوا بعد
           </p>
-          <p className='mt-2 text-[20px] leading-none font-bold' style={{ color: C.forest, ...NUM }}>
+          <p className='mt-2 text-[22px] leading-none font-extrabold' style={{ color: C.forest, ...NUM }}>
             {safeUnpaid}
           </p>
         </div>
