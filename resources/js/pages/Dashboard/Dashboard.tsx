@@ -685,18 +685,18 @@ export default function Dashboard() {
 
   return (
     <div className='p-6 md:p-8' dir='rtl'>
-      {/* الرأس: تحية واضحة + أيقونة، وساعة المؤسسة في أعلى اليسار بأمان وبدون تلامس الكروت */}
-      <header className='mb-8 flex flex-wrap items-center justify-between gap-4'>
-        <div className='flex items-center gap-3'>
+      {/* الرأس: تحية واضحة + ساعة المؤسسة بقياسها الكامل والأصلي في أعلى اليسار */}
+      <header className='mb-8 flex flex-wrap items-center justify-between gap-6'>
+        <div className='flex items-center gap-4'>
           <span
-            className='inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl'
+            className='inline-flex h-14 w-14 shrink-0 items-center justify-center rounded-3xl shadow-sm'
             style={{ backgroundColor: isMorning ? C.sage : C.beige, color: isMorning ? C.forest : C.deep }}
             aria-hidden='true'
           >
-            {isMorning ? <Coffee size={20} /> : <Moon size={20} />}
+            {isMorning ? <Coffee size={26} /> : <Moon size={26} />}
           </span>
           <div className='min-w-0'>
-            <h1 className='truncate text-2xl md:text-[26px] leading-tight font-extrabold tracking-tight' style={{ color: C.ink, fontFamily: 'var(--font-display)' }}>
+            <h1 className='truncate text-2xl md:text-3xl leading-tight font-extrabold tracking-tight' style={{ color: C.ink, fontFamily: 'var(--font-display)' }}>
               {isMorning ? 'صباح الخير' : 'مساء الخير'}
               {greetName}
             </h1>
@@ -706,20 +706,20 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* ساعة المؤسسة — أعلى اليسار */}
+        {/* ساعة المؤسسة — أعلى اليسار بالقياس الكامل الأصلي */}
         <div
-          className='flex items-center gap-3 px-4 py-2 rounded-2xl border bg-white shadow-sm'
+          className='flex items-center gap-4 px-5 py-3 rounded-3xl border bg-white shadow-sm'
           style={{ borderColor: C.hair }}
         >
           <div className='text-right'>
             <p className='text-xs font-bold leading-tight' style={{ color: C.ink }}>
               توقيت المؤسسة
             </p>
-            <p className='text-[11px] font-medium' style={{ color: C.muted }}>
+            <p className='mt-0.5 text-[11px] font-semibold' style={{ color: C.muted }}>
               مدرسة العناية
             </p>
           </div>
-          <AnalogClock size={46} />
+          <AnalogClock size={132} />
         </div>
       </header>
 
