@@ -685,23 +685,41 @@ export default function Dashboard() {
 
   return (
     <div className='p-6 md:p-8' dir='rtl'>
-      {/* الرأس: تحية واضحة + أيقونة صغيرة واحدة، والتاريخ في سطر ثانويّ هادئ */}
-      <header className='mb-8 flex items-center gap-3'>
-        <span
-          className='inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl'
-          style={{ backgroundColor: isMorning ? C.sage : C.beige, color: isMorning ? C.forest : C.deep }}
-          aria-hidden='true'
+      {/* الرأس: تحية واضحة + أيقونة، وساعة المؤسسة في أعلى اليسار بأمان وبدون تلامس الكروت */}
+      <header className='mb-8 flex flex-wrap items-center justify-between gap-4'>
+        <div className='flex items-center gap-3'>
+          <span
+            className='inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl'
+            style={{ backgroundColor: isMorning ? C.sage : C.beige, color: isMorning ? C.forest : C.deep }}
+            aria-hidden='true'
+          >
+            {isMorning ? <Coffee size={20} /> : <Moon size={20} />}
+          </span>
+          <div className='min-w-0'>
+            <h1 className='truncate text-2xl md:text-[26px] leading-tight font-extrabold tracking-tight' style={{ color: C.ink, fontFamily: 'var(--font-display)' }}>
+              {isMorning ? 'صباح الخير' : 'مساء الخير'}
+              {greetName}
+            </h1>
+            <p className='mt-1 text-sm font-semibold' style={{ color: C.muted }}>
+              جرد اليوم {data?.current_date ?? ''}
+            </p>
+          </div>
+        </div>
+
+        {/* ساعة المؤسسة — أعلى اليسار */}
+        <div
+          className='flex items-center gap-3 px-4 py-2 rounded-2xl border bg-white shadow-sm'
+          style={{ borderColor: C.hair }}
         >
-          {isMorning ? <Coffee size={20} /> : <Moon size={20} />}
-        </span>
-        <div className='min-w-0'>
-          <h1 className='truncate text-2xl md:text-[26px] leading-tight font-extrabold tracking-tight' style={{ color: C.ink, fontFamily: 'var(--font-display)' }}>
-            {isMorning ? 'صباح الخير' : 'مساء الخير'}
-            {greetName}
-          </h1>
-          <p className='mt-1 text-sm font-semibold' style={{ color: C.muted }}>
-            جرد اليوم {data?.current_date ?? ''}
-          </p>
+          <div className='text-right'>
+            <p className='text-xs font-bold leading-tight' style={{ color: C.ink }}>
+              توقيت المؤسسة
+            </p>
+            <p className='text-[11px] font-medium' style={{ color: C.muted }}>
+              مدرسة العناية
+            </p>
+          </div>
+          <AnalogClock size={46} />
         </div>
       </header>
 
@@ -854,59 +872,43 @@ export default function Dashboard() {
             />
           )}
 
-          {/* منطقة ثانوية هادئة: الشهر الجاري + ساعة المؤسسة — أسطح مسطّحة بلا ظلّ
-              حتى لا تنافس البطل ولا المؤشّرات. تتبع رؤية الصندوق نفسها. */}
+          {/* منطقة ثانوية: متابعة الشهر الجاري — أسطح مسطّحة بلا ظلّ تتبع رؤية الصندوق */}
           {data.cash && (
             <section>
               <SectionLabel title='متابعة الشهر' />
-              <div className='grid grid-cols-1 gap-6 lg:grid-cols-3'>
-                <div className='rounded-3xl border p-6 lg:col-span-2' style={{ backgroundColor: C.soft, borderColor: C.hair }}>
-                  <h3 className='mb-4 text-[13px] font-bold' style={{ color: C.ink }}>
-                    الشهر الجاري
-                  </h3>
-                  <dl className='divide-y text-sm' style={{ borderColor: C.hair }}>
-                    <div className='flex items-center justify-between gap-3 py-3'>
-                      <dt style={{ color: C.muted }}>مجموع المداخيل</dt>
-                      <dd className='font-bold' style={{ color: C.collected }}>
-                        <Money value={month?.income} />
-                      </dd>
-                    </div>
-                    <div className='flex items-center justify-between gap-3 py-3'>
-                      <dt style={{ color: C.muted }}>مجموع المصاريف</dt>
-                      <dd className='font-bold' style={{ color: C.expense }}>
-                        <Money value={month?.expenses} />
-                      </dd>
-                    </div>
-                    <div className='flex items-center justify-between gap-3 py-3'>
-                      <dt style={{ color: C.muted }}>الدخل الصافي</dt>
-                      <dd className='font-bold' style={{ color: C.ink }}>
-                        <Money value={month?.net_income} />
-                      </dd>
-                    </div>
-                    <div className='flex items-center justify-between gap-3 py-3'>
-                      <dt style={{ color: C.muted }}>السحوبات</dt>
-                      <dd className='font-bold' style={{ color: C.muted }}>
-                        <Money value={month?.withdrawals} />
-                      </dd>
-                    </div>
-                  </dl>
-                  <p className='mt-4 text-xs leading-relaxed' style={{ color: C.muted }}>
-                    أرقام الصندوق تتبع تاريخ القبض الفعلي، لا الشهر المُستخلَص عنه.
-                  </p>
-                </div>
-
-                <div
-                  className='flex flex-col items-center justify-center rounded-3xl border p-6'
-                  style={{ backgroundColor: C.soft, borderColor: C.hair }}
-                >
-                  <p className='mb-4 text-xs' style={{ color: C.muted }}>
-                    توقيت المؤسسة
-                  </p>
-                  <AnalogClock size={132} />
-                  <p className='mt-4 text-[13px] font-bold' style={{ color: C.ink }}>
-                    مدرسة العناية
-                  </p>
-                </div>
+              <div className='rounded-3xl border p-6' style={{ backgroundColor: C.soft, borderColor: C.hair }}>
+                <h3 className='mb-4 text-[14px] font-bold' style={{ color: C.ink }}>
+                  الشهر الجاري
+                </h3>
+                <dl className='grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4'>
+                  <div className='flex flex-col gap-1.5 p-4 rounded-2xl bg-white border' style={{ borderColor: C.hair }}>
+                    <dt className='text-xs font-semibold' style={{ color: C.muted }}>مجموع المداخيل</dt>
+                    <dd className='text-lg font-bold' style={{ color: C.collected }}>
+                      <Money value={month?.income} />
+                    </dd>
+                  </div>
+                  <div className='flex flex-col gap-1.5 p-4 rounded-2xl bg-white border' style={{ borderColor: C.hair }}>
+                    <dt className='text-xs font-semibold' style={{ color: C.muted }}>مجموع المصاريف</dt>
+                    <dd className='text-lg font-bold' style={{ color: C.expense }}>
+                      <Money value={month?.expenses} />
+                    </dd>
+                  </div>
+                  <div className='flex flex-col gap-1.5 p-4 rounded-2xl bg-white border' style={{ borderColor: C.hair }}>
+                    <dt className='text-xs font-semibold' style={{ color: C.muted }}>الدخل الصافي</dt>
+                    <dd className='text-lg font-bold' style={{ color: C.ink }}>
+                      <Money value={month?.net_income} />
+                    </dd>
+                  </div>
+                  <div className='flex flex-col gap-1.5 p-4 rounded-2xl bg-white border' style={{ borderColor: C.hair }}>
+                    <dt className='text-xs font-semibold' style={{ color: C.muted }}>السحوبات</dt>
+                    <dd className='text-lg font-bold' style={{ color: C.muted }}>
+                      <Money value={month?.withdrawals} />
+                    </dd>
+                  </div>
+                </dl>
+                <p className='mt-4 text-xs leading-relaxed' style={{ color: C.muted }}>
+                  أرقام الصندوق تتبع تاريخ القبض الفعلي، لا الشهر المُستخلَص عنه.
+                </p>
               </div>
             </section>
           )}
