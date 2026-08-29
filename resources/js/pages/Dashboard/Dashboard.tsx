@@ -20,6 +20,8 @@ import type { LucideIcon } from 'lucide-react';
 import { fetchDashboard, type DashboardData, type PriorDebtSummary } from '../../api/dashboard';
 import { errorMessage } from '../../lib/format';
 import { PageDataSkeleton } from '../../components/DataSkeleton';
+import schoolgirlAvatar from '../../assets/schoolgirl.jpg';
+import schoolboyAvatar from '../../assets/schoolboy.jpg';
 
 /**
  * لوحة الألوان: أخضر غامق أساسيّ، أخضر فاتح للإيجابي، وردي/عنبري خفيف للسالب،
@@ -910,7 +912,7 @@ export default function Dashboard() {
                   <div className='flex items-center gap-4'>
                     <div className='relative shrink-0'>
                       <img
-                        src='/image/schoolgirl.jpg'
+                        src={schoolgirlAvatar}
                         alt='تلميذة بميدعة مدرسية'
                         className='w-20 h-20 rounded-2xl object-cover shadow-md border-2 border-white ring-2 ring-[#E11D48]/25'
                       />
@@ -950,7 +952,7 @@ export default function Dashboard() {
                   <div className='flex items-center gap-4'>
                     <div className='relative shrink-0'>
                       <img
-                        src='/image/schoolboy.jpg'
+                        src={schoolboyAvatar}
                         alt='تلميذ بميدعة مدرسية'
                         className='w-20 h-20 rounded-2xl object-cover shadow-md border-2 border-white ring-2 ring-[#2563EB]/25'
                       />
