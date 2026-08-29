@@ -1,4 +1,4 @@
-import React, { lazy, Suspense } from 'react';
+import React, { lazy, Suspense, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { motion, MotionConfig } from 'motion/react';
 import { Sidebar } from './components/Sidebar';
@@ -131,6 +131,16 @@ function CashierHidden({ to = '/', children }: { to?: string; children: React.Re
     return isCashier ? <Navigate to={to} replace /> : <>{children}</>;
 }
 
+function ScrollToTop() {
+    const { pathname } = useLocation();
+
+    useEffect(() => {
+        window.scrollTo({ top: 0, left: 0, behavior: 'smooth' });
+    }, [pathname]);
+
+    return null;
+}
+
 /**
  * قاعدة واحدة تحكم كل ما يلي: حراسة الواجهة تطابق حراسة routes/api.php حرفاً.
  * الواجهة ليست طبقة أمان — الـ backend هو الحارس الحقيقي — لكن اختلافهما
@@ -142,6 +152,7 @@ export default function App() {
             <MotionConfig reducedMotion="user">
                 <ToastProvider>
                     <BrowserRouter>
+                        <ScrollToTop />
                         <Routes>
                             <Route path="/login" element={<Login />} />
 
