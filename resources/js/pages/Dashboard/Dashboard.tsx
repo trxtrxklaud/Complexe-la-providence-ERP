@@ -679,6 +679,16 @@ export default function Dashboard() {
   const netToday = Number(today?.net_income ?? 0);
   const netColor = netToday < 0 ? C.error : netToday > 0 ? C.collected : C.ink;
 
+  // حسابات المقارنة الدائرية للشهر الجاري (مداخيل بالأزرق ومصاريف بالأحمر)
+  const monthIncome = Number(month?.income ?? 0);
+  const monthExpenses = Number(month?.expenses ?? 0);
+  const totalFlow = monthIncome + monthExpenses;
+  const incomePct = totalFlow > 0 ? (monthIncome / totalFlow) * 100 : 0;
+  const expensePct = totalFlow > 0 ? (monthExpenses / totalFlow) * 100 : 0;
+  const netMonth = Number(month?.net_income ?? 0);
+  const netMonthColor = netMonth < 0 ? C.error : netMonth > 0 ? C.collected : C.ink;
+  const netMonthColorBg = netMonth < 0 ? C.errorBg : netMonth > 0 ? C.collectedSoft : C.soft;
+
   const hour = new Date().getHours();
   const isMorning = hour < 12;
   const greetName = user?.first_name && !['مدير', 'النظام', 'Admin', 'admin'].includes(user.first_name) ? `، ${user.first_name}` : '';
@@ -872,41 +882,90 @@ export default function Dashboard() {
             />
           )}
 
-          {/* منطقة ثانوية: متابعة الشهر الجاري — أسطح مسطّحة بلا ظلّ تتبع رؤية الصندوق */}
+          {/* متابعة الشهر الجاري — مقارنة دائرية بين المداخيل (بالأزرق) والمصاريف (بالأحمر) مع الأرقام تحتهما */}
           {data.cash && (
             <section>
-              <SectionLabel title='متابعة الشهر' />
-              <div className='rounded-3xl border p-6' style={{ backgroundColor: C.soft, borderColor: C.hair }}>
-                <h3 className='mb-4 text-[14px] font-bold' style={{ color: C.ink }}>
-                  الشهر الجاري
-                </h3>
-                <dl className='grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4'>
-                  <div className='flex flex-col gap-1.5 p-4 rounded-2xl bg-white border' style={{ borderColor: C.hair }}>
-                    <dt className='text-xs font-semibold' style={{ color: C.muted }}>مجموع المداخيل</dt>
-                    <dd className='text-lg font-bold' style={{ color: C.collected }}>
-                      <Money value={month?.income} />
-                    </dd>
+              <SectionLabel title='متابعة الشهر' hint='مقارنة المداخيل والمصاريف للشهر الجاري' />
+              <div className='rounded-3xl border bg-white p-6 md:p-8 shadow-card' style={{ borderColor: C.hair }}>
+                <div className='grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 items-center'>
+                  {/* دائرة المداخيل — أزرق */}
+                  <div className='flex flex-col items-center justify-center p-5 rounded-2xl border' style={{ backgroundColor: '#F0F7FF', borderColor: '#DBEAFE' }}>
+                    <RatioDonut
+                      size={120}
+                      stroke={11}
+                      progress={totalFlow > 0 ? monthIncome / totalFlow : 0}
+                      track='#DBEAFE'
+                      color='#2563EB'
+                      label={`نسبة المداخيل ${incomePct.toFixed(1)}%`}
+                    >
+                      <span className='text-lg font-black' style={{ color: '#2563EB', ...NUM }}>
+                        {incomePct.toFixed(1)}٪
+                      </span>
+                    </RatioDonut>
+                    <p className='mt-3 text-xs font-bold' style={{ color: '#1E40AF' }}>
+                      مجموع المداخيل
+                    </p>
+                    <p className='mt-1 text-xl font-extrabold' style={{ color: '#2563EB', ...NUM }}>
+                      <AnimatedMoney value={month?.income} />
+                    </p>
                   </div>
-                  <div className='flex flex-col gap-1.5 p-4 rounded-2xl bg-white border' style={{ borderColor: C.hair }}>
-                    <dt className='text-xs font-semibold' style={{ color: C.muted }}>مجموع المصاريف</dt>
-                    <dd className='text-lg font-bold' style={{ color: C.expense }}>
-                      <Money value={month?.expenses} />
-                    </dd>
+
+                  {/* دائرة المصاريف — أحمر */}
+                  <div className='flex flex-col items-center justify-center p-5 rounded-2xl border' style={{ backgroundColor: '#FEF2F2', borderColor: '#FEE2E2' }}>
+                    <RatioDonut
+                      size={120}
+                      stroke={11}
+                      progress={totalFlow > 0 ? monthExpenses / totalFlow : 0}
+                      track='#FEE2E2'
+                      color='#DC2626'
+                      label={`نسبة المصاريف ${expensePct.toFixed(1)}%`}
+                    >
+                      <span className='text-lg font-black' style={{ color: '#DC2626', ...NUM }}>
+                        {expensePct.toFixed(1)}٪
+                      </span>
+                    </RatioDonut>
+                    <p className='mt-3 text-xs font-bold' style={{ color: '#991B1B' }}>
+                      مجموع المصاريف
+                    </p>
+                    <p className='mt-1 text-xl font-extrabold' style={{ color: '#DC2626', ...NUM }}>
+                      <AnimatedMoney value={month?.expenses} />
+                    </p>
                   </div>
-                  <div className='flex flex-col gap-1.5 p-4 rounded-2xl bg-white border' style={{ borderColor: C.hair }}>
-                    <dt className='text-xs font-semibold' style={{ color: C.muted }}>الدخل الصافي</dt>
-                    <dd className='text-lg font-bold' style={{ color: C.ink }}>
-                      <Money value={month?.net_income} />
-                    </dd>
+
+                  {/* الدخل الصافي */}
+                  <div className='flex flex-col items-center justify-center p-5 rounded-2xl border h-full' style={{ backgroundColor: C.soft, borderColor: C.hair }}>
+                    <span className='inline-flex h-10 w-10 items-center justify-center rounded-xl' style={{ backgroundColor: netMonthColorBg, color: netMonthColor }}>
+                      <TrendingUp size={20} />
+                    </span>
+                    <p className='mt-3 text-xs font-bold' style={{ color: C.ink }}>
+                      الدخل الصافي
+                    </p>
+                    <p className='mt-1 text-xl font-extrabold' style={{ color: netMonthColor, ...NUM }}>
+                      <AnimatedMoney value={month?.net_income} />
+                    </p>
+                    <span className='mt-2 text-[11px] font-semibold' style={{ color: C.muted }}>
+                      المداخيل − المصاريف
+                    </span>
                   </div>
-                  <div className='flex flex-col gap-1.5 p-4 rounded-2xl bg-white border' style={{ borderColor: C.hair }}>
-                    <dt className='text-xs font-semibold' style={{ color: C.muted }}>السحوبات</dt>
-                    <dd className='text-lg font-bold' style={{ color: C.muted }}>
-                      <Money value={month?.withdrawals} />
-                    </dd>
+
+                  {/* السحوبات */}
+                  <div className='flex flex-col items-center justify-center p-5 rounded-2xl border h-full' style={{ backgroundColor: C.soft, borderColor: C.hair }}>
+                    <span className='inline-flex h-10 w-10 items-center justify-center rounded-xl' style={{ backgroundColor: C.goldSoft, color: C.goldDeep }}>
+                      <Landmark size={20} />
+                    </span>
+                    <p className='mt-3 text-xs font-bold' style={{ color: C.ink }}>
+                      السحوبات
+                    </p>
+                    <p className='mt-1 text-xl font-extrabold' style={{ color: C.muted, ...NUM }}>
+                      <AnimatedMoney value={month?.withdrawals} />
+                    </p>
+                    <span className='mt-2 text-[11px] font-semibold' style={{ color: C.muted }}>
+                      سحوبات الشهر الجاري
+                    </span>
                   </div>
-                </dl>
-                <p className='mt-4 text-xs leading-relaxed' style={{ color: C.muted }}>
+                </div>
+
+                <p className='mt-6 text-xs leading-relaxed text-center' style={{ color: C.muted }}>
                   أرقام الصندوق تتبع تاريخ القبض الفعلي، لا الشهر المُستخلَص عنه.
                 </p>
               </div>
