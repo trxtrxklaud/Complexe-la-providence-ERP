@@ -187,13 +187,13 @@ function LegendDot({ color }: { color: string }) {
 /** عنوان قسم هادئ: شريط رفيع + عنوان صغير + تلميح على اليسار. يرتّب القراءة دون ازدحام. */
 function SectionLabel({ title, hint }: { title: string; hint?: string }) {
   return (
-    <div className='mb-4 flex flex-wrap items-baseline justify-between gap-2'>
-      <h2 className='inline-flex items-center gap-2 text-[15px] font-bold' style={{ color: C.ink }}>
-        <span className='inline-block h-4 w-1 rounded-full' style={{ backgroundColor: C.forest }} aria-hidden='true' />
+    <div className='mb-4 flex flex-wrap items-baseline justify-between gap-2 pb-2.5 border-b' style={{ borderColor: C.hair }}>
+      <h2 className='inline-flex items-center gap-2.5 text-[16px] font-bold tracking-tight' style={{ color: C.ink }}>
+        <span className='inline-block h-4.5 w-1.5 rounded-full' style={{ backgroundColor: C.forest }} aria-hidden='true' />
         {title}
       </h2>
       {hint && (
-        <span className='text-xs' style={{ color: C.muted }}>
+        <span className='text-xs font-semibold' style={{ color: C.muted }}>
           {hint}
         </span>
       )}
@@ -379,12 +379,12 @@ function StatCard({
         >
           <Icon size={18} />
         </span>
-        <p className='text-[13px] font-medium' style={{ color: C.muted }}>
+        <p className='text-[14px] font-bold' style={{ color: C.ink }}>
           {label}
         </p>
       </div>
       <p
-        className='mt-4 text-[28px] leading-none font-extrabold'
+        className='mt-3.5 text-[32px] md:text-[34px] leading-none font-extrabold tracking-tight'
         style={{ color: valueColor ?? C.ink, fontFamily: 'var(--font-display)', ...NUM }}
       >
         {value}
@@ -414,11 +414,11 @@ function MiniStat({
     <motion.div variants={cardRise} className='rounded-3xl border p-6' style={{ backgroundColor: C.soft, borderColor: C.hair }}>
       <div className='flex items-center gap-2'>
         <Icon size={16} style={{ color: C.muted }} aria-hidden='true' />
-        <p className='text-[13px] font-medium' style={{ color: C.muted }}>
+        <p className='text-[13px] font-bold' style={{ color: C.muted }}>
           {label}
         </p>
       </div>
-      <p className='mt-3 text-[22px] leading-none font-bold' style={{ color: C.ink, fontFamily: 'var(--font-display)', ...NUM }}>
+      <p className='mt-2.5 text-[24px] leading-none font-extrabold' style={{ color: C.ink, fontFamily: 'var(--font-display)', ...NUM }}>
         {value}
       </p>
       {hint && (
@@ -695,11 +695,11 @@ export default function Dashboard() {
           {isMorning ? <Coffee size={20} /> : <Moon size={20} />}
         </span>
         <div className='min-w-0'>
-          <h1 className='truncate text-[22px] leading-tight font-extrabold' style={{ color: C.ink, fontFamily: 'var(--font-display)' }}>
+          <h1 className='truncate text-2xl md:text-[26px] leading-tight font-extrabold tracking-tight' style={{ color: C.ink, fontFamily: 'var(--font-display)' }}>
             {isMorning ? 'صباح الخير' : 'مساء الخير'}
             {greetName}
           </h1>
-          <p className='mt-1 text-[13px]' style={{ color: C.muted }}>
+          <p className='mt-1 text-sm font-semibold' style={{ color: C.muted }}>
             جرد اليوم {data?.current_date ?? ''}
           </p>
         </div>

@@ -69,10 +69,10 @@ export function Sidebar() {
     };
 
     const linkClass = (active: boolean) =>
-        `flex items-center gap-3 px-4 py-3 rounded-xl transition-colors ${
+        `flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-[14px] transition-all duration-150 ${
             active
-                ? 'bg-white text-[#2E3B2A] font-medium shadow'
-                : 'text-white/70 hover:bg-white/10 hover:text-white'
+                ? 'bg-[#F5EDD8] text-[#26311F] font-bold shadow-md ring-1 ring-white/20'
+                : 'text-[#F5EDD8]/75 hover:bg-white/10 hover:text-[#F5EDD8] font-semibold'
         }`;
 
     const startsWith = (prefix: string) => location.pathname.startsWith(prefix);
@@ -130,8 +130,8 @@ export function Sidebar() {
                     />
                 </div>
                 {!collapsed && (
-                    <h1 className="font-display text-lg font-bold text-center tracking-wide">
-                        العناية <span className="text-sage">ERP</span>
+                    <h1 className="font-display text-xl font-extrabold text-center tracking-wide text-[#F5EDD8]">
+                        العناية <span className="text-[#D3E0C8] font-black">ERP</span>
                     </h1>
                 )}
             </div>
@@ -188,7 +188,7 @@ export function Sidebar() {
                 {showSetup && (
                     <>
                         <div className="pt-3 mt-2 border-t border-white/10" />
-                        <p className="px-4 pb-1 text-[11px] font-semibold tracking-wider text-white/40">الإعداد</p>
+                        <p className="px-3.5 pb-1.5 text-[11px] font-bold tracking-widest text-[#F5EDD8]/50">الإعداد</p>
 
                         <NavLink
                             to="/classrooms"
@@ -234,7 +234,7 @@ export function Sidebar() {
                 {showFinance && (
                     <>
                         <div className="pt-3 mt-2 border-t border-white/10" />
-                        <p className="px-4 pb-1 text-[11px] font-semibold tracking-wider text-white/40">المالية</p>
+                        <p className="px-3.5 pb-1.5 text-[11px] font-bold tracking-widest text-[#F5EDD8]/50">المالية</p>
                     </>
                 )}
 
@@ -421,7 +421,7 @@ export function Sidebar() {
                 {showHr && (
                     <>
                         <div className="pt-3 mt-2 border-t border-white/10" />
-                        <p className="px-4 pb-1 text-[11px] font-semibold tracking-wider text-white/40">الموارد البشرية</p>
+                        <p className="px-3.5 pb-1.5 text-[11px] font-bold tracking-widest text-[#F5EDD8]/50">الموارد البشرية</p>
 
                         <NavLink
                             to="/employees"
