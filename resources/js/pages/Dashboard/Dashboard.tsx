@@ -674,6 +674,10 @@ export default function Dashboard() {
   const malePct = totalActive > 0 && males > 0 ? `(${((males / totalActive) * 100).toFixed(1)}%)` : '';
   const femalePct = totalActive > 0 && females > 0 ? `(${((females / totalActive) * 100).toFixed(1)}%)` : '';
   const unspecifiedPct = totalActive > 0 && unspecified > 0 ? `(${((unspecified / totalActive) * 100).toFixed(1)}%)` : '';
+  const femalePctNum = totalActive > 0 ? (females / totalActive) * 100 : 0;
+  const malePctNum = totalActive > 0 ? (males / totalActive) * 100 : 0;
+  const femaleProgress = totalActive > 0 ? females / totalActive : 0;
+  const maleProgress = totalActive > 0 ? males / totalActive : 0;
 
   // لون الدخل الصافي يتبع القيمة الفعليّة المُرسَلة (سالب/موجب/صفر) — لا قيمة مُختلقة.
   const netToday = Number(today?.net_income ?? 0);
@@ -846,30 +850,132 @@ export default function Dashboard() {
               )}
             </motion.div>
 
+            {/* بطاقة التوزيع الديمغرافي للجنس — تصميم دائري احترافي */}
             <motion.div
-              variants={gridStagger}
-              initial='hidden'
-              animate='show'
-              className='mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3'
+              variants={cardRise}
+              className='mt-6 rounded-3xl border bg-white p-6 md:p-8 shadow-card'
+              style={{ borderColor: C.hair }}
             >
-              <MiniStat
-                label='عدد الإناث'
-                value={<AnimatedInt value={females} />}
-                icon={UserRound}
-                hint={femalePct ? `${femalePct} من الإجمالي` : undefined}
-              />
-              <MiniStat
-                label='عدد الذكور'
-                value={<AnimatedInt value={males} />}
-                icon={Users}
-                hint={malePct ? `${malePct} من الإجمالي` : undefined}
-              />
-              <MiniStat
-                label='غير محدّد'
-                value={<AnimatedInt value={unspecified} />}
-                icon={UserRound}
-                hint={unspecifiedPct ? `${unspecifiedPct} لم يُسجَّل الجنس` : 'لم يُسجَّل الجنس'}
-              />
+              <div className='flex flex-wrap items-center justify-between gap-4 mb-6 pb-3 border-b' style={{ borderColor: C.hair }}>
+                <div className='flex items-center gap-3'>
+                  <span
+                    className='inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl'
+                    style={{ backgroundColor: C.sage, color: C.forest }}
+                    aria-hidden='true'
+                  >
+                    <Users size={18} />
+                  </span>
+                  <div>
+                    <h3 className='text-sm font-bold' style={{ color: C.ink }}>
+                      توزيع التلاميذ حسب الجنس
+                    </h3>
+                    <p className='text-xs font-semibold' style={{ color: C.muted }}>
+                      إجمالي {totalActive} تلميذاً مسجلاً
+                    </p>
+                  </div>
+                </div>
+
+                {/* شريط المقارنة التناسبي المصغر */}
+                <div className='flex items-center gap-3 min-w-[200px] flex-1 max-w-xs'>
+                  <div className='w-full h-3 rounded-full bg-slate-100 flex overflow-hidden p-0.5 border border-slate-200'>
+                    <div
+                      className='h-full rounded-full transition-all duration-700'
+                      style={{ width: `${femalePctNum}%`, backgroundColor: '#E11D48' }}
+                      title={`إناث: ${femalePctNum.toFixed(1)}%`}
+                    />
+                    <div
+                      className='h-full rounded-full transition-all duration-700 ml-0.5'
+                      style={{ width: `${malePctNum}%`, backgroundColor: '#2563EB' }}
+                      title={`ذكور: ${malePctNum.toFixed(1)}%`}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div className={`grid grid-cols-1 gap-6 ${unspecified > 0 ? 'md:grid-cols-3' : 'md:grid-cols-2'}`}>
+                {/* دائرة الإناث — وردي / أحمر أنيق */}
+                <div
+                  className='flex flex-col items-center justify-center p-6 rounded-2xl border transition-transform hover:-translate-y-0.5'
+                  style={{ backgroundColor: '#FFF1F2', borderColor: '#FFE4E6' }}
+                >
+                  <RatioDonut
+                    size={130}
+                    stroke={12}
+                    progress={femaleProgress}
+                    track='#FFE4E6'
+                    color='#E11D48'
+                    label={`نسبة الإناث ${femalePctNum.toFixed(1)}%`}
+                  >
+                    <span className='text-2xl font-black' style={{ color: '#E11D48', ...NUM }}>
+                      {femalePctNum.toFixed(1)}٪
+                    </span>
+                    <span className='text-[11px] font-bold mt-0.5' style={{ color: '#9F1239' }}>
+                      إناث
+                    </span>
+                  </RatioDonut>
+
+                  <div className='mt-4 text-center'>
+                    <p className='text-xs font-bold' style={{ color: '#9F1239' }}>
+                      عدد الإناث (بنات)
+                    </p>
+                    <p className='mt-1 text-2xl font-extrabold tracking-tight' style={{ color: '#E11D48', ...NUM }}>
+                      <AnimatedInt value={females} /> <span className='text-xs font-semibold'>تلميذة</span>
+                    </p>
+                  </div>
+                </div>
+
+                {/* دائرة الذكور — أزرق ملكي أنيق */}
+                <div
+                  className='flex flex-col items-center justify-center p-6 rounded-2xl border transition-transform hover:-translate-y-0.5'
+                  style={{ backgroundColor: '#EFF6FF', borderColor: '#DBEAFE' }}
+                >
+                  <RatioDonut
+                    size={130}
+                    stroke={12}
+                    progress={maleProgress}
+                    track='#DBEAFE'
+                    color='#2563EB'
+                    label={`نسبة الذكور ${malePctNum.toFixed(1)}%`}
+                  >
+                    <span className='text-2xl font-black' style={{ color: '#2563EB', ...NUM }}>
+                      {malePctNum.toFixed(1)}٪
+                    </span>
+                    <span className='text-[11px] font-bold mt-0.5' style={{ color: '#1E40AF' }}>
+                      ذكور
+                    </span>
+                  </RatioDonut>
+
+                  <div className='mt-4 text-center'>
+                    <p className='text-xs font-bold' style={{ color: '#1E40AF' }}>
+                      عدد الذكور (بنين)
+                    </p>
+                    <p className='mt-1 text-2xl font-extrabold tracking-tight' style={{ color: '#2563EB', ...NUM }}>
+                      <AnimatedInt value={males} /> <span className='text-xs font-semibold'>تلميذ</span>
+                    </p>
+                  </div>
+                </div>
+
+                {/* غير محدد (إذا وُجد) */}
+                {unspecified > 0 && (
+                  <div
+                    className='flex flex-col items-center justify-center p-6 rounded-2xl border'
+                    style={{ backgroundColor: C.soft, borderColor: C.hair }}
+                  >
+                    <span className='inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-amber-50 text-amber-700 border border-amber-200'>
+                      <UserRound size={22} />
+                    </span>
+                    <p className='mt-4 text-xs font-bold' style={{ color: C.ink }}>
+                      غير محدّد الجنس
+                    </p>
+                    <p className='mt-1 text-2xl font-extrabold' style={{ color: C.remaining, ...NUM }}>
+                      <AnimatedInt value={unspecified} /> <span className='text-xs font-semibold'>تلميذ</span>
+                    </p>
+                    <p className='mt-2 text-xs font-medium text-center' style={{ color: C.muted }}>
+                      {unspecifiedPct} لم يُسجَّل جنسهم بعد
+                    </p>
+                  </div>
+                )}
+              </div>
             </motion.div>
           </section>
 
