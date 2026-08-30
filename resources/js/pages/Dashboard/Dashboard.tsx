@@ -11,7 +11,6 @@ import {
   History,
   Landmark,
   Moon,
-  Sparkles,
   TrendingDown,
   TrendingUp,
   UserRound,
@@ -812,7 +811,6 @@ function InteractiveGreetingBadge({ isMorning }: { isMorning: boolean }) {
               <circle cx='56' cy='36' r='2' fill='#FFFFFF' opacity='0.9' />
               <circle cx='40' cy='52' r='1.5' fill='#FFFFFF' opacity='0.85' />
             </svg>
-            <Sparkles size={14} className='absolute top-2 right-2 text-amber-200 animate-spin' style={{ animationDuration: '6s' }} />
           </motion.div>
         )}
       </div>
@@ -973,7 +971,7 @@ export default function Dashboard() {
               COMPLEXE LA PROVIDENCE
             </h2>
             <span className='inline-flex items-center justify-center h-6 w-6 rounded-lg bg-[#1B4332] text-[#FDE68A] shadow-xs'>
-              <Sparkles size={13} />
+              <GraduationCap size={14} />
             </span>
             <span className='h-1.5 w-6 rounded-full bg-gradient-to-l from-transparent to-[#1B4332]' />
           </div>

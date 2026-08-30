@@ -125,20 +125,10 @@ export function FamilyDetailPage() {
               ملف عائلة {family.guardian_name}
             </h1>
             <p className="text-xs" style={{ color: C.muted }}>
-              بيانات الولي، الأبناء المسجلين، والاستخلاص العائلي
+              بيانات الولي والأبناء المسجلين
             </p>
           </div>
         </div>
-
-        {/* Action Button */}
-        <button
-          type="button"
-          onClick={() => setShowCollectModal(true)}
-          className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-bold text-white shadow-lg transition hover:bg-emerald-800"
-          style={{ backgroundColor: C.forest }}
-        >
-          <DollarSign size={16} /> استخلاص العائلة الموحد
-        </button>
       </div>
 
       {/* Guardian & Financial Summary Card */}
