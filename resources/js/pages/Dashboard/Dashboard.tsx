@@ -5,11 +5,13 @@ import {
   AlertCircle,
   ArrowDownCircle,
   Award,
+  Calendar,
   Coffee,
   GraduationCap,
   History,
   Landmark,
   Moon,
+  Sparkles,
   TrendingDown,
   TrendingUp,
   UserRound,
@@ -22,6 +24,7 @@ import { errorMessage } from '../../lib/format';
 import { PageDataSkeleton } from '../../components/DataSkeleton';
 import schoolgirlAvatar from '../../assets/schoolgirl.jpg';
 import schoolboyAvatar from '../../assets/schoolboy.jpg';
+import morningCoffeeImg from '../../assets/morning_coffee.jpg';
 
 /**
  * لوحة الألوان: أخضر غامق أساسيّ، أخضر فاتح للإيجابي، وردي/عنبري خفيف للسالب،
@@ -707,6 +710,128 @@ function PriorDebtPanel({
 }
 
 /**
+ * أيقونة الصباح التفاعلية الفاخرة:
+ * تتحول بنعومة بين فنجان القهوة الساخنة مع البخار المتصاعد،
+ * والوردة المتفتحة مع البتلات الناعمة، مع تأثيرات الضوء والتوهج.
+ */
+function InteractiveGreetingBadge({ isMorning }: { isMorning: boolean }) {
+  const [view, setView] = useState<'coffee' | 'rose'>('coffee');
+
+  useEffect(() => {
+    if (!isMorning) return;
+    const interval = setInterval(() => {
+      setView((prev) => (prev === 'coffee' ? 'rose' : 'coffee'));
+    }, 4500);
+    return () => clearInterval(interval);
+  }, [isMorning]);
+
+  if (!isMorning) {
+    return (
+      <div
+        className='relative flex h-20 w-20 md:h-22 md:w-22 shrink-0 items-center justify-center rounded-3xl p-1 shadow-lg border'
+        style={{
+          background: 'linear-gradient(135deg, #1E1B4B 0%, #312E81 50%, #4338CA 100%)',
+          borderColor: '#6366F1',
+          boxShadow: '0 8px 24px -4px rgba(79, 70, 229, 0.4)',
+        }}
+      >
+        <Moon size={34} className='text-amber-300 drop-shadow-md animate-pulse' />
+        <span className='absolute -top-1 -right-1 h-3 w-3 rounded-full bg-amber-400 animate-ping' />
+      </div>
+    );
+  }
+
+  return (
+    <button
+      type='button'
+      onClick={() => setView((prev) => (prev === 'coffee' ? 'rose' : 'coffee'))}
+      className='group relative flex h-20 w-20 md:h-22 md:w-22 shrink-0 cursor-pointer items-center justify-center rounded-3xl p-1 shadow-xl border transition-all duration-500 hover:scale-105 active:scale-95'
+      style={{
+        background: 'linear-gradient(135deg, #1B4332 0%, #2D6A4F 50%, #065F46 100%)',
+        borderColor: '#E6DCB8',
+        boxShadow: '0 10px 30px -6px rgba(27, 67, 50, 0.45), 0 0 16px 2px rgba(245, 158, 11, 0.25)',
+      }}
+      title={view === 'coffee' ? 'اضغط للتبديل إلى الوردة الصباحية' : 'اضغط للتبديل إلى فنجان القهوة'}
+    >
+      {/* وهج ذهبي خلفي متحرك */}
+      <div
+        className='pointer-events-none absolute inset-0 rounded-3xl opacity-75 transition-opacity duration-700 group-hover:opacity-100'
+        style={{
+          background: 'radial-gradient(circle at 50% 50%, rgba(253, 230, 138, 0.35), transparent 70%)',
+        }}
+      />
+
+      {/* المحتوى المتحرك: قهوة ساخنة أو وردة متفتحة */}
+      <div className='relative h-full w-full overflow-hidden rounded-[22px]'>
+        {view === 'coffee' ? (
+          <motion.div
+            key='coffee'
+            initial={{ opacity: 0, scale: 0.85, rotate: -6 }}
+            animate={{ opacity: 1, scale: 1, rotate: 0 }}
+            exit={{ opacity: 0, scale: 0.85, rotate: 6 }}
+            transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
+            className='relative h-full w-full'
+          >
+            <img
+              src={morningCoffeeImg}
+              alt='فنجان قهوة ساخنة وبخار صاعد'
+              className='h-full w-full object-cover rounded-[22px]'
+            />
+            {/* بخار متصاعد ناعم */}
+            <div className='pointer-events-none absolute inset-x-0 top-1 flex justify-center gap-1 opacity-85'>
+              <span className='h-4 w-1 rounded-full bg-amber-200/80 blur-[1px] animate-bounce' style={{ animationDuration: '1.8s' }} />
+              <span className='h-5 w-1 rounded-full bg-amber-100/95 blur-[1px] animate-bounce' style={{ animationDuration: '2.2s', animationDelay: '0.4s' }} />
+              <span className='h-3.5 w-1 rounded-full bg-amber-200/80 blur-[1px] animate-bounce' style={{ animationDuration: '1.6s', animationDelay: '0.8s' }} />
+            </div>
+          </motion.div>
+        ) : (
+          <motion.div
+            key='rose'
+            initial={{ opacity: 0, scale: 0.8, rotate: 12 }}
+            animate={{ opacity: 1, scale: 1, rotate: 0 }}
+            exit={{ opacity: 0, scale: 0.8, rotate: -12 }}
+            transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
+            className='relative flex h-full w-full items-center justify-center'
+            style={{
+              background: 'radial-gradient(circle, #FFE4E6 0%, #FDA4AF 60%, #E11D48 100%)',
+            }}
+          >
+            {/* وردة متفتحة بتصميم فيكتور فاخر */}
+            <svg viewBox='0 0 100 100' className='h-16 w-16 drop-shadow-md' aria-hidden='true'>
+              <circle cx='50' cy='50' r='42' fill='#FFF1F2' opacity='0.4' />
+              {/* أوراق خضراء خلفية */}
+              <path d='M25 65 C15 50 35 35 45 48 Z' fill='#059669' opacity='0.85' />
+              <path d='M75 65 C85 50 65 35 55 48 Z' fill='#10B981' opacity='0.85' />
+              {/* بتلات الوردة */}
+              <path d='M50 18 C30 25 30 50 50 65 C70 50 70 25 50 18 Z' fill='#E11D48' />
+              <path d='M32 35 C20 48 38 68 50 70 C62 68 80 48 68 35 C58 45 42 45 32 35 Z' fill='#F43F5E' />
+              {/* قلب الوردة */}
+              <path d='M42 42 C38 52 48 60 50 60 C52 60 62 52 58 42 C54 48 46 48 42 42 Z' fill='#FDA4AF' />
+              <circle cx='50' cy='48' r='5' fill='#FFE4E6' />
+              {/* قطرات ندى */}
+              <circle cx='56' cy='36' r='2' fill='#FFFFFF' opacity='0.9' />
+              <circle cx='40' cy='52' r='1.5' fill='#FFFFFF' opacity='0.85' />
+            </svg>
+            <Sparkles size={14} className='absolute top-2 right-2 text-amber-200 animate-spin' style={{ animationDuration: '6s' }} />
+          </motion.div>
+        )}
+      </div>
+
+      {/* مؤشر النقطة الصغيرة المتغيرة أسفل الشارة */}
+      <span
+        className='absolute -bottom-1.5 px-2 py-0.5 rounded-full text-[9px] font-black tracking-widest text-white shadow-xs'
+        style={{
+          background: view === 'coffee' ? '#1B4332' : '#BE123C',
+          border: '1px solid rgba(255,255,255,0.5)',
+        }}
+      >
+        {view === 'coffee' ? '☕' : '🌹'}
+      </span>
+    </button>
+  );
+}
+
+/**
  * لوحة صاحبة المدرسة.
  *
  * كروت الصندوق تُقرأ من الدفتر النقدي المركزي لا من جداول الدفعات، فهي نفس
@@ -782,24 +907,42 @@ export default function Dashboard() {
 
   return (
     <div className='p-6 md:p-8' dir='rtl'>
-      {/* الرأس: تحية واضحة + ساعة المؤسسة بقياسها الكامل والأصلي في أعلى اليسار */}
+      {/* الرأس: تحية واضحة ومؤطرة + شارة القهوة/الوردة التفاعلية + ساعة المؤسسة */}
       <header className='mb-8 flex flex-wrap items-center justify-between gap-6'>
-        <div className='flex items-center gap-4'>
-          <span
-            className='inline-flex h-14 w-14 shrink-0 items-center justify-center rounded-3xl shadow-sm'
-            style={{ backgroundColor: isMorning ? C.sage : C.beige, color: isMorning ? C.forest : C.deep }}
-            aria-hidden='true'
-          >
-            {isMorning ? <Coffee size={26} /> : <Moon size={26} />}
-          </span>
+        <div className='flex items-center gap-5'>
+          <InteractiveGreetingBadge isMorning={isMorning} />
           <div className='min-w-0'>
-            <h1 className='truncate text-2xl md:text-3xl leading-tight font-extrabold tracking-tight' style={{ color: C.ink, fontFamily: 'var(--font-display)' }}>
-              {isMorning ? 'صباح الخير' : 'مساء الخير'}
-              {greetName}
-            </h1>
-            <p className='mt-1 text-sm font-semibold' style={{ color: C.muted }}>
-              جرد اليوم {data?.current_date ?? ''}
-            </p>
+            {/* وسم مؤطر للتحية */}
+            <div
+              className='inline-flex items-center gap-2.5 px-4 py-1.5 rounded-2xl border shadow-xs'
+              style={{
+                background: 'linear-gradient(135deg, #FAFBF8 0%, #EFF4EC 100%)',
+                borderColor: '#D4DECE',
+              }}
+            >
+              <h1 className='truncate text-2xl md:text-3xl leading-tight font-extrabold tracking-tight text-[#1B2E1B]' style={{ fontFamily: 'var(--font-display)' }}>
+                {isMorning ? 'صباح الخير' : 'مساء الخير'}
+                {greetName}
+              </h1>
+            </div>
+
+            {/* جملة جرد اليوم مؤطرة وواضحة جداً */}
+            <div className='mt-2'>
+              <div
+                className='inline-flex items-center gap-2.5 px-4 py-1.5 rounded-2xl border shadow-xs'
+                style={{
+                  background: 'linear-gradient(135deg, #FFFFFF 0%, #F5F7F2 100%)',
+                  borderColor: '#D8E2D2',
+                }}
+              >
+                <span className='inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-emerald-100 text-emerald-800 border border-emerald-200'>
+                  <Calendar size={13} />
+                </span>
+                <p className='text-[13px] md:text-[14px] font-extrabold text-[#2D452B]'>
+                  جرد اليوم: <span className='font-black text-[#1B4332]'>{data?.current_date ?? ''}</span>
+                </p>
+              </div>
+            </div>
           </div>
         </div>
 
