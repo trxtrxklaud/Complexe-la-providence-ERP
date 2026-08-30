@@ -946,6 +946,49 @@ export default function Dashboard() {
           </div>
         </div>
 
+        {/* شارة اسم المؤسسة الملكية الفاخرة — مجمّع العناية | COMPLEXE LA PROVIDENCE */}
+        <div
+          className='hidden lg:flex flex-col items-center justify-center px-8 py-3.5 rounded-3xl border shadow-sm transition-all duration-500 hover:shadow-lg hover:scale-[1.01]'
+          style={{
+            background: 'linear-gradient(135deg, #FAFBF8 0%, #F2F6EE 50%, #E8EFE2 100%)',
+            borderColor: '#D0DCC8',
+            boxShadow: '0 6px 24px -6px rgba(27, 67, 50, 0.1)',
+          }}
+        >
+          <div className='flex items-center gap-3'>
+            <span className='h-1.5 w-6 rounded-full bg-gradient-to-r from-transparent to-[#1B4332]' />
+            <span className='inline-flex items-center justify-center h-6 w-6 rounded-lg bg-[#1B4332] text-[#FDE68A] shadow-xs'>
+              <GraduationCap size={14} />
+            </span>
+            <h2
+              className='text-[20px] xl:text-[23px] font-black tracking-widest uppercase text-center'
+              style={{
+                background: 'linear-gradient(135deg, #1B4332 0%, #2D6A4F 60%, #065F46 100%)',
+                WebkitBackgroundClip: 'text',
+                WebkitTextFillColor: 'transparent',
+                letterSpacing: '0.08em',
+                fontFamily: 'var(--font-display)',
+              }}
+            >
+              COMPLEXE LA PROVIDENCE
+            </h2>
+            <span className='inline-flex items-center justify-center h-6 w-6 rounded-lg bg-[#1B4332] text-[#FDE68A] shadow-xs'>
+              <Sparkles size={13} />
+            </span>
+            <span className='h-1.5 w-6 rounded-full bg-gradient-to-l from-transparent to-[#1B4332]' />
+          </div>
+
+          <div className='mt-1 flex items-center gap-3'>
+            <span className='text-[11px] font-extrabold tracking-widest text-[#6B7D67] uppercase'>
+              Établissement Privé d’Enseignement
+            </span>
+            <span className='h-1 w-1 rounded-full bg-[#1B4332]/40' />
+            <span className='text-[12px] font-black text-[#2D6A4F]'>
+              مجمّع العناية التربوي
+            </span>
+          </div>
+        </div>
+
         {/* ساعة المؤسسة — أعلى اليسار بالقياس الكامل الأصلي */}
         <div
           className='flex items-center gap-5 px-6 py-3.5 rounded-3xl border shadow-sm transition-all duration-300 hover:shadow-md'
