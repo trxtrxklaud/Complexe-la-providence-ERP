@@ -187,16 +187,40 @@ function LegendDot({ color }: { color: string }) {
   return <span className='inline-block h-2.5 w-2.5 rounded-full' style={{ backgroundColor: color }} aria-hidden='true' />;
 }
 
-/** عنوان قسم هادئ: شريط رفيع + عنوان صغير + تلميح على اليسار. يرتّب القراءة دون ازدحام. */
-function SectionLabel({ title, hint }: { title: string; hint?: string }) {
+/** عنوان قسم مؤطر وأنيق: شريط بارز مع وسم مؤطر وتلميح مميز بخط أكبر وأوضح. */
+function SectionLabel({ title, hint, icon: Icon }: { title: string; hint?: string; icon?: LucideIcon }) {
   return (
-    <div className='mb-4 flex flex-wrap items-baseline justify-between gap-2 pb-2.5 border-b' style={{ borderColor: C.hair }}>
-      <h2 className='inline-flex items-center gap-2.5 text-[16px] font-bold tracking-tight' style={{ color: C.ink }}>
-        <span className='inline-block h-4.5 w-1.5 rounded-full' style={{ backgroundColor: C.forest }} aria-hidden='true' />
-        {title}
-      </h2>
+    <div className='mb-5 flex flex-wrap items-center justify-between gap-3'>
+      {/* العنوان الرئيسي المؤطر */}
+      <div
+        className='inline-flex items-center gap-3 px-4 py-2 rounded-2xl border shadow-xs transition-transform duration-300 hover:scale-[1.01]'
+        style={{
+          background: 'linear-gradient(135deg, #FAFBF8 0%, #EFF4EC 100%)',
+          borderColor: '#D8E2D2',
+        }}
+      >
+        <span
+          className='inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-xl text-white shadow-sm'
+          style={{ background: 'linear-gradient(135deg, #1B4332 0%, #2D6A4F 100%)' }}
+        >
+          {Icon ? <Icon size={16} /> : <span className='h-2 w-2 rounded-full bg-emerald-400' />}
+        </span>
+        <h2 className='text-[16px] md:text-[18px] font-extrabold tracking-tight' style={{ color: '#1B2E1B', fontFamily: 'var(--font-display)' }}>
+          {title}
+        </h2>
+      </div>
+
+      {/* التلميح المؤطر بخط أكبر وأوضح */}
       {hint && (
-        <span className='text-xs font-semibold' style={{ color: C.muted }}>
+        <span
+          className='inline-flex items-center gap-2 px-4 py-2 rounded-2xl border text-[13px] md:text-[14px] font-bold shadow-xs'
+          style={{
+            background: 'linear-gradient(135deg, #FFFFFF 0%, #F5F7F2 100%)',
+            borderColor: '#DCE4D6',
+            color: '#2E472E',
+          }}
+        >
+          <span className='h-2 w-2 rounded-full bg-emerald-600' />
           {hint}
         </span>
       )}
@@ -781,19 +805,39 @@ export default function Dashboard() {
 
         {/* ساعة المؤسسة — أعلى اليسار بالقياس الكامل الأصلي */}
         <div
-          className='flex items-center gap-4 px-5 py-3 rounded-3xl border shadow-sm transition-all hover:shadow-md'
+          className='flex items-center gap-5 px-6 py-3.5 rounded-3xl border shadow-sm transition-all duration-300 hover:shadow-md'
           style={{
-            background: 'linear-gradient(135deg, #FAFBF9 0%, #EFF4EC 100%)',
-            borderColor: '#DCE4D6',
+            background: 'linear-gradient(135deg, #FAFBF8 0%, #EFF4EC 100%)',
+            borderColor: '#D4DECE',
           }}
         >
-          <div className='text-right'>
-            <p className='text-xs font-bold leading-tight' style={{ color: C.ink }}>
-              توقيت المؤسسة
-            </p>
-            <p className='mt-0.5 text-[11px] font-semibold' style={{ color: C.muted }}>
-              مدرسة العناية
-            </p>
+          <div className='flex flex-col items-end gap-2 text-right'>
+            {/* وسم مؤطر لتوقيت المؤسسة */}
+            <div
+              className='inline-flex items-center gap-2 px-3.5 py-1 rounded-xl shadow-xs'
+              style={{
+                background: 'linear-gradient(135deg, #1B4332 0%, #2D6A4F 100%)',
+                color: '#FFFFFF',
+              }}
+            >
+              <span className='h-2 w-2 rounded-full bg-emerald-400 animate-pulse' />
+              <p className='text-[13px] md:text-[14px] font-extrabold tracking-tight'>
+                توقيت المؤسسة
+              </p>
+            </div>
+            {/* وسم مؤطر لمدرسة العناية */}
+            <div
+              className='inline-flex items-center gap-1.5 px-3.5 py-1 rounded-xl border shadow-2xs'
+              style={{
+                background: '#FFFFFF',
+                borderColor: '#D4DECE',
+                color: '#2D6A4F',
+              }}
+            >
+              <p className='text-[12px] md:text-[13px] font-extrabold'>
+                مدرسة العناية
+              </p>
+            </div>
           </div>
           <AnalogClock size={132} />
         </div>
@@ -829,7 +873,7 @@ export default function Dashboard() {
 
             {data.cash && (
               <div className='lg:col-span-2'>
-                <SectionLabel title='المؤشّرات المالية' hint='أرقام الدفتر النقدي المركزي' />
+                <SectionLabel title='المؤشّرات المالية' hint='أرقام الدفتر النقدي المركزي' icon={TrendingUp} />
                 <div className='grid grid-cols-1 gap-4 sm:grid-cols-2'>
                   <StatCard
                     label='مداخيل اليوم'
@@ -879,7 +923,7 @@ export default function Dashboard() {
           {/* التلاميذ: الإجمالي والمتخلَّد (ومداخيل النوادي إن وُجدت) بوزن أساسيّ،
               وتوزيع الجنس بوزن ثانويّ. */}
           <section>
-            <SectionLabel title='التلاميذ' hint={`السنة النشطة: ${yearName}`} />
+            <SectionLabel title='التلاميذ' hint={`السنة النشطة: ${yearName}`} icon={GraduationCap} />
 
             <motion.div
               variants={gridStagger}
@@ -1093,7 +1137,7 @@ export default function Dashboard() {
           {/* متابعة الشهر الجاري — مقارنة دائرية بين المداخيل (بالأزرق) والمصاريف (بالأحمر) مع الأرقام تحتهما */}
           {data.cash && (
             <section>
-              <SectionLabel title='متابعة الشهر' hint='مقارنة المداخيل والمصاريف للشهر الجاري' />
+              <SectionLabel title='متابعة الشهر' hint='مقارنة المداخيل والمصاريف للشهر الجاري' icon={History} />
               <div
                 className='rounded-3xl border p-6 md:p-8 shadow-card'
                 style={{
