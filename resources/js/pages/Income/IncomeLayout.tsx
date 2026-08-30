@@ -11,6 +11,7 @@ const C = { forest: '#3B4A36', sage: '#E3EBDB', ink: '#1F261C', muted: '#7C8677'
 export function IncomeLayout() {
   const { hasPermission } = useAuth();
   const tabs = [
+    ...(hasPermission('manage_payments') ? [{ to: 'billing', label: 'الفوترة والاستخلاص', icon: CreditCard }] : []),
     ...(hasPermission('view_reports') ? [
       { to: 'by-date', label: 'المداخيل حسب التاريخ', icon: CalendarDays },
       { to: 'revenue', label: 'مداخيل التلاميذ', icon: TrendingUp },
@@ -30,7 +31,7 @@ export function IncomeLayout() {
           </div>
           <div>
             <h1 className="text-xl font-bold" style={{ color: C.ink }}>المداخيل</h1>
-            <p className="text-sm" style={{ color: C.muted }}>إدارة مداخيل التلاميذ والتقارير المالية</p>
+            <p className="text-sm" style={{ color: C.muted }}>إدارة مداخيل التلاميذ والاستخلاص والتقارير</p>
           </div>
         </div>
         <SectionTabs tabs={tabs} />

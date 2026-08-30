@@ -279,9 +279,9 @@ export default function App() {
                             <Layout><IncomeLayout /></Layout>
                         </ProtectedRoute>
                     }>
-                        <Route index element={<Navigate to="by-date" replace />} />
+                        <Route index element={<Navigate to="billing" replace />} />
                         <Route path="billing" element={<CollectionPage />} />
-                        <Route path="by-date" element={<CashierHidden to="/"><IncomeByDatePage /></CashierHidden>} />
+                        <Route path="by-date" element={<CashierHidden to="/income/billing"><IncomeByDatePage /></CashierHidden>} />
                         <Route path="revenue" element={<CashierHidden to="/income/billing"><StudentRevenuePage /></CashierHidden>} />
                         {/* صفحة تلميذ واحد — حفر من جدول مداخيل التلاميذ */}
                         <Route path="revenue/:studentId" element={<CashierHidden to="/income/billing"><StudentDetailPage /></CashierHidden>} />
