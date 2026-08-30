@@ -113,21 +113,28 @@ export function Sidebar() {
                 </button>
             </div>
 
-            {/* الشعار — لوحة عاجية تُبقي هوية المدرسة ظاهرة دومًا فوق القائمة. */}
-            <div className={`border-b border-white/10 flex flex-col items-center gap-3 ${collapsed ? 'px-2 pb-4 pt-1' : 'px-5 pb-5 pt-1'}`}>
+            {/* الشعار — لوحة ملكية بحواف فخمة مثل شارة القهوة */}
+            <div className={`border-b border-white/10 flex flex-col items-center gap-3 ${collapsed ? 'px-2 pb-4 pt-1' : 'px-4 pb-5 pt-1'}`}>
                 <div
                     data-logo-plaque
-                    className={`rounded-2xl bg-white shadow-lg ring-1 ring-brass/25 overflow-hidden flex items-center justify-center ${collapsed ? 'p-1 w-14 h-14' : 'p-1 w-full h-20'}`}
+                    className={`relative rounded-3xl p-1 shadow-xl border transition-all duration-300 hover:scale-[1.02] flex items-center justify-center ${collapsed ? 'w-14 h-14' : 'w-full h-24'}`}
+                    style={{
+                        background: 'linear-gradient(135deg, #1B4332 0%, #2D6A4F 50%, #065F46 100%)',
+                        borderColor: '#E6DCB8',
+                        boxShadow: '0 8px 25px -4px rgba(27, 67, 50, 0.45), 0 0 12px 1px rgba(245, 158, 11, 0.2)',
+                    }}
                 >
-                    <img
-                        src="/image/logo.jpg"
-                        alt="مدرسة العناية — Complexe La Providence"
-                        className="w-full h-full object-contain"
-                        onError={(e) => {
-                            const plaque = e.currentTarget.closest('[data-logo-plaque]');
-                            if (plaque) (plaque as HTMLElement).style.display = 'none';
-                        }}
-                    />
+                    <div className="w-full h-full rounded-[22px] overflow-hidden bg-white/95 p-1.5 flex items-center justify-center shadow-inner">
+                        <img
+                            src="/image/logo.jpg"
+                            alt="مدرسة العناية — Complexe La Providence"
+                            className="w-full h-full object-contain"
+                            onError={(e) => {
+                                const plaque = e.currentTarget.closest('[data-logo-plaque]');
+                                if (plaque) (plaque as HTMLElement).style.display = 'none';
+                            }}
+                        />
+                    </div>
                 </div>
                 {!collapsed && (
                     <h1 className="font-display text-xl font-extrabold text-center tracking-wide text-[#F5EDD8]">
