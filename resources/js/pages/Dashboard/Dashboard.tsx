@@ -348,8 +348,7 @@ const cardRise: Variants = {
 };
 
 /**
- * بطاقة مؤشّر أساسيّة: سطح أبيض مرتفع بحدّ خفيف — تسمية صغيرة، ثمّ رقم كبير، ثمّ وصف مختصر.
- * اللون الدلاليّ محصور في رقاقة الأيقونة ولون الرقم، فتبقى الصفحة هادئة اللون.
+ * بطاقة مؤشّر بخلفية متدرجة غنية — سطح ملوّن بدل الأبيض، كلّ بطاقة بلونها الدلاليّ.
  */
 function StatCard({
   label,
@@ -357,8 +356,9 @@ function StatCard({
   icon: Icon,
   chipBg,
   chipColor,
-  valueColor,
   hint,
+  gradFrom,
+  gradTo,
 }: {
   label: string;
   value: ReactNode;
@@ -367,41 +367,59 @@ function StatCard({
   chipColor: string;
   valueColor?: string;
   hint?: string;
+  gradFrom?: string;
+  gradTo?: string;
 }) {
+  const from = gradFrom ?? chipColor;
+  const to   = gradTo   ?? chipBg;
   return (
     <motion.div
       variants={cardRise}
-      className='card-interactive group relative flex flex-col justify-between rounded-3xl border bg-white p-6 transition-all duration-300 hover:-translate-y-1 hover:shadow-lg'
-      style={{ borderColor: C.hair, boxShadow: '0 4px 20px -4px rgba(0,0,0,0.03)' }}
+      className='card-interactive group relative flex flex-col justify-between rounded-3xl p-6 transition-all duration-300 hover:-translate-y-1 hover:shadow-2xl overflow-hidden'
+      style={{
+        background: `linear-gradient(135deg, ${from} 0%, ${to} 100%)`,
+        boxShadow: `0 8px 32px -8px ${from}66`,
+      }}
     >
-      <div>
+      {/* طبقة زجاجية علوية */}
+      <div
+        className='pointer-events-none absolute inset-0'
+        style={{ background: 'linear-gradient(180deg,rgba(255,255,255,0.14) 0%,rgba(255,255,255,0.02) 60%)' }}
+      />
+      {/* وهج دائري خلفي */}
+      <div
+        className='pointer-events-none absolute -top-10 -right-10 h-36 w-36 rounded-full'
+        style={{ background: 'rgba(255,255,255,0.12)', filter: 'blur(28px)' }}
+      />
+      <div className='relative'>
         <div className='flex items-center justify-between gap-3'>
-          <p className='text-[14px] font-bold tracking-tight' style={{ color: C.ink }}>
+          <p className='text-[13px] font-bold tracking-tight text-white/85'>
             {label}
           </p>
           <span
-            className='inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl transition-transform duration-300 group-hover:scale-110 shadow-sm'
-            style={{ backgroundColor: chipBg, color: chipColor }}
+            className='inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl shadow-md transition-transform duration-300 group-hover:scale-110'
+            style={{ backgroundColor: 'rgba(255,255,255,0.22)', color: '#fff' }}
             aria-hidden='true'
           >
             <Icon size={19} />
           </span>
         </div>
         <p
-          className='mt-4 text-[32px] md:text-[34px] leading-none font-extrabold tracking-tight'
-          style={{ color: valueColor ?? C.ink, fontFamily: 'var(--font-display)', ...NUM }}
+          className='mt-4 text-[32px] md:text-[34px] leading-none font-extrabold tracking-tight text-white'
+          style={{ fontFamily: 'var(--font-display)', ...NUM }}
         >
           {value}
         </p>
       </div>
       {hint && (
-        <p className='mt-4 text-xs font-medium leading-relaxed' style={{ color: C.muted }}>
+        <p className='relative mt-4 text-xs font-medium leading-relaxed text-white/60'>
           {hint}
         </p>
       )}
     </motion.div>
   );
 }
+
 
 /** بطاقة ثانوية: سطح رماديّ ناعم مسطّح — أقلّ وزناً بصريّاً من البطاقات الأساسية. */
 function MiniStat({
@@ -460,71 +478,84 @@ function EnrollmentDonutCard({
   return (
     <motion.div
       variants={cardRise}
-      className='card-interactive relative flex h-full flex-col justify-between rounded-3xl border bg-gradient-to-b from-white to-[#FBFBF9] p-6 md:p-8 transition-all duration-300 hover:shadow-lg'
-      style={{ borderColor: C.hair, boxShadow: '0 4px 20px -4px rgba(0,0,0,0.04)' }}
+      className='card-interactive relative flex h-full flex-col justify-between rounded-3xl p-6 md:p-8 transition-all duration-300 hover:shadow-2xl overflow-hidden'
+      style={{
+        background: 'linear-gradient(135deg, #1B4332 0%, #065F46 60%, #047857 100%)',
+        boxShadow: '0 12px 40px -8px rgba(27,67,50,0.55)',
+      }}
     >
-      <div className='flex items-center justify-between gap-3'>
+      {/* طبقة زجاجية علوية */}
+      <div className='pointer-events-none absolute inset-0'
+        style={{ background: 'linear-gradient(180deg,rgba(255,255,255,0.12) 0%,rgba(255,255,255,0.01) 50%)' }} />
+      {/* وهج دائري خلفي */}
+      <div className='pointer-events-none absolute -top-12 -left-12 h-48 w-48 rounded-full'
+        style={{ background: 'rgba(253,230,138,0.1)', filter: 'blur(40px)' }} />
+
+      <div className='relative flex items-center justify-between gap-3'>
         <div className='flex items-center gap-3'>
           <span
-            className='inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl shadow-sm'
-            style={{ backgroundColor: C.goldSoft, color: C.goldDeep }}
+            className='inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl shadow-md'
+            style={{ backgroundColor: 'rgba(253,230,138,0.25)', color: '#FDE68A' }}
             aria-hidden='true'
           >
             <GraduationCap size={20} />
           </span>
           <div>
-            <h2 className='text-[16px] font-bold tracking-tight' style={{ color: C.ink }}>
+            <h2 className='text-[16px] font-bold tracking-tight text-white'>
               نسبة الترسيم
             </h2>
-            <p className='mt-0.5 text-xs font-semibold' style={{ color: C.muted }}>
+            <p className='mt-0.5 text-xs font-semibold text-white/60'>
               السنة النشطة: {yearName}
             </p>
           </div>
         </div>
-
-        <span className='inline-flex items-center px-3 py-1 rounded-full text-xs font-bold' style={{ backgroundColor: C.goldSoft, color: C.goldDeep }}>
+        <span className='inline-flex items-center px-3 py-1 rounded-full text-xs font-bold'
+          style={{ backgroundColor: 'rgba(253,230,138,0.22)', color: '#FDE68A' }}>
           {pct.toFixed(1)}٪
         </span>
       </div>
 
-      <div className='my-6 flex flex-1 items-center justify-center'>
+      <div className='relative my-6 flex flex-1 items-center justify-center'>
         <RatioDonut
           size={210}
           stroke={18}
           progress={progress}
-          track={C.track}
-          color={C.gold}
+          track='rgba(255,255,255,0.12)'
+          color='#F59E0B'
           label={`نسبة التلاميذ الذين دفعوا الترسيم ${pct.toFixed(1)} بالمئة من إجمالي ${total} تلميذاً`}
         >
           <span
-            className='text-[38px] leading-none font-extrabold tracking-tight'
-            style={{ color: C.ink, fontFamily: 'var(--font-display)', ...NUM }}
+            className='text-[38px] leading-none font-extrabold tracking-tight text-white'
+            style={{ fontFamily: 'var(--font-display)', ...NUM }}
           >
             <AnimatedInt value={total} />
           </span>
-          <span className='mt-2 text-xs font-semibold' style={{ color: C.muted }}>
+          <span className='mt-2 text-xs font-semibold text-white/60'>
             إجمالي التلاميذ
           </span>
-          <span className='mt-2 text-xs font-extrabold px-2.5 py-0.5 rounded-full' style={{ backgroundColor: C.goldSoft, color: C.goldDeep, ...NUM }}>
+          <span className='mt-2 text-xs font-extrabold px-2.5 py-0.5 rounded-full'
+            style={{ backgroundColor: 'rgba(253,230,138,0.22)', color: '#FDE68A', ...NUM }}>
             {pct.toFixed(1)}٪ تم الترسيم
           </span>
         </RatioDonut>
       </div>
 
-      <div className='grid grid-cols-2 gap-3.5'>
-        <div className='rounded-2xl p-4 border transition-transform hover:scale-[1.02]' style={{ backgroundColor: '#FDFBF7', borderColor: '#F4EAD0' }}>
-          <p className='flex items-center gap-2 text-xs font-bold' style={{ color: C.goldDeep }}>
-            <LegendDot color={C.gold} /> دَفعوا الترسيم
+      <div className='relative grid grid-cols-2 gap-3.5'>
+        <div className='rounded-2xl p-4 transition-transform hover:scale-[1.02]'
+          style={{ backgroundColor: 'rgba(253,230,138,0.15)', border: '1px solid rgba(253,230,138,0.25)' }}>
+          <p className='flex items-center gap-2 text-xs font-bold' style={{ color: '#FDE68A' }}>
+            <LegendDot color='#F59E0B' /> دَفعوا الترسيم
           </p>
-          <p className='mt-2 text-[22px] leading-none font-extrabold' style={{ color: C.goldDeep, ...NUM }}>
+          <p className='mt-2 text-[22px] leading-none font-extrabold text-white' style={{ ...NUM }}>
             {safePaid}
           </p>
         </div>
-        <div className='rounded-2xl p-4 border transition-transform hover:scale-[1.02]' style={{ backgroundColor: '#F7F9F5', borderColor: '#E3EBDB' }}>
-          <p className='flex items-center gap-2 text-xs font-bold' style={{ color: C.forest }}>
-            <LegendDot color={C.forest} /> لم يدفعوا بعد
+        <div className='rounded-2xl p-4 transition-transform hover:scale-[1.02]'
+          style={{ backgroundColor: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.15)' }}>
+          <p className='flex items-center gap-2 text-xs font-bold text-white/70'>
+            <LegendDot color='rgba(255,255,255,0.5)' /> لم يدفعوا بعد
           </p>
-          <p className='mt-2 text-[22px] leading-none font-extrabold' style={{ color: C.forest, ...NUM }}>
+          <p className='mt-2 text-[22px] leading-none font-extrabold text-white/85' style={{ ...NUM }}>
             {safeUnpaid}
           </p>
         </div>
@@ -552,36 +583,53 @@ function PriorDebtPanel({
   const pct = total > 0 ? (collected / total) * 100 : 0;
 
   return (
-    <section className='shadow-card rounded-3xl border bg-white p-6 md:p-8' style={{ borderColor: C.hair }} aria-labelledby='prior-debt-title'>
-      <div className='mb-6 flex items-center gap-3'>
+    <section
+      className='relative rounded-3xl p-6 md:p-8 overflow-hidden shadow-xl border'
+      style={{
+        background: 'linear-gradient(135deg, #FAF8F5 0%, #F5EFE4 50%, #ECE4D0 100%)',
+        borderColor: '#E6DCB8',
+        boxShadow: '0 8px 32px -8px rgba(138, 106, 30, 0.12)',
+      }}
+      aria-labelledby='prior-debt-title'
+    >
+      <div
+        className='pointer-events-none absolute -top-10 -right-10 h-40 w-40 rounded-full'
+        style={{ background: 'rgba(200, 155, 60, 0.12)', filter: 'blur(30px)' }}
+      />
+      <div className='relative mb-6 flex items-center gap-3'>
         <span
-          className='inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl'
-          style={{ backgroundColor: C.collectedSoft, color: C.collected }}
+          className='inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl shadow-sm'
+          style={{ backgroundColor: '#E3EFE4', color: '#15803D' }}
           aria-hidden='true'
         >
-          <History size={18} />
+          <History size={19} />
         </span>
-        <h2 id='prior-debt-title' className='text-[15px] font-bold' style={{ color: C.ink }}>
-          تحصيل الديون السابقة
-        </h2>
+        <div>
+          <h2 id='prior-debt-title' className='text-[16px] font-bold tracking-tight' style={{ color: C.ink }}>
+            تحصيل الديون السابقة
+          </h2>
+          <p className='text-xs font-semibold' style={{ color: C.muted }}>
+            سجل متابعة المستحقات القديمة
+          </p>
+        </div>
       </div>
 
-      <div className='grid grid-cols-1 items-center gap-6 md:grid-cols-[auto_1fr] md:gap-8'>
-        {/* حلقة النسبة — أصغر من دائرة الترسيم حتى لا تنافسها بصريّاً */}
+      <div className='relative grid grid-cols-1 items-center gap-6 md:grid-cols-[auto_1fr] md:gap-8'>
+        {/* حلقة النسبة */}
         <div className='flex justify-center'>
           <RatioDonut
-            size={136}
-            stroke={12}
+            size={140}
+            stroke={13}
             progress={progress}
-            track={C.track}
-            color={C.collected}
+            track='rgba(21, 128, 61, 0.15)'
+            color='#15803D'
             delay={0.1}
             label={`نسبة تحصيل الديون السابقة ${pct.toFixed(1)} بالمئة`}
           >
-            <span className='text-[26px] leading-none font-extrabold' style={{ color: C.collected, fontFamily: 'var(--font-display)', ...NUM }}>
+            <span className='text-[26px] leading-none font-extrabold text-[#15803D]' style={{ fontFamily: 'var(--font-display)', ...NUM }}>
               {pct.toFixed(1)}٪
             </span>
-            <span className='mt-1.5 text-xs' style={{ color: C.muted }}>
+            <span className='mt-1.5 text-xs font-bold text-[#15803D]/80'>
               نسبة التحصيل
             </span>
           </RatioDonut>
@@ -597,19 +645,19 @@ function PriorDebtPanel({
           </p>
 
           <div className='mt-6 grid grid-cols-1 gap-3 sm:grid-cols-2'>
-            <div className='rounded-2xl p-4' style={{ backgroundColor: C.collectedSoft }}>
-              <p className='text-xs' style={{ color: C.muted }}>
+            <div className='rounded-2xl p-4 border transition-transform hover:scale-[1.02]' style={{ background: 'linear-gradient(135deg, #EFFBF2 0%, #DCFCE7 100%)', borderColor: '#BBF7D0' }}>
+              <p className='text-xs font-bold' style={{ color: '#166534' }}>
                 المحصّل
               </p>
-              <p className='mt-1.5 font-bold' style={{ color: C.collected }}>
+              <p className='mt-1.5 text-xl font-extrabold' style={{ color: '#15803D' }}>
                 <bdi dir='ltr' style={NUM}>{dinar(collected)}</bdi>
               </p>
             </div>
-            <div className='rounded-2xl p-4' style={{ backgroundColor: C.remainingSoft }}>
-              <p className='text-xs' style={{ color: C.muted }}>
+            <div className='rounded-2xl p-4 border transition-transform hover:scale-[1.02]' style={{ background: 'linear-gradient(135deg, #FFFBEB 0%, #FEF3C7 100%)', borderColor: '#FDE68A' }}>
+              <p className='text-xs font-bold' style={{ color: '#92400E' }}>
                 المتبقّي
               </p>
-              <p className='mt-1.5 font-bold' style={{ color: C.remaining }}>
+              <p className='mt-1.5 text-xl font-extrabold' style={{ color: '#B45309' }}>
                 <bdi dir='ltr' style={NUM}>{dinar(remaining)}</bdi>
               </p>
             </div>
@@ -619,8 +667,8 @@ function PriorDebtPanel({
             type='button'
             onClick={onOpenDetail}
             aria-label='عرض تفصيل تحصيل الديون السابقة'
-            className={`mt-6 rounded-xl px-4 py-2.5 text-sm font-medium text-white transition-opacity hover:opacity-90 ${FOCUS}`}
-            style={{ backgroundColor: C.forest }}
+            className={`mt-6 rounded-2xl px-5 py-2.5 text-sm font-bold text-white shadow-md transition-all hover:shadow-lg hover:brightness-105 active:scale-95 ${FOCUS}`}
+            style={{ background: 'linear-gradient(135deg, #1B4332 0%, #2D6A4F 100%)' }}
           >
             عرض التفصيل
           </button>
@@ -733,8 +781,11 @@ export default function Dashboard() {
 
         {/* ساعة المؤسسة — أعلى اليسار بالقياس الكامل الأصلي */}
         <div
-          className='flex items-center gap-4 px-5 py-3 rounded-3xl border bg-white shadow-sm'
-          style={{ borderColor: C.hair }}
+          className='flex items-center gap-4 px-5 py-3 rounded-3xl border shadow-sm transition-all hover:shadow-md'
+          style={{
+            background: 'linear-gradient(135deg, #FAFBF9 0%, #EFF4EC 100%)',
+            borderColor: '#DCE4D6',
+          }}
         >
           <div className='text-right'>
             <p className='text-xs font-bold leading-tight' style={{ color: C.ink }}>
@@ -786,7 +837,8 @@ export default function Dashboard() {
                     icon={TrendingUp}
                     chipBg={C.sage}
                     chipColor={C.forest}
-                    valueColor={C.collected}
+                    gradFrom='#064E3B'
+                    gradTo='#059669'
                     hint='ما قُبض فعليّاً اليوم'
                   />
                   <StatCard
@@ -795,7 +847,8 @@ export default function Dashboard() {
                     icon={TrendingDown}
                     chipBg={C.rose}
                     chipColor={C.expense}
-                    valueColor={C.expense}
+                    gradFrom='#7F1D1D'
+                    gradTo='#DC2626'
                     hint='ما خرج من الصندوق اليوم'
                   />
                   <StatCard
@@ -804,7 +857,8 @@ export default function Dashboard() {
                     icon={ArrowDownCircle}
                     chipBg={C.soft}
                     chipColor={C.forest}
-                    valueColor={netColor}
+                    gradFrom='#1E1B4B'
+                    gradTo='#4F46E5'
                     hint='المداخيل ناقص المصاريف'
                   />
                   <StatCard
@@ -813,6 +867,8 @@ export default function Dashboard() {
                     icon={Landmark}
                     chipBg={C.goldSoft}
                     chipColor={C.goldDeep}
+                    gradFrom='#78350F'
+                    gradTo='#D97706'
                     hint='من بداية السجلّ بعد السحوبات'
                   />
                 </div>
@@ -837,6 +893,8 @@ export default function Dashboard() {
                 icon={GraduationCap}
                 chipBg={C.sage}
                 chipColor={C.forest}
+                gradFrom='#1B4332'
+                gradTo='#2D6A4F'
                 hint={`السنة النشطة: ${yearName}`}
               />
               <StatCard
@@ -845,7 +903,8 @@ export default function Dashboard() {
                 icon={AlertCircle}
                 chipBg={C.remainingSoft}
                 chipColor={C.remaining}
-                valueColor={C.remaining}
+                gradFrom='#7C2D12'
+                gradTo='#C2410C'
                 hint={`معاليم غير مدفوعة — السنة النشطة: ${yearName}`}
               />
               {data.club_revenue && (
@@ -855,26 +914,30 @@ export default function Dashboard() {
                   icon={Award}
                   chipBg={C.sage}
                   chipColor={C.forest}
-                  valueColor={C.collected}
+                  gradFrom='#134E4A'
+                  gradTo='#0F766E'
                   hint={`خلاص كامل: ${data.club_revenue.paid_students_count} | في انتظار الدفع: ${data.club_revenue.pending_students_count}`}
                 />
               )}
             </motion.div>
 
-            {/* بطاقة التوزيع الديمغرافي للجنس — تصميم دائري احترافي */}
+            {/* بطاقة التوزيع الديمغرافي للجنس — تصميم متدرج فاخر */}
             <motion.div
               variants={cardRise}
-              className='mt-6 rounded-3xl border bg-white p-6 md:p-8 shadow-card'
-              style={{ borderColor: C.hair }}
+              className='mt-6 rounded-3xl border p-6 md:p-8 shadow-card overflow-hidden'
+              style={{
+                background: 'linear-gradient(135deg, #FAFBF8 0%, #F3F6EF 100%)',
+                borderColor: '#DEE6D8',
+              }}
             >
-              <div className='flex flex-wrap items-center justify-between gap-4 mb-6 pb-3 border-b' style={{ borderColor: C.hair }}>
+              <div className='flex flex-wrap items-center justify-between gap-4 mb-6 pb-3 border-b' style={{ borderColor: '#E2EADF' }}>
                 <div className='flex items-center gap-3'>
                   <span
-                    className='inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl'
+                    className='inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl shadow-sm'
                     style={{ backgroundColor: C.sage, color: C.forest }}
                     aria-hidden='true'
                   >
-                    <Users size={18} />
+                    <Users size={19} />
                   </span>
                   <div>
                     <h3 className='text-sm font-bold' style={{ color: C.ink }}>
@@ -888,7 +951,7 @@ export default function Dashboard() {
 
                 {/* شريط المقارنة التناسبي المصغر */}
                 <div className='flex items-center gap-3 min-w-[200px] flex-1 max-w-xs'>
-                  <div className='w-full h-3 rounded-full bg-slate-100 flex overflow-hidden p-0.5 border border-slate-200'>
+                  <div className='w-full h-3 rounded-full bg-white flex overflow-hidden p-0.5 border border-slate-200 shadow-inner'>
                     <div
                       className='h-full rounded-full transition-all duration-700'
                       style={{ width: `${femalePctNum}%`, backgroundColor: '#E11D48' }}
@@ -906,15 +969,19 @@ export default function Dashboard() {
               <div className={`grid grid-cols-1 gap-6 ${unspecified > 0 ? 'md:grid-cols-3' : 'md:grid-cols-2'}`}>
                 {/* بطاقة الإناث — مع صورة التلميذة بالميدعة المدرسية */}
                 <div
-                  className='flex flex-col sm:flex-row items-center justify-between gap-6 p-6 rounded-3xl border transition-all hover:shadow-md'
-                  style={{ backgroundColor: '#FFF1F2', borderColor: '#FFE4E6' }}
+                  className='flex flex-col sm:flex-row items-center justify-between gap-6 p-6 rounded-3xl border transition-all duration-300 hover:shadow-lg hover:-translate-y-0.5'
+                  style={{
+                    background: 'linear-gradient(135deg, #FFF1F2 0%, #FFE4E6 50%, #FECDD3 100%)',
+                    borderColor: '#FDA4AF',
+                    boxShadow: '0 4px 20px -4px rgba(225,29,72,0.12)',
+                  }}
                 >
                   <div className='flex items-center gap-4'>
                     <div className='relative shrink-0'>
                       <img
                         src={schoolgirlAvatar}
                         alt='تلميذة بميدعة مدرسية'
-                        className='w-20 h-20 rounded-2xl object-cover shadow-md border-2 border-white ring-2 ring-[#E11D48]/25'
+                        className='w-20 h-20 rounded-2xl object-cover shadow-md border-2 border-white ring-2 ring-[#E11D48]/30'
                       />
                       <span className='absolute -bottom-1.5 -right-1.5 w-6 h-6 rounded-full bg-[#E11D48] text-white flex items-center justify-center text-xs font-black shadow-sm'>
                         ♀
@@ -934,7 +1001,7 @@ export default function Dashboard() {
                     size={100}
                     stroke={10}
                     progress={femaleProgress}
-                    track='#FFE4E6'
+                    track='rgba(225,29,72,0.15)'
                     color='#E11D48'
                     label={`نسبة الإناث ${femalePctNum.toFixed(1)}%`}
                   >
@@ -946,15 +1013,19 @@ export default function Dashboard() {
 
                 {/* بطاقة الذكور — مع صورة التلميذ بالميدعة المدرسية */}
                 <div
-                  className='flex flex-col sm:flex-row items-center justify-between gap-6 p-6 rounded-3xl border transition-all hover:shadow-md'
-                  style={{ backgroundColor: '#EFF6FF', borderColor: '#DBEAFE' }}
+                  className='flex flex-col sm:flex-row items-center justify-between gap-6 p-6 rounded-3xl border transition-all duration-300 hover:shadow-lg hover:-translate-y-0.5'
+                  style={{
+                    background: 'linear-gradient(135deg, #EFF6FF 0%, #DBEAFE 50%, #BFDBFE 100%)',
+                    borderColor: '#93C5FD',
+                    boxShadow: '0 4px 20px -4px rgba(37,99,235,0.12)',
+                  }}
                 >
                   <div className='flex items-center gap-4'>
                     <div className='relative shrink-0'>
                       <img
                         src={schoolboyAvatar}
                         alt='تلميذ بميدعة مدرسية'
-                        className='w-20 h-20 rounded-2xl object-cover shadow-md border-2 border-white ring-2 ring-[#2563EB]/25'
+                        className='w-20 h-20 rounded-2xl object-cover shadow-md border-2 border-white ring-2 ring-[#2563EB]/30'
                       />
                       <span className='absolute -bottom-1.5 -right-1.5 w-6 h-6 rounded-full bg-[#2563EB] text-white flex items-center justify-center text-xs font-black shadow-sm'>
                         ♂
@@ -974,7 +1045,7 @@ export default function Dashboard() {
                     size={100}
                     stroke={10}
                     progress={maleProgress}
-                    track='#DBEAFE'
+                    track='rgba(37,99,235,0.15)'
                     color='#2563EB'
                     label={`نسبة الذكور ${malePctNum.toFixed(1)}%`}
                   >
@@ -988,9 +1059,12 @@ export default function Dashboard() {
                 {unspecified > 0 && (
                   <div
                     className='flex flex-col items-center justify-center p-6 rounded-2xl border'
-                    style={{ backgroundColor: C.soft, borderColor: C.hair }}
+                    style={{
+                      background: 'linear-gradient(135deg, #FFFBEB 0%, #FEF3C7 100%)',
+                      borderColor: '#FDE68A',
+                    }}
                   >
-                    <span className='inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-amber-50 text-amber-700 border border-amber-200'>
+                    <span className='inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-amber-100 text-amber-800 border border-amber-300'>
                       <UserRound size={22} />
                     </span>
                     <p className='mt-4 text-xs font-bold' style={{ color: C.ink }}>
@@ -1008,8 +1082,7 @@ export default function Dashboard() {
             </motion.div>
           </section>
 
-          {/* تحصيل الديون السابقة — تظهر لمن يملك رؤية الماليّة فقط:
-              الخادم يحجب prior_debt_summary عمّن لا يملك manage_treasury/view_reports. */}
+          {/* تحصيل الديون السابقة — تظهر لمن يملك رؤية الماليّة فقط */}
           {data.prior_debt_summary && (
             <PriorDebtPanel
               summary={data.prior_debt_summary}
@@ -1021,15 +1094,28 @@ export default function Dashboard() {
           {data.cash && (
             <section>
               <SectionLabel title='متابعة الشهر' hint='مقارنة المداخيل والمصاريف للشهر الجاري' />
-              <div className='rounded-3xl border bg-white p-6 md:p-8 shadow-card' style={{ borderColor: C.hair }}>
+              <div
+                className='rounded-3xl border p-6 md:p-8 shadow-card'
+                style={{
+                  background: 'linear-gradient(135deg, #FAFBF8 0%, #F4F7F0 100%)',
+                  borderColor: '#DEE6D8',
+                }}
+              >
                 <div className='grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 items-center'>
                   {/* دائرة المداخيل — أزرق */}
-                  <div className='flex flex-col items-center justify-center p-5 rounded-2xl border' style={{ backgroundColor: '#F0F7FF', borderColor: '#DBEAFE' }}>
+                  <div
+                    className='flex flex-col items-center justify-center p-5 rounded-2xl border transition-all duration-300 hover:shadow-md hover:-translate-y-0.5'
+                    style={{
+                      background: 'linear-gradient(135deg, #EFF6FF 0%, #DBEAFE 100%)',
+                      borderColor: '#BFDBFE',
+                      boxShadow: '0 4px 16px -4px rgba(37,99,235,0.12)',
+                    }}
+                  >
                     <RatioDonut
                       size={120}
                       stroke={11}
                       progress={totalFlow > 0 ? monthIncome / totalFlow : 0}
-                      track='#DBEAFE'
+                      track='rgba(37,99,235,0.15)'
                       color='#2563EB'
                       label={`نسبة المداخيل ${incomePct.toFixed(1)}%`}
                     >
@@ -1046,12 +1132,19 @@ export default function Dashboard() {
                   </div>
 
                   {/* دائرة المصاريف — أحمر */}
-                  <div className='flex flex-col items-center justify-center p-5 rounded-2xl border' style={{ backgroundColor: '#FEF2F2', borderColor: '#FEE2E2' }}>
+                  <div
+                    className='flex flex-col items-center justify-center p-5 rounded-2xl border transition-all duration-300 hover:shadow-md hover:-translate-y-0.5'
+                    style={{
+                      background: 'linear-gradient(135deg, #FEF2F2 0%, #FEE2E2 100%)',
+                      borderColor: '#FECACA',
+                      boxShadow: '0 4px 16px -4px rgba(220,38,38,0.12)',
+                    }}
+                  >
                     <RatioDonut
                       size={120}
                       stroke={11}
                       progress={totalFlow > 0 ? monthExpenses / totalFlow : 0}
-                      track='#FEE2E2'
+                      track='rgba(220,38,38,0.15)'
                       color='#DC2626'
                       label={`نسبة المصاريف ${expensePct.toFixed(1)}%`}
                     >
@@ -1068,33 +1161,57 @@ export default function Dashboard() {
                   </div>
 
                   {/* الدخل الصافي */}
-                  <div className='flex flex-col items-center justify-center p-5 rounded-2xl border h-full' style={{ backgroundColor: C.soft, borderColor: C.hair }}>
-                    <span className='inline-flex h-10 w-10 items-center justify-center rounded-xl' style={{ backgroundColor: netMonthColorBg, color: netMonthColor }}>
-                      <TrendingUp size={20} />
+                  <div
+                    className='flex flex-col items-center justify-center p-5 rounded-2xl border h-full transition-all duration-300 hover:shadow-md hover:-translate-y-0.5'
+                    style={{
+                      background: netMonth >= 0
+                        ? 'linear-gradient(135deg, #F0FDF4 0%, #DCFCE7 100%)'
+                        : 'linear-gradient(135deg, #FEF2F2 0%, #FEE2E2 100%)',
+                      borderColor: netMonth >= 0 ? '#BBF7D0' : '#FECACA',
+                      boxShadow: netMonth >= 0
+                        ? '0 4px 16px -4px rgba(22,101,52,0.12)'
+                        : '0 4px 16px -4px rgba(220,38,38,0.12)',
+                    }}
+                  >
+                    <span
+                      className='inline-flex h-11 w-11 items-center justify-center rounded-2xl shadow-sm'
+                      style={{ backgroundColor: 'rgba(255,255,255,0.7)', color: netMonthColor }}
+                    >
+                      <TrendingUp size={22} />
                     </span>
-                    <p className='mt-3 text-xs font-bold' style={{ color: C.ink }}>
+                    <p className='mt-3 text-xs font-bold' style={{ color: netMonth >= 0 ? '#166534' : '#991B1B' }}>
                       الدخل الصافي
                     </p>
                     <p className='mt-1 text-xl font-extrabold' style={{ color: netMonthColor, ...NUM }}>
                       <AnimatedMoney value={month?.net_income} />
                     </p>
-                    <span className='mt-2 text-[11px] font-semibold' style={{ color: C.muted }}>
+                    <span className='mt-2 text-[11px] font-semibold' style={{ color: netMonth >= 0 ? '#166534' : '#991B1B' }}>
                       المداخيل − المصاريف
                     </span>
                   </div>
 
                   {/* السحوبات */}
-                  <div className='flex flex-col items-center justify-center p-5 rounded-2xl border h-full' style={{ backgroundColor: C.soft, borderColor: C.hair }}>
-                    <span className='inline-flex h-10 w-10 items-center justify-center rounded-xl' style={{ backgroundColor: C.goldSoft, color: C.goldDeep }}>
-                      <Landmark size={20} />
+                  <div
+                    className='flex flex-col items-center justify-center p-5 rounded-2xl border h-full transition-all duration-300 hover:shadow-md hover:-translate-y-0.5'
+                    style={{
+                      background: 'linear-gradient(135deg, #FFFBEB 0%, #FEF3C7 100%)',
+                      borderColor: '#FDE68A',
+                      boxShadow: '0 4px 16px -4px rgba(180,83,9,0.12)',
+                    }}
+                  >
+                    <span
+                      className='inline-flex h-11 w-11 items-center justify-center rounded-2xl shadow-sm'
+                      style={{ backgroundColor: 'rgba(255,255,255,0.7)', color: '#B45309' }}
+                    >
+                      <Landmark size={22} />
                     </span>
-                    <p className='mt-3 text-xs font-bold' style={{ color: C.ink }}>
+                    <p className='mt-3 text-xs font-bold' style={{ color: '#92400E' }}>
                       السحوبات
                     </p>
-                    <p className='mt-1 text-xl font-extrabold' style={{ color: C.muted, ...NUM }}>
+                    <p className='mt-1 text-xl font-extrabold' style={{ color: '#B45309', ...NUM }}>
                       <AnimatedMoney value={month?.withdrawals} />
                     </p>
-                    <span className='mt-2 text-[11px] font-semibold' style={{ color: C.muted }}>
+                    <span className='mt-2 text-[11px] font-semibold' style={{ color: '#92400E' }}>
                       سحوبات الشهر الجاري
                     </span>
                   </div>
