@@ -190,7 +190,7 @@ class CashTransaction extends Model
 
     public function scopePriorYearDebt($query)
     {
-        return $query->whereIn('category', self::PRIOR_YEAR_DEBT_CATEGORIES);
+        return $query->whereIn('category', self::OLD_DEBT_COLLECTION_CATEGORIES);
     }
 
     public function scopeCashInflow($query)

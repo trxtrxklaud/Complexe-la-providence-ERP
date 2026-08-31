@@ -258,7 +258,7 @@ class FinancialReportController extends Controller
             ->select(['ct.academic_year_id', 'ay.name as academic_year'])
             ->selectRaw($this->sumIf(CashTransaction::INCOME_CATEGORIES).' as income')
             ->selectRaw($this->sumIf(CashTransaction::EXPENSE_CATEGORIES).' as expenses')
-            ->selectRaw($this->sumIf(CashTransaction::PRIOR_YEAR_DEBT_CATEGORIES).' as prior_year_debt')
+            ->selectRaw($this->sumIf(CashTransaction::OLD_DEBT_COLLECTION_CATEGORIES).' as prior_year_debt')
             ->selectRaw($this->sumIf([CashTransaction::CATEGORY_WITHDRAWAL]).' as withdrawals')
             ->groupBy('ct.academic_year_id', 'ay.name')
             ->orderByRaw('ay.name is null, ay.name desc')
