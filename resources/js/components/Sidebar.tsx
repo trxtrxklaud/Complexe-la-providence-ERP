@@ -4,7 +4,7 @@ import { NavLink, useNavigate, useLocation } from 'react-router-dom';
 import {
     LayoutDashboard, Users, LogOut, GraduationCap, Tags, Layers,
     ClipboardList, History, Wallet, Receipt, Landmark, TrendingUp, BadgePercent, Award, HeartHandshake,
-    Users2, PanelLeftClose, PanelLeftOpen,
+    Users2, PanelLeftClose, PanelLeftOpen, CreditCard,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import {
@@ -245,6 +245,19 @@ export function Sidebar() {
                     </>
                 )}
 
+                {/* الاستخلاص — شاشة استخلاص المعاليم والفوترة */}
+                {hasPermission('manage_payments') && (
+                    <NavLink
+                        to="/collection"
+                        onMouseEnter={prefetch(loadCollectionPage)}
+                        onFocus={prefetch(loadCollectionPage)}
+                        className={({ isActive }) => linkClass(isActive || startsWith('/collection'))}
+                    >
+                        <CreditCard size={20} />
+                        <span>الاستخلاص</span>
+                    </NavLink>
+                )}
+
                 {/* أنواع المعاليم — القراءة للاستخلاص، والتعديل لإدارة المستخدمين */}
                 {hasPermission('manage_users') && (
                     <NavLink
@@ -258,11 +271,9 @@ export function Sidebar() {
                     </NavLink>
                 )}
 
-                {canAny('manage_payments', 'view_reports') && (
+                {hasPermission('view_reports') && (
                     <NavLink
                         to="/income"
-                        onMouseEnter={prefetch(loadCollectionPage)}
-                        onFocus={prefetch(loadCollectionPage)}
                         className={() => linkClass(startsWith('/income') && !startsWith('/income/unpaid-monthly'))}
                     >
                         <Wallet size={20} />

@@ -271,28 +271,37 @@ export default function App() {
                         </CashierHidden>
                     } />
 
-                    {/* ═══ المداخيل ═══
-                        موديول مختلط: الفوترة تستدعي /payments/collect (manage_payments)
-                        وبقية التبويبات تستدعي /reports/* (view_reports). */}
-                    <Route path="/income" element={
-                        <ProtectedRoute anyOf={['manage_payments', 'view_reports']}>
-                            <Layout><IncomeLayout /></Layout>
+                    {/* ═══ الاستخلاص المستقل ═══ */}
+                    <Route path="/collection" element={
+                        <ProtectedRoute permission="manage_payments">
+                            <Layout><CollectionPage /></Layout>
                         </ProtectedRoute>
+                    } />
+
+                    {/* ═══ المداخيل ═══
+                        تقارير المداخيل تحت view_reports؛ القابض يوجّه إلى الاستخلاص /collection */}
+                    <Route path="/income" element={
+                        <CashierHidden to="/collection">
+                            <ProtectedRoute permission="view_reports">
+                                <Layout><IncomeLayout /></Layout>
+                            </ProtectedRoute>
+                        </CashierHidden>
                     }>
-                        <Route index element={<Navigate to="billing" replace />} />
-                        <Route path="billing" element={<CollectionPage />} />
-                        <Route path="by-date" element={<CashierHidden to="/income/billing"><IncomeByDatePage /></CashierHidden>} />
-                        <Route path="revenue" element={<CashierHidden to="/income/billing"><StudentRevenuePage /></CashierHidden>} />
+                        <Route index element={<Navigate to="by-date" replace />} />
+                        <Route path="by-date" element={<IncomeByDatePage />} />
+                        <Route path="revenue" element={<StudentRevenuePage />} />
                         {/* صفحة تلميذ واحد — حفر من جدول مداخيل التلاميذ */}
-                        <Route path="revenue/:studentId" element={<CashierHidden to="/income/billing"><StudentDetailPage /></CashierHidden>} />
-                        <Route path="by-classroom" element={<CashierHidden to="/income/billing"><RevenueByClassroomPage /></CashierHidden>} />
+                        <Route path="revenue/:studentId" element={<StudentDetailPage />} />
+                        <Route path="by-classroom" element={<RevenueByClassroomPage />} />
                         {/* كشف القسم التفصيلي: قائمة منسدلة لكل الأقسام + جدول تلاميذ قابل للطباعة.
                             يُعلَن قبل by-classroom/:sectionId وإلا ابتلعه المسار ذو المعامِل. */}
-                        <Route path="by-classroom/roster" element={<CashierHidden to="/income/billing"><ClassroomRosterPage /></CashierHidden>} />
+                        <Route path="by-classroom/roster" element={<ClassroomRosterPage />} />
                         {/* صفحة قسم واحد — حفر من جدول الأقسام */}
-                        <Route path="by-classroom/:sectionId" element={<CashierHidden to="/income/billing"><ClassroomDetailPage /></CashierHidden>} />
-                        <Route path="by-year" element={<CashierHidden to="/income/billing"><RevenueByYearPage /></CashierHidden>} />
-                        <Route path="unpaid-monthly" element={<CashierHidden to="/income/billing"><ProtectedRoute permission="view_reports"><UnpaidMonthlyReportPage /></ProtectedRoute></CashierHidden>} />
+                        <Route path="by-classroom/:sectionId" element={<ClassroomDetailPage />} />
+                        <Route path="by-year" element={<RevenueByYearPage />} />
+                        <Route path="unpaid-monthly" element={<ProtectedRoute permission="view_reports"><UnpaidMonthlyReportPage /></ProtectedRoute>} />
+                        {/* توافق خلفي: أي رابط يطلب /income/billing يذهب مباشرة إلى /collection */}
+                        <Route path="billing" element={<Navigate to="/collection" replace />} />
                     </Route>
 
                     <Route path="/reports/club-arrears" element={
@@ -361,9 +370,6 @@ export default function App() {
                         <Route path="monthly" element={<NetRevenueMonthlyPage />} />
                         <Route path="yearly" element={<NetRevenueYearlyPage />} />
                     </Route>
-
-                    {/* استخلاص مستقل (توافق خلفي): يُحوّل إلى تبويب الفوترة داخل المداخيل */}
-                    <Route path="/collection" element={<Navigate to="/income/billing" replace />} />
 
                     {/* التخفيضات السنوية — الخادم يحرسها بصلاحية waive_fees حصراً */}
                     <Route path='/discounts' element={
