@@ -163,7 +163,7 @@ class CleanSessionTestDataCommand extends Command
                     }
                     $sFee->update([
                         'direct_paid_amount' => 0.00,
-                        'status' => 'unpaid',
+                        'status' => 'pending',
                     ]);
                 }
             }
