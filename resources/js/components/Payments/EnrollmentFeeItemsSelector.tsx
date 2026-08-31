@@ -28,50 +28,85 @@ export function EnrollmentFeeItemsSelector({ onTotalChange }: Props) {
         const types = await getFeeTypes();
         const activeTypes = types.filter((t) => t.is_active);
 
-        // ترتيب واختيار المعاليم المعنية بالترسيم واللوازم المدرسية
+        // حصر معاليم الترسيم واللوازم في البنود الـ 4 الأساسية فقط واستبعاد كافة النوادي والمصاريف الأخرى
+        const enrollmentItems: FeeItemConfig[] = [];
+
         // 1. معلوم الترسيم
+        const regType = activeTypes.find((t) => {
+          const n = (t.name_ar + ' ' + (t.name_fr || '')).toLowerCase();
+          return t.ledger_category === 'registration_fee' || n.includes('ترسيم') || n.includes('تسجيل') || n.includes('inscription');
+        });
+        if (regType) {
+          const p = parseFloat(regType.price) || 0;
+          enrollmentItems.push({
+            fee_type_id: regType.id,
+            name: regType.name_ar,
+            name_fr: regType.name_fr || 'Frais d\'inscription',
+            category: 'registration_fee',
+            default_price: p,
+            price: p,
+            selected: true, // محدد افتراضياً
+          });
+        }
+
         // 2. ميدعة
+        const blouseType = activeTypes.find((t) => {
+          const n = (t.name_ar + ' ' + (t.name_fr || '')).toLowerCase();
+          return n.includes('ميدعة') || n.includes('tablier') || n.includes('blouse');
+        });
+        if (blouseType) {
+          const p = parseFloat(blouseType.price) || 0;
+          enrollmentItems.push({
+            fee_type_id: blouseType.id,
+            name: blouseType.name_ar,
+            name_fr: blouseType.name_fr || 'Tablier / Blouse',
+            category: 'product_sale',
+            default_price: p,
+            price: p,
+            selected: false,
+          });
+        }
+
         // 3. ERP vie scolaire
+        const vieType = activeTypes.find((t) => {
+          const n = (t.name_ar + ' ' + (t.name_fr || '')).toLowerCase();
+          return n.includes('vie scolaire') || n.includes('erp') || n.includes('منظومة');
+        });
+        if (vieType) {
+          const p = parseFloat(vieType.price) || 0;
+          enrollmentItems.push({
+            fee_type_id: vieType.id,
+            name: vieType.name_ar,
+            name_fr: vieType.name_fr || 'Vie Scolaire',
+            category: 'other_income',
+            default_price: p,
+            price: p,
+            selected: false,
+          });
+        }
+
         // 4. رزمة أوراق
-        // 5. بقية أنواع المعاليم غير الشهرية
-        const mapped: FeeItemConfig[] = activeTypes
-          .filter((t) => {
-            const name = (t.name_ar + ' ' + (t.name_fr || '')).toLowerCase();
-            return !name.includes('شهر') && !name.includes('تمدرس') && !name.includes('حضانة') && !name.includes('نادي');
-          })
-          .map((t) => {
-            const nameAr = t.name_ar.toLowerCase();
-            const nameFr = (t.name_fr || '').toLowerCase();
-            const isReg = nameAr.includes('ترسيم') || nameAr.includes('تسجيل') || nameFr.includes('inscription');
-            const isBlouse = nameAr.includes('ميدعة') || nameFr.includes('tablier') || nameFr.includes('blouse');
-            const isEduVie = nameAr.includes('vie scolaire') || nameFr.includes('vie scolaire') || nameAr.includes('erp');
-            const isPaper = nameAr.includes('ورق') || nameFr.includes('papier');
+        const paperType = activeTypes.find((t) => {
+          const n = (t.name_ar + ' ' + (t.name_fr || '')).toLowerCase();
+          return n.includes('ورق') || n.includes('papier');
+        });
+        if (paperType) {
+          const p = parseFloat(paperType.price) || 0;
+          enrollmentItems.push({
+            fee_type_id: paperType.id,
+            name: paperType.name_ar,
+            name_fr: paperType.name_fr || 'Ram de papier',
+            category: 'product_sale',
+            default_price: p,
+            price: p,
+            selected: false,
+          });
+        }
 
-            let sortOrder = 99;
-            if (isReg) sortOrder = 1;
-            else if (isBlouse) sortOrder = 2;
-            else if (isEduVie) sortOrder = 3;
-            else if (isPaper) sortOrder = 4;
-
-            const p = parseFloat(t.price) || 0;
-
-            return {
-              fee_type_id: t.id,
-              name: t.name_ar,
-              name_fr: t.name_fr,
-              category: t.ledger_category || 'product_sale',
-              default_price: p,
-              price: p,
-              selected: isReg, // افتراضياً معلوم الترسيم محدد
-              _sort: sortOrder,
-            };
-          })
-          .sort((a, b) => (a as any)._sort - (b as any)._sort);
-
-        setItems(mapped);
+        setItems(enrollmentItems);
 
         // إرسال المجموع الأولي
-        notifyParent(mapped);
+        notifyParent(enrollmentItems);
       } catch (err) {
         console.error('Failed to load fee types for enrollment', err);
       } finally {
