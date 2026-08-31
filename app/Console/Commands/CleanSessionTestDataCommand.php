@@ -147,29 +147,19 @@ class CleanSessionTestDataCommand extends Command
 
         try {
             DB::transaction(function () use ($sinceDateTime, $sinceDate, $mustapha, &$deletedCounts) {
-                // أ. إعادة ضبط ديون التلاميذ القديمة التي تم استخلاصها في التجارب الحديثة
-                $allocsOnManualDebts = PaymentAllocation::query()
-                    ->whereHas('payment', function ($q) use ($sinceDateTime, $sinceDate) {
-                        $q->where('created_at', '>=', $sinceDateTime)
-                          ->orWhere('payment_date', '>=', $sinceDate);
-                    })
-                    ->get();
+                // أ. استخراج وحماية ديون التلاميذ القديمة (manual_student_debts)
+                $protectedManualFeeIds = ManualStudentDebt::whereNotNull('source_student_fee_id')
+                    ->pluck('source_student_fee_id')
+                    ->all();
 
-                foreach ($allocsOnManualDebts as $alloc) {
-                    $sFee = $alloc->studentFee;
-                    if ($sFee) {
-                        $mDebt = ManualStudentDebt::where('source_student_fee_id', $sFee->id)->first();
-                        if ($mDebt) {
-                            $mDebt->update([
-                                'status' => ManualStudentDebt::STATUS_PENDING,
-                            ]);
-                            $deletedCounts['restored_manual_debts']++;
-                        }
-                        $sFee->update([
-                            'direct_paid_amount' => 0.00,
-                            'status' => 'pending',
-                        ]);
-                    }
+                // إعادة ضبط الديون القديمة لحالتها الأصلية غير الخالصة
+                ManualStudentDebt::query()->update(['status' => ManualStudentDebt::STATUS_PENDING]);
+                if (! empty($protectedManualFeeIds)) {
+                    StudentFee::whereIn('id', $protectedManualFeeIds)->update([
+                        'direct_paid_amount' => 0.00,
+                        'status' => 'pending',
+                    ]);
+                    $deletedCounts['restored_manual_debts'] = count($protectedManualFeeIds);
                 }
 
                 // ب. حذف مقبوضات التجارب وحركاتها المالية في الخزينة
@@ -193,40 +183,55 @@ class CleanSessionTestDataCommand extends Command
                     $deletedCounts['test_payments']++;
                 }
 
-                // ج. حذف التلاميذ التجريبيين الجدد مع كافة متعلقاتهم
+                // ج. حذف كافة معاليم الرسوم واشتراكات النوادي التي أنشئت أثناء التجارب منذ التاريخ المحدد
+                $testFeeIds = StudentFee::where('created_at', '>=', $sinceDateTime)
+                    ->whereNotIn('id', $protectedManualFeeIds)
+                    ->where(function ($q) {
+                        $q->whereNull('description')
+                          ->orWhere('description', 'NOT LIKE', '%دَين قديم%');
+                    })
+                    ->pluck('id')
+                    ->all();
+
+                if (! empty($testFeeIds)) {
+                    FeeWaiver::whereIn('student_fee_id', $testFeeIds)->delete();
+                    PaymentAllocation::whereIn('student_fee_id', $testFeeIds)->delete();
+                    StudentFee::whereIn('id', $testFeeIds)->delete();
+                    $deletedCounts['test_student_fees'] = count($testFeeIds);
+                }
+
+                // حذف معاليم واشتراكات وتخفيضات النوادي التجريبية
+                $testClubFeeIds = ClubMonthlyFee::where('created_at', '>=', $sinceDateTime)->pluck('id')->all();
+                if (! empty($testClubFeeIds)) {
+                    ClubMonthlyDiscount::whereIn('club_subscription_id', function ($q) use ($sinceDateTime) {
+                        $q->select('id')->from('club_subscriptions')->where('created_at', '>=', $sinceDateTime);
+                    })->delete();
+                    ClubMonthlyFee::whereIn('id', $testClubFeeIds)->delete();
+                    $deletedCounts['test_club_fees'] = count($testClubFeeIds);
+                }
+
+                // د. حذف التلاميذ التجريبيين الجدد مع كافة متعلقاتهم
                 $testStudentIds = Student::where('created_at', '>=', $sinceDateTime)->pluck('id')->all();
-                $testEnrollmentIds = Enrollment::whereIn('student_id', $testStudentIds)->pluck('id')->all();
-                $testStudentFeeIds = ! empty($testEnrollmentIds)
-                    ? StudentFee::whereIn('enrollment_id', $testEnrollmentIds)->pluck('id')->all()
-                    : [];
-                $testSubIds = ClubSubscription::whereIn('student_id', $testStudentIds)->pluck('id')->all();
-
-                // 1. نوادي
-                if (! empty($testSubIds)) {
-                    ClubMonthlyDiscount::whereIn('club_subscription_id', $testSubIds)->delete();
-                }
-                ClubMonthlyFee::whereIn('student_id', $testStudentIds)->delete();
-                ClubSubscription::whereIn('student_id', $testStudentIds)->delete();
-
-                // 2. تخفيضات وإعفاءات ومعاليم
-                if (! empty($testEnrollmentIds)) {
-                    MonthlyDiscount::whereIn('enrollment_id', $testEnrollmentIds)->delete();
-                    EnrollmentDiscount::whereIn('enrollment_id', $testEnrollmentIds)->delete();
-                }
-                if (! empty($testStudentFeeIds)) {
-                    FeeWaiver::whereIn('student_fee_id', $testStudentFeeIds)->delete();
-                    PaymentAllocation::whereIn('student_fee_id', $testStudentFeeIds)->delete();
-                    StudentFee::whereIn('id', $testStudentFeeIds)->delete();
-                }
-
-                // 3. التسجيلات
-                if (! empty($testEnrollmentIds)) {
-                    Enrollment::whereIn('id', $testEnrollmentIds)->delete();
-                    $deletedCounts['test_enrollments'] = count($testEnrollmentIds);
-                }
-
-                // 4. أولياء التلاميذ التجريبيين
                 if (! empty($testStudentIds)) {
+                    $testEnrollmentIds = Enrollment::whereIn('student_id', $testStudentIds)->pluck('id')->all();
+                    $testSubIds = ClubSubscription::whereIn('student_id', $testStudentIds)->pluck('id')->all();
+
+                    // نوادي
+                    if (! empty($testSubIds)) {
+                        ClubMonthlyDiscount::whereIn('club_subscription_id', $testSubIds)->delete();
+                    }
+                    ClubMonthlyFee::whereIn('student_id', $testStudentIds)->delete();
+                    ClubSubscription::whereIn('student_id', $testStudentIds)->delete();
+
+                    // تخفيضات وتسجيلات
+                    if (! empty($testEnrollmentIds)) {
+                        MonthlyDiscount::whereIn('enrollment_id', $testEnrollmentIds)->delete();
+                        EnrollmentDiscount::whereIn('enrollment_id', $testEnrollmentIds)->delete();
+                        Enrollment::whereIn('id', $testEnrollmentIds)->delete();
+                        $deletedCounts['test_enrollments'] = count($testEnrollmentIds);
+                    }
+
+                    // أولياء التلاميذ التجريبيين
                     $guardianIds = DB::table('guardian_student')->whereIn('student_id', $testStudentIds)->pluck('guardian_id')->all();
                     DB::table('guardian_student')->whereIn('student_id', $testStudentIds)->delete();
                     foreach ($guardianIds as $gId) {
@@ -239,15 +244,6 @@ class CleanSessionTestDataCommand extends Command
                     Student::whereIn('id', $testStudentIds)->delete();
                     $deletedCounts['test_students'] = count($testStudentIds);
                 }
-
-                // د. تصفير معاليم النوادي غير التجريبية التي تم استخلاصها في التجارب الحديثة
-                ClubMonthlyFee::query()
-                    ->where('created_at', '>=', $sinceDateTime)
-                    ->where('status', '!=', ClubMonthlyFee::STATUS_UNPAID)
-                    ->update([
-                        'amount_paid' => 0.00,
-                        'status' => ClubMonthlyFee::STATUS_UNPAID,
-                    ]);
 
                 // هـ. تنظيف ديون وتسبيقات الإطار مصطفى العبدولي
                 if ($mustapha) {
