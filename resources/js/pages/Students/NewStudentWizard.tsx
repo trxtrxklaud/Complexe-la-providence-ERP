@@ -89,10 +89,18 @@ export function NewStudentWizard() {
     setStep((prev) => Math.max(prev - 1, 1));
   };
 
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLFormElement>) => {
+    if (e.key === 'Enter' && (e.target as HTMLElement).tagName !== 'TEXTAREA') {
+      e.preventDefault();
+      if (step < 3) {
+        handleNext();
+      }
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (step < 3) {
-      handleNext();
+    if (step !== 3) {
       return;
     }
 
@@ -255,7 +263,7 @@ export function NewStudentWizard() {
       </div>
 
       <div className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden">
-        <form ref={formRef} onSubmit={handleSubmit} className="p-8 md:p-10">
+        <form ref={formRef} onSubmit={handleSubmit} onKeyDown={handleKeyDown} className="p-8 md:p-10">
           {/* الخطوات الثلاث تبقى مركّبة دائماً: FormData تقرأ الحقول من DOM لا من الحالة. */}
           <div className={step === 1 ? 'block' : 'hidden'}>
             <StudentStep
@@ -278,31 +286,40 @@ export function NewStudentWizard() {
 
           <div className="mt-8 pt-6 border-t border-slate-100 flex items-center justify-between">
             <button
+              key="btn-wizard-prev"
               type="button"
               onClick={handlePrev}
               disabled={step === 1 || isSubmitting}
-              className="flex items-center gap-2 px-6 py-2.5 text-sm font-medium text-slate-600 bg-slate-100 rounded-lg hover:bg-slate-200 disabled:opacity-50 transition-colors"
+              className="flex items-center gap-2 px-6 py-2.5 text-sm font-medium text-slate-600 bg-slate-100 rounded-xl hover:bg-slate-200 disabled:opacity-50 transition-colors cursor-pointer"
             >
               <ChevronRight size={18} />
               السابق
             </button>
 
-            {step < 3 ? (
+            {step < 3 && (
               <button
+                key="btn-wizard-next"
                 type="button"
-                onClick={handleNext}
-                className="flex items-center gap-2 px-6 py-2.5 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors"
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  handleNext();
+                }}
+                className="flex items-center gap-2 px-6 py-2.5 text-sm font-bold text-white bg-emerald-700 hover:bg-emerald-800 rounded-xl transition-colors cursor-pointer shadow-sm"
               >
                 التالي
                 <ChevronLeft size={18} />
               </button>
-            ) : (
+            )}
+
+            {step === 3 && (
               <button
+                key="btn-wizard-submit"
                 type="submit"
                 disabled={isSubmitting}
-                className="flex items-center gap-2 px-8 py-2.5 text-sm font-medium text-white bg-emerald-600 rounded-lg hover:bg-emerald-700 disabled:opacity-70 transition-colors"
+                className="flex items-center gap-2 px-8 py-2.5 text-sm font-bold text-white bg-emerald-700 hover:bg-emerald-800 rounded-xl disabled:opacity-70 transition-colors shadow-sm cursor-pointer"
               >
-                {isSubmitting ? 'جارٍ الحفظ…' : 'حفظ نهائي'}
+                {isSubmitting ? 'جارٍ حفظ الترسيم…' : 'تأكيد وحفظ التسجيل'}
                 {!isSubmitting && <CheckCircle2 size={18} />}
               </button>
             )}
