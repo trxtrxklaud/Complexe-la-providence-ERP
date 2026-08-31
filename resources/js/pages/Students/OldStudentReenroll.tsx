@@ -10,6 +10,7 @@ import {
 } from '../../api/students';
 import { ListSkeleton } from '../../components/DataSkeleton';
 import { EnrollmentFeeItemsSelector } from '../../components/Payments/EnrollmentFeeItemsSelector';
+import { ReceiptModal, type ReceiptData } from '../Payments/ReceiptModal';
 
 const C = {
   forest: '#3B4A36',
@@ -53,6 +54,7 @@ export function OldStudentReenroll() {
   const [paymentDate, setPaymentDate] = useState('');
   const [paymentNotes, setPaymentNotes] = useState('');
   const [feeItems, setFeeItems] = useState<Array<{ fee_type_id: number; amount: number; description: string }>>([]);
+  const [createdReceipt, setCreatedReceipt] = useState<ReceiptData | null>(null);
 
   // يُرفع حين يردّ الخادم code = already_enrolled: التلميذ ترسيمه قائم في السنة
   // النشطة (546 تلميذاً دخلوا عبر ترحيل الترقية دون أن يُقبض معلومهم)، فالمطلوب
@@ -176,6 +178,37 @@ export function OldStudentReenroll() {
       ? ` — دخل الخزينة: ${Number(response.payment.amount).toFixed(2)} د`
       : '';
     setSuccess(`${prefix} ${student}${placed}${paid}`);
+
+    if (response?.payment) {
+      const guardianName = `${selectedStudent?.guardians?.[0]?.first_name || ''} ${selectedStudent?.guardians?.[0]?.last_name || ''}`.trim();
+      const sectionName = response.enrollment?.section?.name || '';
+      const levelName = response.enrollment?.level?.name || '';
+
+      setCreatedReceipt({
+        payment_id: response.payment.id,
+        receipt_number: response.payment.receipt_number || `REC-${String(response.payment.id).padStart(6, '0')}`,
+        payment_date: response.payment.payment_date || paymentDate,
+        method: response.payment.method || paymentMethod,
+        notes: response.payment.notes || paymentNotes,
+        student_name: student,
+        guardian_name: guardianName,
+        guardian_phone: selectedStudent?.guardians?.[0]?.phone || '',
+        section_name: `${levelName} ${sectionName}`.trim(),
+        academic_year: response.enrollment?.academic_year?.name || '2026-2027',
+        amount: response.payment.amount || amount,
+        total: response.payment.amount || amount,
+        items: response.payment.items && response.payment.items.length > 0
+          ? response.payment.items.map((i: any) => ({
+              name: i.name || i.description,
+              description: i.name || i.description,
+              amount: i.amount,
+            }))
+          : (feeItems && feeItems.length > 0
+              ? feeItems.map((fi) => ({ name: fi.description, description: fi.description, amount: fi.amount }))
+              : [{ description: 'معلوم تجديد الترسيم', amount: amount }]),
+      });
+    }
+
     setSelectedStudent(null);
     resetForm();
     // إعادة تحميل القائمة حتى تعكس الحالة بعد الحفظ.
@@ -625,6 +658,13 @@ export function OldStudentReenroll() {
           </div>
         )}
       </div>
+
+      {createdReceipt && (
+        <ReceiptModal
+          receipt={createdReceipt}
+          onClose={() => setCreatedReceipt(null)}
+        />
+      )}
     </div>
   );
 }

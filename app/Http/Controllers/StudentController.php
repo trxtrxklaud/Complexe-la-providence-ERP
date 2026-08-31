@@ -287,26 +287,44 @@ class StudentController extends Controller
         ], self::paymentRules()), self::SECTION_MESSAGES);
 
         try {
-            $enrollment = DB::transaction(function () use ($validated, $request) {
+            $result = DB::transaction(function () use ($validated, $request) {
                 $enrollment = $this->enrollmentService->enrollStudent(
                     $validated,
                     $request->file('photo')
                 );
 
-                $this->registrationPaymentService->record(
+                $payment = $this->registrationPaymentService->record(
                     $enrollment,
                     $validated,
                     $request->user()?->id,
                 );
 
-                return $enrollment;
+                return [$enrollment, $payment];
             });
+
+            [$enrollment, $payment] = $result;
+
+            if ($payment) {
+                $payment->loadMissing(['paymentAllocations.studentFee']);
+            }
 
             AuditService::log('student.create', 'تسجيل تلميذ جديد: '.trim($validated['first_name'].' '.$validated['last_name']), $enrollment->student, ['enrollment_id' => $enrollment->id]);
 
             return response()->json([
                 'message' => 'تم تسجيل التلميذ بنجاح',
-                'enrollment' => $enrollment->load(['student', 'level', 'section']),
+                'enrollment' => $enrollment->load(['student.guardians', 'level', 'section', 'academicYear']),
+                'payment' => $payment ? [
+                    'id' => $payment->id,
+                    'amount' => $payment->amount,
+                    'payment_date' => $payment->payment_date?->toDateString(),
+                    'method' => $payment->method,
+                    'notes' => $payment->notes,
+                    'receipt_number' => 'REC-'.str_pad((string) $payment->id, 6, '0', STR_PAD_LEFT),
+                    'items' => $payment->paymentAllocations->map(fn ($a) => [
+                        'name' => $a->studentFee?->description ?: 'بند',
+                        'amount' => (float) $a->amount_allocated,
+                    ]),
+                ] : null,
             ], 201);
         } catch (\InvalidArgumentException $e) {
             return response()->json(['message' => $e->getMessage()], 422);
@@ -433,16 +451,26 @@ class StudentController extends Controller
 
             [$enrollment, $payment] = $result;
 
+            if ($payment) {
+                $payment->loadMissing(['paymentAllocations.studentFee']);
+            }
+
             return response()->json([
                 'message' => $payment
                     ? 'تم الترسيم وتسجيل المبلغ في الخزينة بنجاح'
                     : 'تم الترسيم بنجاح',
-                'enrollment' => $enrollment->load(['student', 'level', 'section']),
+                'enrollment' => $enrollment->load(['student.guardians', 'level', 'section', 'academicYear']),
                 'payment' => $payment ? [
                     'id' => $payment->id,
                     'amount' => $payment->amount,
                     'payment_date' => $payment->payment_date?->toDateString(),
                     'method' => $payment->method,
+                    'notes' => $payment->notes,
+                    'receipt_number' => 'REC-'.str_pad((string) $payment->id, 6, '0', STR_PAD_LEFT),
+                    'items' => $payment->paymentAllocations->map(fn ($a) => [
+                        'name' => $a->studentFee?->description ?: 'بند',
+                        'amount' => (float) $a->amount_allocated,
+                    ]),
                 ] : null,
             ], 201);
         } catch (\InvalidArgumentException $e) {
@@ -528,14 +556,22 @@ class StudentController extends Controller
             return response()->json(['message' => 'لم يُسجَّل أي مبلغ.'], 422);
         }
 
+        $payment->loadMissing(['paymentAllocations.studentFee']);
+
         return response()->json([
             'message' => 'تم تسجيل المبلغ في الخزينة بنجاح',
-            'enrollment' => $enrollment->load(['student', 'level', 'section']),
+            'enrollment' => $enrollment->load(['student.guardians', 'level', 'section', 'academicYear']),
             'payment' => [
                 'id' => $payment->id,
                 'amount' => $payment->amount,
                 'payment_date' => $payment->payment_date?->toDateString(),
                 'method' => $payment->method,
+                'notes' => $payment->notes,
+                'receipt_number' => 'REC-'.str_pad((string) $payment->id, 6, '0', STR_PAD_LEFT),
+                'items' => $payment->paymentAllocations->map(fn ($a) => [
+                    'name' => $a->studentFee?->description ?: 'بند',
+                    'amount' => (float) $a->amount_allocated,
+                ]),
             ],
         ], 201);
     }

@@ -1,11 +1,12 @@
 import React, { useEffect, useState } from 'react';
-import { Shirt, Monitor, Files, Receipt, CheckSquare, Square, RefreshCw, Sparkles, Tag } from 'lucide-react';
+import { Shirt, Monitor, Files, Receipt, CheckSquare, Square, RefreshCw, Tag } from 'lucide-react';
 import { getFeeTypes, type FeeType } from '../../api/feeTypes';
 
 export interface FeeItemConfig {
+  id_key: string;
   fee_type_id: number;
   name: string;
-  name_fr?: string | null;
+  name_fr: string;
   category: string;
   default_price: number;
   price: number;
@@ -14,7 +15,6 @@ export interface FeeItemConfig {
 
 interface Props {
   onTotalChange?: (total: number, items: Array<{ fee_type_id: number; amount: number; description: string }>) => void;
-  initialSelectedCategory?: string[];
 }
 
 export function EnrollmentFeeItemsSelector({ onTotalChange }: Props) {
@@ -25,80 +25,85 @@ export function EnrollmentFeeItemsSelector({ onTotalChange }: Props) {
     async function load() {
       try {
         setLoading(true);
-        const types = await getFeeTypes();
-        const activeTypes = types.filter((t) => t.is_active);
+        const types = await getFeeTypes().catch(() => []);
+        const activeTypes = Array.isArray(types) ? types.filter((t) => t.is_active) : [];
 
-        // حصر معاليم الترسيم واللوازم في البنود الـ 4 الأساسية فقط وضمان ظهورها جميعاً بدون تكرار
-        const enrollmentItems: FeeItemConfig[] = [];
-
-        // 1. معلوم الترسيم (Frais d'inscription)
-        const regType = activeTypes.find((t) => {
-          const ar = t.name_ar.trim();
-          return t.ledger_category === 'registration_fee' || ar === 'معلوم الترسيم' || ar.includes('ترسيم') || ar.includes('تسجيل');
-        });
-        const regPrice = regType ? (parseFloat(regType.price) || 70) : 70;
-        enrollmentItems.push({
-          fee_type_id: regType ? regType.id : 8,
-          name: regType ? regType.name_ar : 'معلوم الترسيم',
-          name_fr: regType?.name_fr || 'Frais d\'inscription',
-          category: 'registration_fee',
-          default_price: regPrice,
-          price: regPrice,
-          selected: true, // محدد افتراضياً
+        // مطابقة المعاليم من قاعدة البيانات بدقة تامة
+        // 1. معلوم الترسيم
+        const regFeeType = activeTypes.find((t) => {
+          const ar = (t.name_ar || '').trim();
+          return t.ledger_category === 'registration_fee' || ar === 'معلوم الترسيم' || (ar.includes('ترسيم') && !ar.includes('ميدعة'));
         });
 
-        // 2. ميدعة (Tablier / Blouse)
-        const blouseType = activeTypes.find((t) => {
-          const ar = t.name_ar.trim();
+        // 2. الميدعة
+        const blouseFeeType = activeTypes.find((t) => {
+          const ar = (t.name_ar || '').trim();
           return ar.includes('ميدعة') || ar.includes('طبلية');
         });
-        const blousePrice = blouseType ? (parseFloat(blouseType.price) || 30) : 30;
-        enrollmentItems.push({
-          fee_type_id: blouseType ? blouseType.id : 2,
-          name: blouseType ? blouseType.name_ar : 'ميدعة',
-          name_fr: blouseType?.name_fr || 'Tablier / Blouse',
-          category: 'product_sale',
-          default_price: blousePrice,
-          price: blousePrice,
-          selected: false,
-        });
 
-        // 3. منظومة الحياة المدرسية (ERP vie scolaire)
-        const vieType = activeTypes.find((t) => {
-          const n = (t.name_ar + ' ' + (t.name_fr || '')).toLowerCase();
+        // 3. منظومة الحياة المدرسية
+        const vieFeeType = activeTypes.find((t) => {
+          const n = ((t.name_ar || '') + ' ' + (t.name_fr || '')).toLowerCase();
           return n.includes('vie scolaire') || n.includes('erp') || n.includes('حياة مدرسية');
         });
-        const viePrice = vieType ? (parseFloat(vieType.price) || 20) : 20;
-        enrollmentItems.push({
-          fee_type_id: vieType ? vieType.id : 4,
-          name: vieType ? vieType.name_ar : 'ERP vie scolaire',
-          name_fr: vieType?.name_fr || 'Vie Scolaire',
-          category: 'other_income',
-          default_price: viePrice,
-          price: viePrice,
-          selected: false,
-        });
 
-        // 4. رزمة أوراق (Ram de papier)
-        const paperType = activeTypes.find((t) => {
-          const n = (t.name_ar + ' ' + (t.name_fr || '')).toLowerCase();
+        // 4. رزمة أوراق
+        const paperFeeType = activeTypes.find((t) => {
+          const n = ((t.name_ar || '') + ' ' + (t.name_fr || '')).toLowerCase();
           return n.includes('ورق') || n.includes('papier');
         });
-        const paperPrice = paperType ? (parseFloat(paperType.price) || 15) : 15;
-        enrollmentItems.push({
-          fee_type_id: paperType ? paperType.id : 10,
-          name: paperType ? paperType.name_ar : 'رزمة أوراق',
-          name_fr: paperType?.name_fr || 'Ram de papier',
-          category: 'product_sale',
-          default_price: paperPrice,
-          price: paperPrice,
-          selected: false,
-        });
 
-        setItems(enrollmentItems);
+        const regPrice = regFeeType ? (parseFloat(regFeeType.price) || 70) : 70;
+        const blousePrice = blouseFeeType ? (parseFloat(blouseFeeType.price) || 30) : 30;
+        const viePrice = vieFeeType ? (parseFloat(vieFeeType.price) || 20) : 20;
+        const paperPrice = paperFeeType ? (parseFloat(paperFeeType.price) || 15) : 15;
 
-        // إرسال المجموع الأولي
-        notifyParent(enrollmentItems);
+        // البنود الأربعة المحددة بدقة
+        const list: FeeItemConfig[] = [
+          {
+            id_key: 'reg',
+            fee_type_id: regFeeType ? regFeeType.id : 8,
+            name: 'معلوم الترسيم',
+            name_fr: 'Frais d\'inscription',
+            category: 'registration_fee',
+            default_price: regPrice,
+            price: regPrice,
+            selected: true, // محدد تلقائياً
+          },
+          {
+            id_key: 'blouse',
+            fee_type_id: blouseFeeType ? blouseFeeType.id : 2,
+            name: 'الميدعة المدرسية',
+            name_fr: 'Tablier / Blouse',
+            category: 'product_sale',
+            default_price: blousePrice,
+            price: blousePrice,
+            selected: false,
+          },
+          {
+            id_key: 'vie',
+            fee_type_id: vieFeeType ? vieFeeType.id : 4,
+            name: 'منظومة الحياة المدرسية ERP',
+            name_fr: 'Vie Scolaire',
+            category: 'other_income',
+            default_price: viePrice,
+            price: viePrice,
+            selected: false,
+          },
+          {
+            id_key: 'paper',
+            fee_type_id: paperFeeType ? paperFeeType.id : 10,
+            name: 'رزمة أوراق الطباعة',
+            name_fr: 'Ram de papier',
+            category: 'product_sale',
+            default_price: paperPrice,
+            price: paperPrice,
+            selected: false,
+          },
+        ];
+
+        setItems(list);
+        notifyParent(list);
       } catch (err) {
         console.error('Failed to load fee types for enrollment', err);
       } finally {
@@ -122,9 +127,9 @@ export function EnrollmentFeeItemsSelector({ onTotalChange }: Props) {
     }
   };
 
-  const toggleSelect = (id: number) => {
+  const toggleSelect = (key: string) => {
     const updated = items.map((item) => {
-      if (item.fee_type_id === id) {
+      if (item.id_key === key) {
         return { ...item, selected: !item.selected };
       }
       return item;
@@ -133,9 +138,9 @@ export function EnrollmentFeeItemsSelector({ onTotalChange }: Props) {
     notifyParent(updated);
   };
 
-  const updatePrice = (id: number, newPrice: number) => {
+  const updatePrice = (key: string, newPrice: number) => {
     const updated = items.map((item) => {
-      if (item.fee_type_id === id) {
+      if (item.id_key === key) {
         return { ...item, price: isNaN(newPrice) ? 0 : Math.max(0, newPrice) };
       }
       return item;
@@ -144,9 +149,9 @@ export function EnrollmentFeeItemsSelector({ onTotalChange }: Props) {
     notifyParent(updated);
   };
 
-  const resetToDefault = (id: number) => {
+  const resetToDefault = (key: string) => {
     const updated = items.map((item) => {
-      if (item.fee_type_id === id) {
+      if (item.id_key === key) {
         return { ...item, price: item.default_price };
       }
       return item;
@@ -155,18 +160,18 @@ export function EnrollmentFeeItemsSelector({ onTotalChange }: Props) {
     notifyParent(updated);
   };
 
-  const getItemIcon = (nameAr: string, nameFr?: string | null) => {
-    const str = (nameAr + ' ' + (nameFr || '')).toLowerCase();
-    if (str.includes('ميدعة') || str.includes('tablier') || str.includes('blouse')) {
-      return <Shirt className="w-5 h-5 text-indigo-600" />;
+  const getItemIcon = (key: string) => {
+    switch (key) {
+      case 'blouse':
+        return <Shirt className="w-5 h-5 text-indigo-600" />;
+      case 'vie':
+        return <Monitor className="w-5 h-5 text-emerald-600" />;
+      case 'paper':
+        return <Files className="w-5 h-5 text-amber-600" />;
+      case 'reg':
+      default:
+        return <Receipt className="w-5 h-5 text-blue-600" />;
     }
-    if (str.includes('vie scolaire') || str.includes('erp') || str.includes('منظومة')) {
-      return <Monitor className="w-5 h-5 text-emerald-600" />;
-    }
-    if (str.includes('ورق') || str.includes('papier')) {
-      return <Files className="w-5 h-5 text-amber-600" />;
-    }
-    return <Receipt className="w-5 h-5 text-blue-600" />;
   };
 
   if (loading) {
@@ -198,13 +203,13 @@ export function EnrollmentFeeItemsSelector({ onTotalChange }: Props) {
         </span>
       </div>
 
-      {/* بطاقات المعاليم */}
+      {/* بطاقات المعاليم الـ 4 الأساسية */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
         {items.map((item, idx) => {
           const isSelected = item.selected;
           return (
             <div
-              key={item.fee_type_id}
+              key={item.id_key}
               className={`relative rounded-2xl p-3.5 border transition-all duration-200 ${
                 isSelected
                   ? 'bg-white border-emerald-600/40 shadow-sm ring-1 ring-emerald-600/20'
@@ -224,7 +229,7 @@ export function EnrollmentFeeItemsSelector({ onTotalChange }: Props) {
                 {/* زر الاختيار */}
                 <button
                   type="button"
-                  onClick={() => toggleSelect(item.fee_type_id)}
+                  onClick={() => toggleSelect(item.id_key)}
                   className="mt-0.5 text-slate-600 hover:text-emerald-700 transition"
                   title={isSelected ? 'إلغاء التحديد' : 'تحديد هذا المعلوم'}
                 >
@@ -237,7 +242,7 @@ export function EnrollmentFeeItemsSelector({ onTotalChange }: Props) {
 
                 {/* أيقونة المعلوم */}
                 <div className="w-9 h-9 rounded-xl bg-slate-100/80 flex items-center justify-center shrink-0">
-                  {getItemIcon(item.name, item.name_fr)}
+                  {getItemIcon(item.id_key)}
                 </div>
 
                 {/* تفاصيل المعلوم والسعر القابل للتعديل */}
@@ -264,13 +269,13 @@ export function EnrollmentFeeItemsSelector({ onTotalChange }: Props) {
                       min="0"
                       disabled={!isSelected}
                       value={item.price}
-                      onChange={(e) => updatePrice(item.fee_type_id, parseFloat(e.target.value))}
+                      onChange={(e) => updatePrice(item.id_key, parseFloat(e.target.value))}
                       className="w-24 px-2 py-1 text-xs font-bold text-slate-800 bg-white border border-slate-300 rounded-lg text-right focus:border-emerald-600 focus:ring-1 focus:ring-emerald-600 outline-none disabled:bg-slate-100 disabled:text-slate-400"
                     />
                     {item.price !== item.default_price && (
                       <button
                         type="button"
-                        onClick={() => resetToDefault(item.fee_type_id)}
+                        onClick={() => resetToDefault(item.id_key)}
                         className="text-[10px] text-amber-700 bg-amber-50 hover:bg-amber-100 px-1.5 py-0.5 rounded border border-amber-200 transition"
                         title={`إعادة للسعر الافتراضي (${item.default_price} د.ت)`}
                       >

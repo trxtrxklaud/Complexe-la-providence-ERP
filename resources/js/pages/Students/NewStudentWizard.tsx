@@ -6,6 +6,7 @@ import { EMPTY_FORM, type WizardFormData } from './NewStudent/types';
 import { StudentStep } from './NewStudent/StudentStep';
 import { GuardianStep } from './NewStudent/GuardianStep';
 import { PaymentStep } from './NewStudent/PaymentStep';
+import { ReceiptModal, type ReceiptData } from '../Payments/ReceiptModal';
 
 const STEPS = [
   { num: 1, title: 'بيانات التلميذ', icon: User },
@@ -19,6 +20,7 @@ export function NewStudentWizard() {
 
   const [step, setStep] = useState(1);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [createdReceipt, setCreatedReceipt] = useState<ReceiptData | null>(null);
   const [error, setError] = useState('');
   const [validationError, setValidationError] = useState('');
   const [showStepErrors, setShowStepErrors] = useState(false);
@@ -127,8 +129,38 @@ export function NewStudentWizard() {
         payload.delete('photo');
       }
 
-      await enrollStudent(payload);
-      navigate('/students', { replace: true });
+      const res = await enrollStudent(payload);
+
+      if (res?.payment) {
+        const studentName = `${formData.first_name} ${formData.last_name}`.trim();
+        const guardianName = `${formData.guardian_first_name} ${formData.guardian_last_name}`.trim();
+        const sectionName = res.enrollment?.section?.name || '';
+        const levelName = res.enrollment?.level?.name || '';
+
+        setCreatedReceipt({
+          payment_id: res.payment.id,
+          receipt_number: (res.payment as any).receipt_number || `REC-${String(res.payment.id).padStart(6, '0')}`,
+          payment_date: res.payment.payment_date || formData.payment_date,
+          method: res.payment.method || formData.payment_method,
+          notes: (res.payment as any).notes || formData.payment_notes,
+          student_name: studentName,
+          guardian_name: guardianName,
+          guardian_phone: formData.guardian_phone,
+          section_name: `${levelName} ${sectionName}`.trim(),
+          academic_year: res.enrollment?.academic_year?.name || '2026-2027',
+          amount: res.payment.amount || formData.registration_amount,
+          total: res.payment.amount || formData.registration_amount,
+          items: (res.payment as any).items && (res.payment as any).items.length > 0
+            ? (res.payment as any).items.map((i: any) => ({
+                name: i.name || i.description,
+                description: i.name || i.description,
+                amount: i.amount,
+              }))
+            : [{ description: 'معلوم الترسيم', amount: formData.registration_amount }],
+        });
+      } else {
+        navigate('/students', { replace: true });
+      }
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'حدث خطأ غير متوقع');
     } finally {
@@ -326,6 +358,13 @@ export function NewStudentWizard() {
           </div>
         </form>
       </div>
+
+      {createdReceipt && (
+        <ReceiptModal
+          receipt={createdReceipt}
+          onClose={() => navigate('/students', { replace: true })}
+        />
+      )}
     </div>
   );
 }
