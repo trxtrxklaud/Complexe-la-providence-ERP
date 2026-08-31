@@ -409,28 +409,33 @@ class ClubService
             foreach ($clubs as $club) {
                 $enrollmentsQuery = Enrollment::where('academic_year_id', $academicYearId)
                     ->where('status', 'active')
-                    ->where(function ($secQ) use ($club) {
-                        $secQ->whereNotExists(function ($sq) use ($club) {
-                            $sq->select(DB::raw(1))
-                                ->from('club_sections')
-                                ->where('club_id', $club->id);
-                        })->orWhereExists(function ($sq) use ($club) {
+                    ->where(function ($eligQ) use ($club) {
+                        $eligQ->whereExists(function ($sq) use ($club) {
                             $sq->select(DB::raw(1))
                                 ->from('club_sections')
                                 ->where('club_id', $club->id)
                                 ->whereColumn('club_sections.section_id', 'enrollments.section_id');
-                        });
-                    })
-                    ->where(function ($levQ) use ($club) {
-                        $levQ->whereNotExists(function ($lq) use ($club) {
-                            $lq->select(DB::raw(1))
-                                ->from('club_levels')
-                                ->where('club_id', $club->id);
-                        })->orWhereExists(function ($lq) use ($club) {
-                            $lq->select(DB::raw(1))
-                                ->from('club_levels')
-                                ->where('club_id', $club->id)
-                                ->whereColumn('club_levels.level_id', 'enrollments.level_id');
+                        })->orWhere(function ($orLev) use ($club) {
+                            $orLev->whereNotExists(function ($sq) use ($club) {
+                                $sq->select(DB::raw(1))
+                                    ->from('club_sections')
+                                    ->where('club_id', $club->id);
+                            })->whereExists(function ($lq) use ($club) {
+                                $lq->select(DB::raw(1))
+                                    ->from('club_levels')
+                                    ->where('club_id', $club->id)
+                                    ->whereColumn('club_levels.level_id', 'enrollments.level_id');
+                            });
+                        })->orWhere(function ($orAll) use ($club) {
+                            $orAll->whereNotExists(function ($sq) use ($club) {
+                                $sq->select(DB::raw(1))
+                                    ->from('club_sections')
+                                    ->where('club_id', $club->id);
+                            })->whereNotExists(function ($lq) use ($club) {
+                                $lq->select(DB::raw(1))
+                                    ->from('club_levels')
+                                    ->where('club_id', $club->id);
+                            });
                         });
                     });
 
@@ -929,37 +934,7 @@ class ClubService
             ->where('academic_year_id', $academicYearId)
             ->whereIn('month', $months)
             ->whereHas('club', fn ($cq) => $cq->where('is_active', true))
-            ->whereExists(function ($sub) use ($academicYearId) {
-                $sub->select(DB::raw(1))
-                    ->from('enrollments')
-                    ->whereColumn('enrollments.id', 'club_monthly_fees.enrollment_id')
-                    ->whereColumn('enrollments.student_id', 'club_monthly_fees.student_id')
-                    ->where('enrollments.academic_year_id', $academicYearId)
-                    ->where(function ($secQ) {
-                        $secQ->whereNotExists(function ($sq) {
-                            $sq->select(DB::raw(1))
-                                ->from('club_sections')
-                                ->whereColumn('club_sections.club_id', 'club_monthly_fees.club_id');
-                        })->orWhereExists(function ($sq) {
-                            $sq->select(DB::raw(1))
-                                ->from('club_sections')
-                                ->whereColumn('club_sections.club_id', 'club_monthly_fees.club_id')
-                                ->whereColumn('club_sections.section_id', 'enrollments.section_id');
-                        });
-                    })
-                    ->where(function ($levSub) {
-                        $levSub->whereNotExists(function ($lq) {
-                            $lq->select(DB::raw(1))
-                                ->from('club_levels')
-                                ->whereColumn('club_levels.club_id', 'club_monthly_fees.club_id');
-                        })->orWhereExists(function ($lq) {
-                            $lq->select(DB::raw(1))
-                                ->from('club_levels')
-                                ->whereColumn('club_levels.club_id', 'club_monthly_fees.club_id')
-                                ->whereColumn('club_levels.level_id', 'enrollments.level_id');
-                        });
-                    });
-            });
+            ->whereHas('enrollment', fn ($eq) => $eq->where('academic_year_id', $academicYearId));
 
         if ($clubId) {
             $query->where('club_id', $clubId);

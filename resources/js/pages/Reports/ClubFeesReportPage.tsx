@@ -32,7 +32,7 @@ export default function ClubFeesReportPage() {
 
   // Selected filters
   const [selectedYearId, setSelectedYearId] = useState<number | ''>('');
-  const [selectedMonth, setSelectedMonth] = useState<string>(new Date().toISOString().slice(0, 7));
+  const [selectedMonth, setSelectedMonth] = useState<string>('2026-09');
   const [fromMonth, setFromMonth] = useState<string>('');
   const [toMonth, setToMonth] = useState<string>('');
   const [selectedClubId, setSelectedClubId] = useState<number | ''>('');
@@ -52,6 +52,40 @@ export default function ClubFeesReportPage() {
   useEffect(() => {
     loadOptions();
   }, []);
+
+  const academicMonths = useMemo(() => {
+    const activeYear = years.find((y) => y.id === Number(selectedYearId));
+    if (!activeYear || !activeYear.name) {
+      return [
+        { value: '2026-09', label: 'سبتمبر 2026' },
+        { value: '2026-10', label: 'أكتوبر 2026' },
+        { value: '2026-11', label: 'نوفمبر 2026' },
+        { value: '2026-12', label: 'ديسمبر 2026' },
+        { value: '2027-01', label: 'جانفي 2027' },
+        { value: '2027-02', label: 'فيفري 2027' },
+        { value: '2027-03', label: 'مارس 2027' },
+        { value: '2027-04', label: 'أفريل 2027' },
+        { value: '2027-05', label: 'ماي 2027' },
+        { value: '2027-06', label: 'جوان 2027' },
+      ];
+    }
+    const [startYearStr, endYearStr] = activeYear.name.split('-').map((s) => s.trim());
+    const startYear = parseInt(startYearStr, 10) || 2026;
+    const endYear = parseInt(endYearStr, 10) || startYear + 1;
+
+    return [
+      { value: `${startYear}-09`, label: `سبتمبر ${startYear}` },
+      { value: `${startYear}-10`, label: `أكتوبر ${startYear}` },
+      { value: `${startYear}-11`, label: `نوفمبر ${startYear}` },
+      { value: `${startYear}-12`, label: `ديسمبر ${startYear}` },
+      { value: `${endYear}-01`, label: `جانفي ${endYear}` },
+      { value: `${endYear}-02`, label: `فيفري ${endYear}` },
+      { value: `${endYear}-03`, label: `مارس ${endYear}` },
+      { value: `${endYear}-04`, label: `أفريل ${endYear}` },
+      { value: `${endYear}-05`, label: `ماي ${endYear}` },
+      { value: `${endYear}-06`, label: `جوان ${endYear}` },
+    ];
+  }, [years, selectedYearId]);
 
   useEffect(() => {
     loadReport();
@@ -84,6 +118,13 @@ export default function ClubFeesReportPage() {
       const activeYear = yList.find((y) => y.is_active) || yList[0];
       if (activeYear) {
         setSelectedYearId(activeYear.id);
+        const startMonth = activeYear.start_date ? activeYear.start_date.slice(0, 7) : '2026-09';
+        const currentMonth = new Date().toISOString().slice(0, 7);
+        if (currentMonth < startMonth) {
+          setSelectedMonth(startMonth);
+        } else {
+          setSelectedMonth(currentMonth);
+        }
       }
     } catch (err: any) {
       setError(err.message || 'تعذر تحميل خيارات التصفية');
@@ -303,12 +344,18 @@ export default function ClubFeesReportPage() {
 
           <div>
             <label className="block text-xs font-semibold text-gray-600 mb-1">الشهر</label>
-            <input
-              type="month"
+            <select
               value={selectedMonth}
               onChange={(e) => setSelectedMonth(e.target.value)}
-              className="w-full border-gray-300 rounded-lg p-2 bg-gray-50 text-sm"
-            />
+              className="w-full border-gray-300 rounded-lg p-2 bg-gray-50 text-sm font-medium"
+            >
+              <option value="">كل أشهر السنة</option>
+              {academicMonths.map((m) => (
+                <option key={m.value} value={m.value}>
+                  {m.label}
+                </option>
+              ))}
+            </select>
           </div>
 
           <div>
