@@ -142,168 +142,172 @@ class CleanSessionTestDataCommand extends Command
             'mustapha_debts_cleared' => 0,
         ];
 
-        DB::transaction(function () use ($sinceDateTime, $sinceDate, $mustapha, &$deletedCounts) {
-            // أ. إعادة ضبط ديون التلاميذ القديمة التي تم استخلاصها في التجارب الحديثة
-            $allocsOnManualDebts = PaymentAllocation::query()
-                ->whereHas('payment', function ($q) use ($sinceDateTime, $sinceDate) {
-                    $q->where('created_at', '>=', $sinceDateTime)
-                      ->orWhere('payment_date', '>=', $sinceDate);
-                })
-                ->get();
+        $driver = DB::getDriverName();
+        $this->disableForeignKeys($driver);
 
-            foreach ($allocsOnManualDebts as $alloc) {
-                $sFee = $alloc->studentFee;
-                if ($sFee) {
-                    $mDebt = ManualStudentDebt::where('source_student_fee_id', $sFee->id)->first();
-                    if ($mDebt) {
-                        $mDebt->update([
-                            'status' => ManualStudentDebt::STATUS_PENDING,
+        try {
+            DB::transaction(function () use ($sinceDateTime, $sinceDate, $mustapha, &$deletedCounts) {
+                // أ. إعادة ضبط ديون التلاميذ القديمة التي تم استخلاصها في التجارب الحديثة
+                $allocsOnManualDebts = PaymentAllocation::query()
+                    ->whereHas('payment', function ($q) use ($sinceDateTime, $sinceDate) {
+                        $q->where('created_at', '>=', $sinceDateTime)
+                          ->orWhere('payment_date', '>=', $sinceDate);
+                    })
+                    ->get();
+
+                foreach ($allocsOnManualDebts as $alloc) {
+                    $sFee = $alloc->studentFee;
+                    if ($sFee) {
+                        $mDebt = ManualStudentDebt::where('source_student_fee_id', $sFee->id)->first();
+                        if ($mDebt) {
+                            $mDebt->update([
+                                'status' => ManualStudentDebt::STATUS_PENDING,
+                            ]);
+                            $deletedCounts['restored_manual_debts']++;
+                        }
+                        $sFee->update([
+                            'direct_paid_amount' => 0.00,
+                            'status' => 'pending',
                         ]);
-                        $deletedCounts['restored_manual_debts']++;
                     }
-                    $sFee->update([
-                        'direct_paid_amount' => 0.00,
-                        'status' => 'pending',
-                    ]);
                 }
-            }
 
-            // ب. حذف مقبوضات التجارب وحركاتها المالية في الخزينة
-            $testPayments = Payment::query()
-                ->where('created_at', '>=', $sinceDateTime)
-                ->orWhere('payment_date', '>=', $sinceDate)
-                ->get();
+                // ب. حذف مقبوضات التجارب وحركاتها المالية في الخزينة
+                $testPayments = Payment::query()
+                    ->where('created_at', '>=', $sinceDateTime)
+                    ->orWhere('payment_date', '>=', $sinceDate)
+                    ->get();
 
-            foreach ($testPayments as $payment) {
-                // حذف حركات الخزينة المرتبطة بالدفعة
-                $cashDeleted = CashTransaction::where('source_type', $payment->getMorphClass())
-                    ->where('source_id', $payment->id)
-                    ->delete();
-                $deletedCounts['test_cash_transactions'] += $cashDeleted;
+                foreach ($testPayments as $payment) {
+                    // حذف حركات الخزينة المرتبطة بالدفعة
+                    $cashDeleted = CashTransaction::where('source_type', $payment->getMorphClass())
+                        ->where('source_id', $payment->id)
+                        ->delete();
+                    $deletedCounts['test_cash_transactions'] += $cashDeleted;
 
-                // حذف توزيعات الدفعة
-                $allocDeleted = PaymentAllocation::where('payment_id', $payment->id)->delete();
-                $deletedCounts['test_allocations'] += $allocDeleted;
+                    // حذف توزيعات الدفعة
+                    $allocDeleted = PaymentAllocation::where('payment_id', $payment->id)->delete();
+                    $deletedCounts['test_allocations'] += $allocDeleted;
 
-                $payment->delete();
-                $deletedCounts['test_payments']++;
-            }
+                    $payment->delete();
+                    $deletedCounts['test_payments']++;
+                }
 
-            // ج. حذف التلاميذ التجريبيين الجدد مع كافة متعلقاتهم
-            $testStudents = Student::query()
-                ->where('created_at', '>=', $sinceDateTime)
-                ->get();
-
-            foreach ($testStudents as $student) {
-                $enrollmentIds = Enrollment::where('student_id', $student->id)->pluck('id')->all();
-                $studentFeeIds = ! empty($enrollmentIds)
-                    ? StudentFee::whereIn('enrollment_id', $enrollmentIds)->pluck('id')->all()
+                // ج. حذف التلاميذ التجريبيين الجدد مع كافة متعلقاتهم
+                $testStudentIds = Student::where('created_at', '>=', $sinceDateTime)->pluck('id')->all();
+                $testEnrollmentIds = Enrollment::whereIn('student_id', $testStudentIds)->pluck('id')->all();
+                $testStudentFeeIds = ! empty($testEnrollmentIds)
+                    ? StudentFee::whereIn('enrollment_id', $testEnrollmentIds)->pluck('id')->all()
                     : [];
-                $subIds = ClubSubscription::where('student_id', $student->id)->pluck('id')->all();
+                $testSubIds = ClubSubscription::whereIn('student_id', $testStudentIds)->pluck('id')->all();
 
                 // 1. نوادي
-                if (! empty($subIds)) {
-                    ClubMonthlyDiscount::whereIn('club_subscription_id', $subIds)->delete();
+                if (! empty($testSubIds)) {
+                    ClubMonthlyDiscount::whereIn('club_subscription_id', $testSubIds)->delete();
                 }
-                ClubMonthlyFee::where('student_id', $student->id)->delete();
-                ClubSubscription::where('student_id', $student->id)->delete();
+                ClubMonthlyFee::whereIn('student_id', $testStudentIds)->delete();
+                ClubSubscription::whereIn('student_id', $testStudentIds)->delete();
 
                 // 2. تخفيضات وإعفاءات ومعاليم
-                if (! empty($enrollmentIds)) {
-                    MonthlyDiscount::whereIn('enrollment_id', $enrollmentIds)->delete();
-                    EnrollmentDiscount::whereIn('enrollment_id', $enrollmentIds)->delete();
+                if (! empty($testEnrollmentIds)) {
+                    MonthlyDiscount::whereIn('enrollment_id', $testEnrollmentIds)->delete();
+                    EnrollmentDiscount::whereIn('enrollment_id', $testEnrollmentIds)->delete();
                 }
-                if (! empty($studentFeeIds)) {
-                    FeeWaiver::whereIn('student_fee_id', $studentFeeIds)->delete();
-                    PaymentAllocation::whereIn('student_fee_id', $studentFeeIds)->delete();
-                    StudentFee::whereIn('id', $studentFeeIds)->delete();
+                if (! empty($testStudentFeeIds)) {
+                    FeeWaiver::whereIn('student_fee_id', $testStudentFeeIds)->delete();
+                    PaymentAllocation::whereIn('student_fee_id', $testStudentFeeIds)->delete();
+                    StudentFee::whereIn('id', $testStudentFeeIds)->delete();
                 }
 
                 // 3. التسجيلات
-                if (! empty($enrollmentIds)) {
-                    Enrollment::whereIn('id', $enrollmentIds)->delete();
-                    $deletedCounts['test_enrollments'] += count($enrollmentIds);
+                if (! empty($testEnrollmentIds)) {
+                    Enrollment::whereIn('id', $testEnrollmentIds)->delete();
+                    $deletedCounts['test_enrollments'] = count($testEnrollmentIds);
                 }
 
-                // 4. فك ارتباط الأولياء
-                $guardianIds = $student->guardians()->pluck('guardians.id')->all();
-                $student->guardians()->detach();
-                foreach ($guardianIds as $gId) {
-                    $g = Guardian::find($gId);
-                    if ($g && $g->students()->count() === 0 && $g->created_at >= $sinceDateTime) {
-                        $g->delete();
-                    }
-                }
-
-                $student->delete();
-                $deletedCounts['test_students']++;
-            }
-
-            // د. تصفير معاليم النوادي غير التجريبية التي تم استخلاصها في التجارب الحديثة
-            ClubMonthlyFee::query()
-                ->where('created_at', '>=', $sinceDateTime)
-                ->where('status', '!=', ClubMonthlyFee::STATUS_UNPAID)
-                ->update([
-                    'amount_paid' => 0.00,
-                    'status' => ClubMonthlyFee::STATUS_UNPAID,
-                ]);
-
-            // هـ. تنظيف ديون وتسبيقات الإطار مصطفى العبدولي
-            if ($mustapha) {
-                // 1. تسبيقات واسترجاعاتها
-                $advIds = EmployeeAdvance::where('employee_id', $mustapha->id)->pluck('id')->all();
-                if (! empty($advIds)) {
-                    CashTransaction::where('source_type', (new EmployeeAdvance)->getMorphClass())
-                        ->whereIn('source_id', $advIds)
-                        ->delete();
-                    EmployeeAdvanceRepayment::whereIn('employee_advance_id', $advIds)->delete();
-                    EmployeeAdvance::whereIn('id', $advIds)->delete();
-                    $deletedCounts['mustapha_debts_cleared'] += count($advIds);
-                }
-
-                // 2. استرجاعات مباشرة
-                $repIds = EmployeeAdvanceRepayment::where('employee_id', $mustapha->id)->pluck('id')->all();
-                if (! empty($repIds)) {
-                    CashTransaction::where('source_type', (new EmployeeAdvanceRepayment)->getMorphClass())
-                        ->whereIn('source_id', $repIds)
-                        ->delete();
-                    EmployeeAdvanceRepayment::whereIn('id', $repIds)->delete();
-                }
-
-                // 3. التزامات
-                EmployeeLiability::where('employee_id', $mustapha->id)->delete();
-
-                // 4. ديون افتتاحية للموظف
-                if (Schema::hasTable('employee_opening_debts')) {
-                    $eOpIds = DB::table('employee_opening_debts')->where('employee_id', $mustapha->id)->pluck('id')->all();
-                    if (! empty($eOpIds)) {
-                        if (Schema::hasTable('employee_opening_debt_collections')) {
-                            $colIds = DB::table('employee_opening_debt_collections')->whereIn('employee_opening_debt_id', $eOpIds)->pluck('id')->all();
-                            if (! empty($colIds)) {
-                                CashTransaction::where(function ($q) {
-                                    $q->where('source_type', 'App\Models\OldEmployeeDebtCollection')
-                                        ->orWhere('source_type', 'old_employee_debt_collection');
-                                })->whereIn('source_id', $colIds)->delete();
-                                DB::table('employee_opening_debt_collections')->whereIn('id', $colIds)->delete();
-                            }
+                // 4. أولياء التلاميذ التجريبيين
+                if (! empty($testStudentIds)) {
+                    $guardianIds = DB::table('guardian_student')->whereIn('student_id', $testStudentIds)->pluck('guardian_id')->all();
+                    DB::table('guardian_student')->whereIn('student_id', $testStudentIds)->delete();
+                    foreach ($guardianIds as $gId) {
+                        $hasOther = DB::table('guardian_student')->where('guardian_id', $gId)->exists();
+                        if (! $hasOther) {
+                            Guardian::where('id', $gId)->where('created_at', '>=', $sinceDateTime)->delete();
                         }
-                        DB::table('employee_opening_debts')->whereIn('id', $eOpIds)->delete();
-                        $deletedCounts['mustapha_debts_cleared'] += count($eOpIds);
+                    }
+
+                    Student::whereIn('id', $testStudentIds)->delete();
+                    $deletedCounts['test_students'] = count($testStudentIds);
+                }
+
+                // د. تصفير معاليم النوادي غير التجريبية التي تم استخلاصها في التجارب الحديثة
+                ClubMonthlyFee::query()
+                    ->where('created_at', '>=', $sinceDateTime)
+                    ->where('status', '!=', ClubMonthlyFee::STATUS_UNPAID)
+                    ->update([
+                        'amount_paid' => 0.00,
+                        'status' => ClubMonthlyFee::STATUS_UNPAID,
+                    ]);
+
+                // هـ. تنظيف ديون وتسبيقات الإطار مصطفى العبدولي
+                if ($mustapha) {
+                    // 1. تسبيقات واسترجاعاتها
+                    $advIds = EmployeeAdvance::where('employee_id', $mustapha->id)->pluck('id')->all();
+                    if (! empty($advIds)) {
+                        CashTransaction::where('source_type', (new EmployeeAdvance)->getMorphClass())
+                            ->whereIn('source_id', $advIds)
+                            ->delete();
+                        EmployeeAdvanceRepayment::whereIn('employee_advance_id', $advIds)->delete();
+                        EmployeeAdvance::whereIn('id', $advIds)->delete();
+                        $deletedCounts['mustapha_debts_cleared'] += count($advIds);
+                    }
+
+                    // 2. استرجاعات مباشرة
+                    $repIds = EmployeeAdvanceRepayment::where('employee_id', $mustapha->id)->pluck('id')->all();
+                    if (! empty($repIds)) {
+                        CashTransaction::where('source_type', (new EmployeeAdvanceRepayment)->getMorphClass())
+                            ->whereIn('source_id', $repIds)
+                            ->delete();
+                        EmployeeAdvanceRepayment::whereIn('id', $repIds)->delete();
+                    }
+
+                    // 3. التزامات
+                    EmployeeLiability::where('employee_id', $mustapha->id)->delete();
+
+                    // 4. ديون افتتاحية للموظف
+                    if (Schema::hasTable('employee_opening_debts')) {
+                        $eOpIds = DB::table('employee_opening_debts')->where('employee_id', $mustapha->id)->pluck('id')->all();
+                        if (! empty($eOpIds)) {
+                            if (Schema::hasTable('employee_opening_debt_collections')) {
+                                $colIds = DB::table('employee_opening_debt_collections')->whereIn('employee_opening_debt_id', $eOpIds)->pluck('id')->all();
+                                if (! empty($colIds)) {
+                                    CashTransaction::where(function ($q) {
+                                        $q->where('source_type', 'App\Models\OldEmployeeDebtCollection')
+                                            ->orWhere('source_type', 'old_employee_debt_collection');
+                                    })->whereIn('source_id', $colIds)->delete();
+                                    DB::table('employee_opening_debt_collections')->whereIn('id', $colIds)->delete();
+                                }
+                            }
+                            DB::table('employee_opening_debts')->whereIn('id', $eOpIds)->delete();
+                            $deletedCounts['mustapha_debts_cleared'] += count($eOpIds);
+                        }
+                    }
+
+                    if (Schema::hasTable('old_employee_debts')) {
+                        DB::table('old_employee_debts')->where('employee_id', $mustapha->id)->delete();
                     }
                 }
 
-                if (Schema::hasTable('old_employee_debts')) {
-                    DB::table('old_employee_debts')->where('employee_id', $mustapha->id)->delete();
-                }
-            }
-
-            // و. تنظيف أي حركات خزينة يتيمة لا أصل لها
-            CashTransaction::query()
-                ->where('created_at', '>=', $sinceDateTime)
-                ->where('source_type', (new Payment)->getMorphClass())
-                ->whereNotIn('source_id', Payment::pluck('id'))
-                ->delete();
-        });
+                // و. تنظيف أي حركات خزينة يتيمة لا أصل لها
+                CashTransaction::query()
+                    ->where('created_at', '>=', $sinceDateTime)
+                    ->where('source_type', (new Payment)->getMorphClass())
+                    ->whereNotIn('source_id', Payment::pluck('id'))
+                    ->delete();
+            });
+        } finally {
+            $this->enableForeignKeys($driver);
+        }
 
         $this->newLine();
         $this->info('═══════════════════════════════════════════════════════════════');
@@ -318,5 +322,29 @@ class CleanSessionTestDataCommand extends Command
         $this->info(" • ديون التلاميذ القديمة (Manual Student Debts): " . ManualStudentDebt::count() . " دين سليم ومحفوظ.");
 
         return self::SUCCESS;
+    }
+
+    /**
+     * تعطيل فحص المفاتيح الأجنبية حسب نوع قاعدة البيانات.
+     */
+    protected function disableForeignKeys(string $driver): void
+    {
+        if ($driver === 'sqlite') {
+            DB::statement('PRAGMA foreign_keys = OFF;');
+        } elseif ($driver === 'mysql') {
+            DB::statement('SET FOREIGN_KEY_CHECKS=0;');
+        }
+    }
+
+    /**
+     * إعادة تفعيل فحص المفاتيح الأجنبية حسب نوع قاعدة البيانات.
+     */
+    protected function enableForeignKeys(string $driver): void
+    {
+        if ($driver === 'sqlite') {
+            DB::statement('PRAGMA foreign_keys = ON;');
+        } elseif ($driver === 'mysql') {
+            DB::statement('SET FOREIGN_KEY_CHECKS=1;');
+        }
     }
 }
