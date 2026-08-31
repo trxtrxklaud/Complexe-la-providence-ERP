@@ -77,9 +77,34 @@ class RegistrationPaymentService
                     continue;
                 }
 
-                $feeTypeId = !empty($item['fee_type_id']) ? (int) $item['fee_type_id'] : null;
-                $feeType = $feeTypeId ? FeeType::find($feeTypeId) : null;
-                $desc = $item['description'] ?? ($feeType?->name_ar ?: 'معلوم ترسيم/لوازم');
+                $rawId = !empty($item['fee_type_id']) ? (int) $item['fee_type_id'] : null;
+                $feeType = $rawId ? FeeType::find($rawId) : null;
+                $desc = trim($item['description'] ?? '');
+
+                if (!$feeType && !empty($desc)) {
+                    $feeType = FeeType::where('name_ar', $desc)
+                        ->orWhere('name_ar', 'LIKE', "%{$desc}%")
+                        ->first();
+                }
+
+                if (!$feeType && !empty($desc)) {
+                    $cat = CashTransaction::CATEGORY_PRODUCT_SALE;
+                    if (str_contains($desc, 'ترسيم') || str_contains($desc, 'تسجيل')) {
+                        $cat = CashTransaction::CATEGORY_REGISTRATION_FEE;
+                    } elseif (str_contains($desc, 'منظومة') || str_contains($desc, 'ERP') || str_contains($desc, 'vie')) {
+                        $cat = CashTransaction::CATEGORY_OTHER_INCOME;
+                    }
+
+                    $feeType = FeeType::create([
+                        'name_ar' => $desc,
+                        'price' => $itemAmount,
+                        'ledger_category' => $cat,
+                        'is_active' => true,
+                    ]);
+                }
+
+                $feeTypeId = $feeType?->id ?: $rawId;
+                $feeDesc = $desc ?: ($feeType?->name_ar ?: 'معلوم ترسيم/لوازم');
 
                 $fee = StudentFee::firstOrCreate(
                     [
@@ -87,7 +112,7 @@ class RegistrationPaymentService
                         'fee_type_id'   => $feeTypeId,
                     ],
                     [
-                        'description' => $desc,
+                        'description' => $feeDesc,
                         'amount_due'  => $itemAmount,
                         'due_date'    => $enrollment->enrollment_date ?? now()->toDateString(),
                         'status'      => 'pending',

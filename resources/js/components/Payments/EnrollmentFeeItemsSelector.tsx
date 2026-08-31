@@ -62,7 +62,7 @@ export function EnrollmentFeeItemsSelector({ onTotalChange }: Props) {
         const list: FeeItemConfig[] = [
           {
             id_key: 'reg',
-            fee_type_id: regFeeType ? regFeeType.id : 8,
+            fee_type_id: regFeeType ? regFeeType.id : 0,
             name: 'معلوم الترسيم',
             name_fr: 'Frais d\'inscription',
             category: 'registration_fee',
@@ -72,7 +72,7 @@ export function EnrollmentFeeItemsSelector({ onTotalChange }: Props) {
           },
           {
             id_key: 'blouse',
-            fee_type_id: blouseFeeType ? blouseFeeType.id : 2,
+            fee_type_id: blouseFeeType ? blouseFeeType.id : 0,
             name: 'الميدعة المدرسية',
             name_fr: 'Tablier / Blouse',
             category: 'product_sale',
@@ -82,7 +82,7 @@ export function EnrollmentFeeItemsSelector({ onTotalChange }: Props) {
           },
           {
             id_key: 'vie',
-            fee_type_id: vieFeeType ? vieFeeType.id : 4,
+            fee_type_id: vieFeeType ? vieFeeType.id : 0,
             name: 'منظومة الحياة المدرسية ERP',
             name_fr: 'Vie Scolaire',
             category: 'other_income',
@@ -92,7 +92,7 @@ export function EnrollmentFeeItemsSelector({ onTotalChange }: Props) {
           },
           {
             id_key: 'paper',
-            fee_type_id: paperFeeType ? paperFeeType.id : 10,
+            fee_type_id: paperFeeType ? paperFeeType.id : 0,
             name: 'رزمة أوراق الطباعة',
             name_fr: 'Ram de papier',
             category: 'product_sale',
@@ -219,9 +219,10 @@ export function EnrollmentFeeItemsSelector({ onTotalChange }: Props) {
               {/* مدخلات مخفية للـ FormData لترسل تلقائياً عند حفظ النموذج */}
               {isSelected && (
                 <>
-                  <input type="hidden" name={`fee_items[${idx}][fee_type_id]`} value={item.fee_type_id} />
+                  <input type="hidden" name={`fee_items[${idx}][fee_type_id]`} value={item.fee_type_id > 0 ? item.fee_type_id : ''} />
                   <input type="hidden" name={`fee_items[${idx}][amount]`} value={item.price} />
                   <input type="hidden" name={`fee_items[${idx}][description]`} value={item.name} />
+                  <input type="hidden" name={`fee_items[${idx}][category]`} value={item.category} />
                 </>
               )}
 

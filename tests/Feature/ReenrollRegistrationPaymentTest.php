@@ -261,6 +261,31 @@ class ReenrollRegistrationPaymentTest extends TestCase
         $this->assertEqualsWithDelta(135, (float) CashTransaction::sum('amount'), 0.001);
     }
 
+    public function test_custom_price_adjustments_and_unseeded_fee_types_are_accepted_without_validation_errors(): void
+    {
+        Sanctum::actingAs($this->makeRegistrar());
+
+        $old = $this->makeEnrollment();
+        $this->startNewYear();
+
+        // تجربة إرسال مبالغ معدلة من المستخدم وبنود دون معرف مسبق
+        $payload = [
+            'section_id' => $old->section_id,
+            'registration_amount' => 160, // 70 + 50 + 40
+            'payment_method' => 'cash',
+            'payment_date' => '2026-08-31',
+            'fee_items' => [
+                ['fee_type_id' => null, 'amount' => 70, 'description' => 'معلوم الترسيم', 'category' => 'registration_fee'],
+                ['fee_type_id' => 99999, 'amount' => 50, 'description' => 'الميدعة المدرسية', 'category' => 'product_sale'], // معرف غير موجود
+                ['fee_type_id' => null, 'amount' => 40, 'description' => 'رزمة أوراق الطباعة', 'category' => 'product_sale'], // سعر مخصص 40 د.ت
+            ],
+        ];
+
+        $response = $this->postJson('/api/students/' . $old->student_id . '/reenroll', $payload);
+        $response->assertCreated();
+        $this->assertEqualsWithDelta(160, (float) CashTransaction::sum('amount'), 0.001);
+    }
+
     /** سنة دراسية جديدة نشطة: بدونها يعتبر الخادم التلميذ مُرسّماً فيرفض التجديد. */
     private function startNewYear(): AcademicYear
     {
