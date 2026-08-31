@@ -71,12 +71,9 @@ class CleanSessionTestDataTest extends TestCase
         ]);
 
         $oldDebtFee = StudentFee::create([
-            'student_id' => $oldStudent->id,
             'enrollment_id' => $oldEnrollment->id,
-            'academic_year_id' => $year->id,
-            'manual_student_debt_id' => $oldDebt->id,
             'amount_due' => 150.00,
-            'amount_paid' => 0.00,
+            'direct_paid_amount' => 0.00,
             'due_date' => '2026-09-01',
             'status' => 'unpaid',
             'description' => 'دَين قديم: دين متخلد سابق',
@@ -105,11 +102,9 @@ class CleanSessionTestDataTest extends TestCase
         ]);
 
         $testFee = StudentFee::create([
-            'student_id' => $testStudent->id,
             'enrollment_id' => $testEnrollment->id,
-            'academic_year_id' => $year->id,
             'amount_due' => 120.00,
-            'amount_paid' => 120.00,
+            'direct_paid_amount' => 120.00,
             'due_date' => '2026-09-01',
             'status' => 'paid',
             'created_at' => '2026-08-31 10:00:00',

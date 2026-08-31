@@ -145,10 +145,6 @@ class CleanSessionTestDataCommand extends Command
         DB::transaction(function () use ($sinceDateTime, $sinceDate, $mustapha, &$deletedCounts) {
             // أ. إعادة ضبط ديون التلاميذ القديمة التي تم استخلاصها في التجارب الحديثة
             $allocsOnManualDebts = PaymentAllocation::query()
-                ->whereHas('studentFee', function ($q) {
-                    $q->whereNotNull('manual_student_debt_id')
-                      ->orWhere('description', 'LIKE', '%دَين قديم%');
-                })
                 ->whereHas('payment', function ($q) use ($sinceDateTime, $sinceDate) {
                     $q->where('created_at', '>=', $sinceDateTime)
                       ->orWhere('payment_date', '>=', $sinceDate);
@@ -158,18 +154,15 @@ class CleanSessionTestDataCommand extends Command
             foreach ($allocsOnManualDebts as $alloc) {
                 $sFee = $alloc->studentFee;
                 if ($sFee) {
-                    if ($sFee->manual_student_debt_id) {
-                        $mDebt = ManualStudentDebt::find($sFee->manual_student_debt_id);
-                        if ($mDebt) {
-                            $mDebt->update([
-                                'amount_paid' => 0.00,
-                                'status' => 'unpaid',
-                            ]);
-                            $deletedCounts['restored_manual_debts']++;
-                        }
+                    $mDebt = ManualStudentDebt::where('source_student_fee_id', $sFee->id)->first();
+                    if ($mDebt) {
+                        $mDebt->update([
+                            'status' => ManualStudentDebt::STATUS_PENDING,
+                        ]);
+                        $deletedCounts['restored_manual_debts']++;
                     }
                     $sFee->update([
-                        'amount_paid' => 0.00,
+                        'direct_paid_amount' => 0.00,
                         'status' => 'unpaid',
                     ]);
                 }
@@ -203,7 +196,9 @@ class CleanSessionTestDataCommand extends Command
 
             foreach ($testStudents as $student) {
                 $enrollmentIds = Enrollment::where('student_id', $student->id)->pluck('id')->all();
-                $studentFeeIds = StudentFee::where('student_id', $student->id)->pluck('id')->all();
+                $studentFeeIds = ! empty($enrollmentIds)
+                    ? StudentFee::whereIn('enrollment_id', $enrollmentIds)->pluck('id')->all()
+                    : [];
                 $subIds = ClubSubscription::where('student_id', $student->id)->pluck('id')->all();
 
                 // 1. نوادي
@@ -213,13 +208,14 @@ class CleanSessionTestDataCommand extends Command
                 ClubMonthlyFee::where('student_id', $student->id)->delete();
                 ClubSubscription::where('student_id', $student->id)->delete();
 
-                // 2. تخفيضات وإعفاءات
+                // 2. تخفيضات وإعفاءات ومعاليم
                 if (! empty($enrollmentIds)) {
                     MonthlyDiscount::whereIn('enrollment_id', $enrollmentIds)->delete();
                     EnrollmentDiscount::whereIn('enrollment_id', $enrollmentIds)->delete();
                 }
                 if (! empty($studentFeeIds)) {
                     FeeWaiver::whereIn('student_fee_id', $studentFeeIds)->delete();
+                    PaymentAllocation::whereIn('student_fee_id', $studentFeeIds)->delete();
                     StudentFee::whereIn('id', $studentFeeIds)->delete();
                 }
 
