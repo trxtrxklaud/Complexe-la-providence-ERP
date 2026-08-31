@@ -58,6 +58,10 @@ class StudentController extends Controller
             'payment_method' => ['nullable', 'required_with:registration_amount', 'in:cash,bank_transfer,check,card'],
             'payment_date' => ['nullable', 'required_with:registration_amount', 'date'],
             'payment_notes' => ['nullable', 'string', 'max:1000'],
+            'fee_items' => ['nullable', 'array'],
+            'fee_items.*.fee_type_id' => ['nullable', 'integer', 'exists:fee_types,id'],
+            'fee_items.*.amount' => ['nullable', 'numeric', 'min:0'],
+            'fee_items.*.description' => ['nullable', 'string', 'max:255'],
         ];
     }
 
@@ -472,6 +476,10 @@ class StudentController extends Controller
             'payment_method' => ['required', 'in:cash,bank_transfer,check,card'],
             'payment_date' => ['required', 'date'],
             'payment_notes' => ['nullable', 'string', 'max:1000'],
+            'fee_items' => ['nullable', 'array'],
+            'fee_items.*.fee_type_id' => ['nullable', 'integer', 'exists:fee_types,id'],
+            'fee_items.*.amount' => ['nullable', 'numeric', 'min:0'],
+            'fee_items.*.description' => ['nullable', 'string', 'max:255'],
         ], self::SECTION_MESSAGES);
 
         $academicYear = AcademicYear::where('is_active', true)->first();

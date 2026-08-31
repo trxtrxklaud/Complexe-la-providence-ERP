@@ -44,6 +44,8 @@ class RegistrationPaymentService
             return null;
         }
 
+        $feeItems = $data['fee_items'] ?? null;
+
         return $this->payments->recordPayment([
             'student_id'      => $enrollment->student_id,
             'enrollment_id'   => $enrollment->id,
@@ -53,21 +55,74 @@ class RegistrationPaymentService
             'notes'           => $data['payment_notes'] ?? 'معلوم الترسيم عند التسجيل',
             // مفتاح ثابت لكل ترسيم: إعادة إرسال النموذج لا تضاعف المدخول.
             'idempotency_key' => 'enrollment-' . $enrollment->id . '-registration',
-            'allocations'     => $this->allocations($enrollment, $amount),
+            'allocations'     => $this->allocations($enrollment, $amount, $feeItems),
         ], $createdBy);
     }
 
     /**
-     * توزيع المبلغ على رسوم الترسيم، ثمّ استيعاب الفائض في رسم الترسيم نفسه.
+     * توزيع المبلغ على رسوم الترسيم واللوازم (أو الرسوم السنوية الافتراضية).
      *
-     * التخصيصات مُفتَرَسة بالرسم (fee_id => مبلغ) لا قائمة مسطّحة، لأنّ الفائض قد
-     * يعود إلى رسم خُصّص له مبلغ في نفس الدورة: سطران للرسم الواحد يجعلان
-     * PaymentService يقيس كلّ سطر على المتبقّي وحده فيمرّ مجموع يتجاوز المستحقّ.
-     *
+     * @param  array<int,array{fee_type_id?:int,amount:float,description?:string}>|null  $feeItems
      * @return array<int,array{student_fee_id:int,amount:float}>
      */
-    private function allocations(Enrollment $enrollment, float $amount): array
+    private function allocations(Enrollment $enrollment, float $amount, ?array $feeItems = null): array
     {
+        if (!empty($feeItems) && is_array($feeItems)) {
+            $allocations = [];
+            $sumAllocated = 0.0;
+
+            foreach ($feeItems as $item) {
+                $itemAmount = round((float) ($item['amount'] ?? 0), 2);
+                if ($itemAmount <= 0) {
+                    continue;
+                }
+
+                $feeTypeId = !empty($item['fee_type_id']) ? (int) $item['fee_type_id'] : null;
+                $feeType = $feeTypeId ? FeeType::find($feeTypeId) : null;
+                $desc = $item['description'] ?? ($feeType?->name_ar ?: 'معلوم ترسيم/لوازم');
+
+                $fee = StudentFee::firstOrCreate(
+                    [
+                        'enrollment_id' => $enrollment->id,
+                        'fee_type_id'   => $feeTypeId,
+                    ],
+                    [
+                        'description' => $desc,
+                        'amount_due'  => $itemAmount,
+                        'due_date'    => $enrollment->enrollment_date ?? now()->toDateString(),
+                        'status'      => 'pending',
+                    ]
+                );
+
+                if (round((float) $fee->amount_due, 2) < $itemAmount) {
+                    $fee->update(['amount_due' => $itemAmount]);
+                }
+
+                $allocations[] = [
+                    'student_fee_id' => (int) $fee->id,
+                    'amount'         => $itemAmount,
+                ];
+                $sumAllocated += $itemAmount;
+            }
+
+            $remaining = round($amount - $sumAllocated, 2);
+            if ($remaining > 0) {
+                $extra = $this->absorbingFee($enrollment);
+                if ($extra) {
+                    $alreadyOnExtra = round((float) $extra->amount_due, 2);
+                    $extra->update(['amount_due' => round($alreadyOnExtra + $remaining, 2)]);
+                    $allocations[] = [
+                        'student_fee_id' => (int) $extra->id,
+                        'amount'         => $remaining,
+                    ];
+                }
+            }
+
+            if (!empty($allocations)) {
+                return $allocations;
+            }
+        }
+
         $fees = $this->registrationFees($enrollment, $amount);
 
         /** @var array<int,float> $planned */

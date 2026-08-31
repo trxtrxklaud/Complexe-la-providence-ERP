@@ -189,6 +189,78 @@ class ReenrollRegistrationPaymentTest extends TestCase
         $this->assertSame(1, CashTransaction::count(), 'ويضاعف المدخول معها');
     }
 
+    public function test_reenrolling_with_detailed_fee_items_posts_proper_ledger_categories(): void
+    {
+        Sanctum::actingAs($this->makeRegistrar());
+
+        $old = $this->makeEnrollment();
+        $this->startNewYear();
+
+        $ftReg = FeeType::create([
+            'name_ar' => 'معلوم الترسيم',
+            'price' => 70,
+            'ledger_category' => CashTransaction::CATEGORY_REGISTRATION_FEE,
+            'is_active' => true,
+        ]);
+        $ftBlouse = FeeType::create([
+            'name_ar' => 'ميدعة',
+            'price' => 30,
+            'ledger_category' => CashTransaction::CATEGORY_PRODUCT_SALE,
+            'is_active' => true,
+        ]);
+        $ftVie = FeeType::create([
+            'name_ar' => 'ERP vie scolaire',
+            'price' => 20,
+            'ledger_category' => CashTransaction::CATEGORY_OTHER_INCOME,
+            'is_active' => true,
+        ]);
+        $ftPaper = FeeType::create([
+            'name_ar' => 'رزمة أوراق',
+            'price' => 15,
+            'ledger_category' => CashTransaction::CATEGORY_PRODUCT_SALE,
+            'is_active' => true,
+        ]);
+
+        $payload = [
+            'section_id' => $old->section_id,
+            'registration_amount' => 135, // 70 + 30 + 20 + 15
+            'payment_method' => 'cash',
+            'payment_date' => '2026-08-31',
+            'payment_notes' => 'ترسيم ولوازم كاملة',
+            'fee_items' => [
+                ['fee_type_id' => $ftReg->id, 'amount' => 70, 'description' => 'معلوم الترسيم'],
+                ['fee_type_id' => $ftBlouse->id, 'amount' => 30, 'description' => 'ميدعة'],
+                ['fee_type_id' => $ftVie->id, 'amount' => 20, 'description' => 'ERP vie scolaire'],
+                ['fee_type_id' => $ftPaper->id, 'amount' => 15, 'description' => 'رزمة أوراق'],
+            ],
+        ];
+
+        $response = $this->postJson('/api/students/' . $old->student_id . '/reenroll', $payload);
+        $response->assertCreated();
+
+        // تحقق من تسجيل القيود في الدفتر النقدي مصنفة بحسب البنود:
+        // 1. معاليم التسجيل: 70 د.ت
+        // 2. بيع المنتجات (ميدعة + ورق): 30 + 15 = 45 د.ت
+        // 3. مداخيل أخرى (vie scolaire): 20 د.ت
+        $this->assertEqualsWithDelta(
+            70,
+            (float) CashTransaction::where('category', CashTransaction::CATEGORY_REGISTRATION_FEE)->value('amount'),
+            0.001
+        );
+        $this->assertEqualsWithDelta(
+            45,
+            (float) CashTransaction::where('category', CashTransaction::CATEGORY_PRODUCT_SALE)->value('amount'),
+            0.001
+        );
+        $this->assertEqualsWithDelta(
+            20,
+            (float) CashTransaction::where('category', CashTransaction::CATEGORY_OTHER_INCOME)->value('amount'),
+            0.001
+        );
+
+        $this->assertEqualsWithDelta(135, (float) CashTransaction::sum('amount'), 0.001);
+    }
+
     /** سنة دراسية جديدة نشطة: بدونها يعتبر الخادم التلميذ مُرسّماً فيرفض التجديد. */
     private function startNewYear(): AcademicYear
     {
@@ -204,12 +276,14 @@ class ReenrollRegistrationPaymentTest extends TestCase
 
     private function makeRegistrationFeeType(float $price): FeeType
     {
-        return FeeType::create([
-            'name_ar' => 'معلوم الترسيم',
-            'price' => $price,
-            'ledger_category' => CashTransaction::CATEGORY_REGISTRATION_FEE,
-            'is_active' => true,
-        ]);
+        return FeeType::updateOrCreate(
+            ['name_ar' => 'معلوم الترسيم'],
+            [
+                'price' => $price,
+                'ledger_category' => CashTransaction::CATEGORY_REGISTRATION_FEE,
+                'is_active' => true,
+            ]
+        );
     }
 
     private function makeRegistrar(): User

@@ -9,6 +9,7 @@ import {
   type SectionOption,
 } from '../../api/students';
 import { ListSkeleton } from '../../components/DataSkeleton';
+import { EnrollmentFeeItemsSelector } from '../../components/Payments/EnrollmentFeeItemsSelector';
 
 const C = {
   forest: '#3B4A36',
@@ -51,6 +52,7 @@ export function OldStudentReenroll() {
   const [amount, setAmount] = useState('');
   const [paymentDate, setPaymentDate] = useState('');
   const [paymentNotes, setPaymentNotes] = useState('');
+  const [feeItems, setFeeItems] = useState<Array<{ fee_type_id: number; amount: number; description: string }>>([]);
 
   // يُرفع حين يردّ الخادم code = already_enrolled: التلميذ ترسيمه قائم في السنة
   // النشطة (546 تلميذاً دخلوا عبر ترحيل الترقية دون أن يُقبض معلومهم)، فالمطلوب
@@ -196,6 +198,7 @@ export function OldStudentReenroll() {
               payment_method: paymentMethod as 'cash' | 'bank_transfer' | 'check' | 'card',
               payment_date: paymentDate,
               ...(paymentNotes.trim() !== '' ? { payment_notes: paymentNotes.trim() } : {}),
+              ...(feeItems.length > 0 ? { fee_items: feeItems } : {}),
             }
           : {}),
       });
@@ -232,6 +235,7 @@ export function OldStudentReenroll() {
         payment_method: paymentMethod as 'cash' | 'bank_transfer' | 'check' | 'card',
         payment_date: paymentDate,
         ...(paymentNotes.trim() !== '' ? { payment_notes: paymentNotes.trim() } : {}),
+        ...(feeItems.length > 0 ? { fee_items: feeItems } : {}),
       });
       announceSuccess(response, 'تم تسجيل معلوم الترسيم لـ');
     } catch (err: any) {
@@ -387,9 +391,19 @@ export function OldStudentReenroll() {
                   : 'اختياري: إن قبضت مبلغاً الآن سجّله هنا فيدخل الخزينة مباشرة تحت «معاليم التسجيل» ويظهر في السجل اليومي والشهري والدخل الصافي. اتركه فارغاً إن كان الدفع لاحقاً.'}
               </p>
 
+              <div className="mb-4">
+                <EnrollmentFeeItemsSelector
+                  onTotalChange={(tot, items) => {
+                    setAmount(tot > 0 ? String(tot) : '');
+                    setFeeItems(items);
+                    setError('');
+                  }}
+                />
+              </div>
+
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <label htmlFor="reenroll_amount" className="block text-sm mb-1.5" style={{ color: C.muted }}>مبلغ الترسيم</label>
+                  <label htmlFor="reenroll_amount" className="block text-sm mb-1.5" style={{ color: C.muted }}>المبلغ الإجمالي المقبوض</label>
                   <input
                     id="reenroll_amount"
                     name="reenroll_amount"
@@ -402,9 +416,10 @@ export function OldStudentReenroll() {
                     onChange={(e) => { setAmount(e.target.value); setError(''); }}
                     placeholder="0.00"
                     aria-describedby="reenroll_payment_hint"
-                    className="w-full p-3 rounded-xl border bg-slate-50 outline-none"
+                    className="w-full p-3 rounded-xl border bg-slate-50 font-bold text-slate-800 outline-none"
                     style={{ borderColor: showPaymentError ? C.danger : C.line }}
                   />
+                  <p className="text-[11px] text-slate-400 mt-1">يُحسب تلقائياً من المعاليم المختارة أعلاه ويمكن تعديله.</p>
                 </div>
                 <div>
                   <label htmlFor="reenroll_payment_method" className="block text-sm mb-1.5" style={{ color: C.muted }}>صيغة الدفع</label>

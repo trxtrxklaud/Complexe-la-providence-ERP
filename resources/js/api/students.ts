@@ -256,6 +256,7 @@ export type ReenrollPayment = {
     payment_method: 'cash' | 'bank_transfer' | 'check' | 'card';
     payment_date: string;
     payment_notes?: string;
+    fee_items?: Array<{ fee_type_id: number; amount: number; description?: string }>;
 };
 
 /**
