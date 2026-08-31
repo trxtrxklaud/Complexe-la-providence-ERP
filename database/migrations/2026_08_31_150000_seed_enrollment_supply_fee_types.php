@@ -40,12 +40,15 @@ return new class extends Migration
         ];
 
         foreach ($defaults as $item) {
-            $existing = FeeType::where('name_ar', $item['name_ar'])
-                ->orWhere('name_fr', $item['name_fr'])
-                ->first();
+            $existing = FeeType::where('name_ar', $item['name_ar'])->first();
 
             if (! $existing) {
                 FeeType::create($item);
+            } else {
+                $existing->update([
+                    'name_fr'         => $item['name_fr'],
+                    'ledger_category' => $item['ledger_category'],
+                ]);
             }
         }
     }
