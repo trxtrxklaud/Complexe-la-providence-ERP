@@ -203,25 +203,33 @@ class CleanSessionTestDataCommand extends Command
 
             foreach ($testStudents as $student) {
                 $enrollmentIds = Enrollment::where('student_id', $student->id)->pluck('id')->all();
+                $studentFeeIds = StudentFee::where('student_id', $student->id)->pluck('id')->all();
+                $subIds = ClubSubscription::where('student_id', $student->id)->pluck('id')->all();
 
                 // 1. نوادي
-                ClubMonthlyDiscount::whereIn('enrollment_id', $enrollmentIds)->delete();
-                ClubMonthlyFee::where('student_id', $student->id)->orWhereIn('enrollment_id', $enrollmentIds)->delete();
-                ClubSubscription::where('student_id', $student->id)->orWhereIn('enrollment_id', $enrollmentIds)->delete();
+                if (! empty($subIds)) {
+                    ClubMonthlyDiscount::whereIn('club_subscription_id', $subIds)->delete();
+                }
+                ClubMonthlyFee::where('student_id', $student->id)->delete();
+                ClubSubscription::where('student_id', $student->id)->delete();
 
                 // 2. تخفيضات وإعفاءات
-                MonthlyDiscount::whereIn('enrollment_id', $enrollmentIds)->delete();
-                EnrollmentDiscount::whereIn('enrollment_id', $enrollmentIds)->delete();
-                FeeWaiver::where('student_id', $student->id)->orWhereIn('enrollment_id', $enrollmentIds)->delete();
+                if (! empty($enrollmentIds)) {
+                    MonthlyDiscount::whereIn('enrollment_id', $enrollmentIds)->delete();
+                    EnrollmentDiscount::whereIn('enrollment_id', $enrollmentIds)->delete();
+                }
+                if (! empty($studentFeeIds)) {
+                    FeeWaiver::whereIn('student_fee_id', $studentFeeIds)->delete();
+                    StudentFee::whereIn('id', $studentFeeIds)->delete();
+                }
 
-                // 3. معاليم التلميذ
-                StudentFee::where('student_id', $student->id)->orWhereIn('enrollment_id', $enrollmentIds)->delete();
+                // 3. التسجيلات
+                if (! empty($enrollmentIds)) {
+                    Enrollment::whereIn('id', $enrollmentIds)->delete();
+                    $deletedCounts['test_enrollments'] += count($enrollmentIds);
+                }
 
-                // 4. التسجيلات
-                Enrollment::where('student_id', $student->id)->delete();
-                $deletedCounts['test_enrollments'] += count($enrollmentIds);
-
-                // 5. فك ارتباط الأولياء
+                // 4. فك ارتباط الأولياء
                 $guardianIds = $student->guardians()->pluck('guardians.id')->all();
                 $student->guardians()->detach();
                 foreach ($guardianIds as $gId) {
@@ -248,7 +256,7 @@ class CleanSessionTestDataCommand extends Command
             if ($mustapha) {
                 // 1. تسبيقات واسترجاعاتها
                 $advIds = EmployeeAdvance::where('employee_id', $mustapha->id)->pluck('id')->all();
-                if ($advIds) {
+                if (! empty($advIds)) {
                     CashTransaction::where('source_type', (new EmployeeAdvance)->getMorphClass())
                         ->whereIn('source_id', $advIds)
                         ->delete();
@@ -259,7 +267,7 @@ class CleanSessionTestDataCommand extends Command
 
                 // 2. استرجاعات مباشرة
                 $repIds = EmployeeAdvanceRepayment::where('employee_id', $mustapha->id)->pluck('id')->all();
-                if ($repIds) {
+                if (! empty($repIds)) {
                     CashTransaction::where('source_type', (new EmployeeAdvanceRepayment)->getMorphClass())
                         ->whereIn('source_id', $repIds)
                         ->delete();
@@ -272,10 +280,20 @@ class CleanSessionTestDataCommand extends Command
                 // 4. ديون افتتاحية للموظف
                 if (Schema::hasTable('employee_opening_debts')) {
                     $eOpIds = DB::table('employee_opening_debts')->where('employee_id', $mustapha->id)->pluck('id')->all();
-                    if ($eOpIds && Schema::hasTable('employee_opening_debt_collections')) {
-                        DB::table('employee_opening_debt_collections')->whereIn('employee_opening_debt_id', $eOpIds)->delete();
+                    if (! empty($eOpIds)) {
+                        if (Schema::hasTable('employee_opening_debt_collections')) {
+                            $colIds = DB::table('employee_opening_debt_collections')->whereIn('employee_opening_debt_id', $eOpIds)->pluck('id')->all();
+                            if (! empty($colIds)) {
+                                CashTransaction::where(function ($q) {
+                                    $q->where('source_type', 'App\Models\OldEmployeeDebtCollection')
+                                        ->orWhere('source_type', 'old_employee_debt_collection');
+                                })->whereIn('source_id', $colIds)->delete();
+                                DB::table('employee_opening_debt_collections')->whereIn('id', $colIds)->delete();
+                            }
+                        }
+                        DB::table('employee_opening_debts')->whereIn('id', $eOpIds)->delete();
+                        $deletedCounts['mustapha_debts_cleared'] += count($eOpIds);
                     }
-                    DB::table('employee_opening_debts')->where('employee_id', $mustapha->id)->delete();
                 }
 
                 if (Schema::hasTable('old_employee_debts')) {
