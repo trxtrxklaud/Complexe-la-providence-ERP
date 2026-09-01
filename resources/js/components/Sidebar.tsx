@@ -4,7 +4,7 @@ import { NavLink, useNavigate, useLocation } from 'react-router-dom';
 import {
     LayoutDashboard, Users, LogOut, GraduationCap, Tags, Layers,
     ClipboardList, History, Wallet, Receipt, Landmark, TrendingUp, BadgePercent, Award, HeartHandshake,
-    Users2, PanelLeftClose, PanelLeftOpen, CreditCard, ShieldCheck,
+    Users2, UserPlus, PanelLeftClose, PanelLeftOpen, CreditCard, ShieldCheck,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import {
@@ -262,9 +262,16 @@ export function Sidebar() {
                         <>
                             <NavItem
                                 to={isCashier ? '/students/enroll' : '/students'}
-                                isActive={startsWith('/students') && !startsWith('/students/bulk-gender')}
+                                isActive={startsWith('/students') && !startsWith('/students/bulk-gender') && !startsWith('/students/bulk-enroll')}
                                 label="التلاميذ"
                                 icon={<GraduationCap size={20} />}
+                                collapsed={collapsed}
+                            />
+                            <NavItem
+                                to="/students/bulk-enroll"
+                                isActive={startsWith('/students/bulk-enroll')}
+                                label="ترسيم جماعي"
+                                icon={<UserPlus size={20} />}
                                 collapsed={collapsed}
                             />
                             <NavItem

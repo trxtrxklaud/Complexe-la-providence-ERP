@@ -198,6 +198,7 @@ Route::middleware(['auth:sanctum', 'active', 'throttle:120,1'])->group(function 
     Route::middleware('permission:manage_students')->group(function () {
         // Compatibility route for New Student wizard (frontend posts here)
         Route::post('/students/enroll', [StudentController::class, 'store']);
+        Route::post('/students/bulk-reenroll', [StudentController::class, 'bulkReenroll']);
         Route::get('/students/search-options', [StudentController::class, 'searchOptions']);
         Route::get('/students/transfer-roster', [StudentController::class, 'transferRoster']);
         Route::post('/students/transfer', [StudentController::class, 'transfer']);

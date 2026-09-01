@@ -489,6 +489,121 @@ class StudentController extends Controller
     }
 
     /**
+     * ترسيم جماعي لتلاميذ قدامى دفعة واحدة.
+     *
+     * يُنفّذ الترسيم لكل تلميذ داخل Transaction منفصلة حتى لا يؤدي تعثّر تلميذ واحد
+     * إلى إحباط بقية التلاميذ، مع إعادة استخدام نفس منطق EnrollmentService و RegistrationPaymentService.
+     */
+    public function bulkReenroll(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'section_id' => ['required', 'integer', 'exists:sections,id'],
+            'payment_method' => ['nullable', 'in:cash,bank_transfer,check,card'],
+            'payment_date' => ['nullable', 'date'],
+            'notes' => ['nullable', 'string', 'max:1000'],
+            'students' => ['required', 'array', 'min:1'],
+            'students.*.student_id' => ['required', 'integer', 'exists:students,id'],
+            'students.*.registration_amount' => ['nullable', 'numeric', 'min:0'],
+            'students.*.fee_items' => ['nullable', 'array'],
+            'students.*.fee_items.*.fee_type_id' => ['nullable', 'integer'],
+            'students.*.fee_items.*.amount' => ['nullable', 'numeric', 'min:0'],
+            'students.*.fee_items.*.description' => ['nullable', 'string', 'max:255'],
+        ], self::SECTION_MESSAGES);
+
+        $results = [];
+        $userId = $request->user()?->id;
+        $commonSectionId = (int) $validated['section_id'];
+        $commonPaymentMethod = $validated['payment_method'] ?? 'cash';
+        $commonPaymentDate = $validated['payment_date'] ?? now()->toDateString();
+        $commonNotes = $validated['notes'] ?? 'معلوم تجديد الترسيم (ترسيم جماعي)';
+
+        foreach ($validated['students'] as $item) {
+            $studentId = (int) $item['student_id'];
+            $regAmount = isset($item['registration_amount']) ? (float) $item['registration_amount'] : 0.0;
+            $feeItems = $item['fee_items'] ?? null;
+
+            try {
+                $entry = DB::transaction(function () use ($studentId, $commonSectionId, $regAmount, $feeItems, $commonPaymentMethod, $commonPaymentDate, $commonNotes, $userId) {
+                    $enrollment = $this->enrollmentService->reenrollStudent($studentId, [
+                        'section_id' => $commonSectionId,
+                        'notes' => $commonNotes,
+                    ]);
+
+                    $payment = null;
+                    if ($regAmount > 0) {
+                        $payload = [
+                            'registration_amount' => $regAmount,
+                            'payment_method' => $commonPaymentMethod,
+                            'payment_date' => $commonPaymentDate,
+                            'payment_notes' => $commonNotes,
+                            'fee_items' => $feeItems,
+                        ];
+
+                        $payment = $this->registrationPaymentService->record(
+                            $enrollment,
+                            $payload,
+                            $userId,
+                        );
+                    }
+
+                    return [$enrollment, $payment];
+                });
+
+                [$enrollment, $payment] = $entry;
+
+                if ($payment) {
+                    $payment->loadMissing(['paymentAllocations.studentFee']);
+                }
+
+                $results[] = [
+                    'student_id' => $studentId,
+                    'status' => 'enrolled',
+                    'message' => 'تم الترسيم بنجاح',
+                    'enrollment_id' => $enrollment->id,
+                    'payment' => $payment ? [
+                        'id' => $payment->id,
+                        'amount' => $payment->amount,
+                        'payment_date' => $payment->payment_date?->toDateString(),
+                        'method' => $payment->method,
+                        'notes' => $payment->notes,
+                        'receipt_number' => 'REC-'.str_pad((string) $payment->id, 6, '0', STR_PAD_LEFT),
+                        'items' => $payment->paymentAllocations->map(fn ($a) => [
+                            'name' => $a->studentFee?->description ?: 'بند',
+                            'amount' => (float) $a->amount_allocated,
+                        ]),
+                    ] : null,
+                ];
+            } catch (\InvalidArgumentException $e) {
+                $isAlready = str_contains($e->getMessage(), 'مُرسَّم بالفعل') || str_contains($e->getMessage(), 'already enrolled');
+                $results[] = [
+                    'student_id' => $studentId,
+                    'status' => $isAlready ? 'already_enrolled' : 'failed',
+                    'message' => $e->getMessage(),
+                    'payment' => null,
+                ];
+            } catch (\Exception $e) {
+                report($e);
+                $results[] = [
+                    'student_id' => $studentId,
+                    'status' => 'failed',
+                    'message' => 'حدث خطأ أثناء الترسيم',
+                    'payment' => null,
+                ];
+            }
+        }
+
+        return response()->json([
+            'results' => $results,
+            'summary' => [
+                'total' => count($validated['students']),
+                'enrolled' => count(array_filter($results, fn ($r) => $r['status'] === 'enrolled')),
+                'already_enrolled' => count(array_filter($results, fn ($r) => $r['status'] === 'already_enrolled')),
+                'failed' => count(array_filter($results, fn ($r) => $r['status'] === 'failed')),
+            ],
+        ], 200);
+    }
+
+    /**
      * قبض معلوم الترسيم لتلميذ مُرسَّم سلفاً في السنة النشطة.
      *
      * سبب وجود هذا المسار: 546 ترسيماً دخلت جدول الترسيمات عبر ترحيل الترقية
