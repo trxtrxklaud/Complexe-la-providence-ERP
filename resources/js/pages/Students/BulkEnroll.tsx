@@ -85,6 +85,7 @@ export function BulkEnroll() {
   // Filters & Search (Step 1)
   const [search, setSearch] = useState('');
   const [sourceSectionFilter, setSourceSectionFilter] = useState('');
+  const [hideEnrolled, setHideEnrolled] = useState(false);
 
   // Selected Students Map: student_id -> boolean
   const [selectedMap, setSelectedMap] = useState<Record<number, boolean>>({});
@@ -144,17 +145,34 @@ export function BulkEnroll() {
     }
   }
 
+  const isAlreadyEnrolled = (st: Student) =>
+    Boolean(
+      st.enrollments?.some(
+        (en: any) =>
+          en.status === 'active' &&
+          (en.academic_year?.is_active === 1 || en.academic_year?.is_active === true)
+      )
+    );
+
+  const getActiveEnrollment = (st: Student) =>
+    st.enrollments?.find(
+      (en: any) =>
+        en.status === 'active' &&
+        (en.academic_year?.is_active === 1 || en.academic_year?.is_active === true)
+    );
+
   // Filtered students for Step 1
   const filteredStudents = useMemo(() => {
     const q = search.trim().toLowerCase();
     return students.filter((st) => {
+      if (hideEnrolled && isAlreadyEnrolled(st)) return false;
       if (!q) return true;
       const fullName = `${st.first_name || ''} ${st.last_name || ''}`.toLowerCase();
       const code = (st.student_code || '').toLowerCase();
       const phone = (st.guardian_phone || st.mother_phone || '').toLowerCase();
       return fullName.includes(q) || code.includes(q) || phone.includes(q);
     });
-  }, [students, search]);
+  }, [students, search, hideEnrolled]);
 
   const selectedStudentIds = useMemo(() => {
     return Object.keys(selectedMap)
@@ -170,18 +188,20 @@ export function BulkEnroll() {
 
   // Handle Select All / Deselect All
   function toggleSelectAll() {
-    const allFilteredSelected = filteredStudents.length > 0 && filteredStudents.every((s) => selectedMap[s.id]);
+    const selectableStudents = filteredStudents.filter((s) => !isAlreadyEnrolled(s));
+    const allSelectableChecked = selectableStudents.length > 0 && selectableStudents.every((s) => selectedMap[s.id]);
     const nextMap = { ...selectedMap };
-    filteredStudents.forEach((s) => {
-      nextMap[s.id] = !allFilteredSelected;
+    selectableStudents.forEach((s) => {
+      nextMap[s.id] = !allSelectableChecked;
     });
     setSelectedMap(nextMap);
   }
 
-  function toggleStudent(id: number) {
+  function toggleStudent(st: Student) {
+    if (isAlreadyEnrolled(st)) return;
     setSelectedMap((prev) => ({
       ...prev,
-      [id]: !prev[id],
+      [st.id]: !prev[st.id],
     }));
   }
 
@@ -376,22 +396,35 @@ export function BulkEnroll() {
                 </span>
               </h2>
 
-              <button
-                type="button"
-                onClick={toggleSelectAll}
-                className="text-xs font-bold px-3 py-1.5 rounded-lg border flex items-center gap-1.5 hover:bg-gray-50 transition-colors"
-                style={{ borderColor: C.line, color: C.forest }}
-              >
-                {filteredStudents.length > 0 && filteredStudents.every((s) => selectedMap[s.id]) ? (
-                  <>
-                    <CheckSquare className="w-4 h-4" /> إلغاء تحديد الكل
-                  </>
-                ) : (
-                  <>
-                    <Square className="w-4 h-4" /> تحديد الكل ({filteredStudents.length})
-                  </>
-                )}
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setHideEnrolled(!hideEnrolled)}
+                  className={`text-xs font-bold px-3 py-1.5 rounded-lg border flex items-center gap-1.5 transition-colors ${
+                    hideEnrolled ? 'bg-[#3B4A36] text-white border-[#3B4A36]' : 'border-gray-200 text-gray-700 hover:bg-gray-50'
+                  }`}
+                >
+                  {hideEnrolled ? 'إظهار المرسّمين' : 'إخفاء المرسّمين'}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={toggleSelectAll}
+                  className="text-xs font-bold px-3 py-1.5 rounded-lg border flex items-center gap-1.5 hover:bg-gray-50 transition-colors"
+                  style={{ borderColor: C.line, color: C.forest }}
+                >
+                  {filteredStudents.filter((s) => !isAlreadyEnrolled(s)).length > 0 &&
+                  filteredStudents.filter((s) => !isAlreadyEnrolled(s)).every((s) => selectedMap[s.id]) ? (
+                    <>
+                      <CheckSquare className="w-4 h-4" /> إلغاء تحديد الكل
+                    </>
+                  ) : (
+                    <>
+                      <Square className="w-4 h-4" /> تحديد الكل ({filteredStudents.filter((s) => !isAlreadyEnrolled(s)).length})
+                    </>
+                  )}
+                </button>
+              </div>
             </div>
 
             {/* Search and Filters */}
@@ -448,8 +481,12 @@ export function BulkEnroll() {
                   </thead>
                   <tbody className="divide-y" style={{ borderColor: C.line }}>
                     {filteredStudents.map((st) => {
+                      const enrolled = isAlreadyEnrolled(st);
                       const isChecked = Boolean(selectedMap[st.id]);
-                      const currentSec = st.enrollments?.[0]?.section?.name
+                      const activeEn = getActiveEnrollment(st);
+                      const currentSec = activeEn
+                        ? `${activeEn.level?.name || ''} ${activeEn.section?.name || ''}`.trim()
+                        : st.enrollments?.[0]?.section?.name
                         ? `${st.enrollments[0]?.level?.name || ''} ${st.enrollments[0].section.name}`.trim()
                         : '—';
                       const phone = st.guardian_phone || st.mother_phone || '—';
@@ -457,22 +494,40 @@ export function BulkEnroll() {
                       return (
                         <tr
                           key={st.id}
-                          onClick={() => toggleStudent(st.id)}
-                          className={`cursor-pointer transition-colors ${isChecked ? 'bg-[#F4F7F2]' : 'hover:bg-gray-50'}`}
+                          onClick={() => toggleStudent(st)}
+                          className={`transition-colors ${
+                            enrolled
+                              ? 'opacity-40 bg-gray-50/70 cursor-not-allowed'
+                              : isChecked
+                              ? 'bg-[#F4F7F2] cursor-pointer'
+                              : 'hover:bg-gray-50 cursor-pointer'
+                          }`}
                         >
                           <td className="p-3 text-center" onClick={(e) => e.stopPropagation()}>
                             <input
                               type="checkbox"
                               checked={isChecked}
-                              onChange={() => toggleStudent(st.id)}
-                              className="w-4 h-4 rounded text-[#3B4A36] focus:ring-[#3B4A36]"
+                              disabled={enrolled}
+                              onChange={() => toggleStudent(st)}
+                              className="w-4 h-4 rounded text-[#3B4A36] focus:ring-[#3B4A36] disabled:opacity-30 disabled:cursor-not-allowed"
                             />
                           </td>
                           <td className="p-3 font-bold" style={{ color: C.ink }}>
-                            {[st.first_name, st.last_name].filter(Boolean).join(' ') || `تلميذ #${st.id}`}
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span>{[st.first_name, st.last_name].filter(Boolean).join(' ') || `تلميذ #${st.id}`}</span>
+                              {enrolled && (
+                                <span className="text-[11px] px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 font-bold inline-flex items-center gap-1 shadow-2xs">
+                                  مرسَّم ✓
+                                </span>
+                              )}
+                            </div>
                           </td>
                           <td className="p-3 font-mono text-gray-500">{st.student_code || '—'}</td>
-                          <td className="p-3">{currentSec}</td>
+                          <td className="p-3">
+                            <span className={enrolled ? 'font-bold text-emerald-800' : ''}>
+                              {currentSec}
+                            </span>
+                          </td>
                           <td className="p-3 font-mono">{phone}</td>
                         </tr>
                       );
