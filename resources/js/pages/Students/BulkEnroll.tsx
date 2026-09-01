@@ -273,7 +273,9 @@ export function BulkEnroll() {
     if (!res.payment) return;
 
     const studentObj = students.find((s) => s.id === res.student_id);
-    const studentName = studentObj ? `${studentObj.first_name} ${studentObj.last_name}` : `تلميذ #${res.student_id}`;
+    const studentName = studentObj
+      ? ([studentObj.first_name, studentObj.last_name].filter(Boolean).join(' ') || `تلميذ #${res.student_id}`)
+      : `تلميذ #${res.student_id}`;
     const guardianName = studentObj?.guardian_first_name
       ? `${studentObj.guardian_first_name} ${studentObj.guardian_last_name || ''}`.trim()
       : studentObj?.guardians?.[0]
@@ -415,7 +417,7 @@ export function BulkEnroll() {
                 >
                   <option value="">جميع الأقسام السابقة</option>
                   {sections.map((sec) => (
-                    <option key={sec.id} value={sec.label}>
+                    <option key={sec.id} value={sec.id}>
                       {sec.label}
                     </option>
                   ))}
@@ -467,7 +469,7 @@ export function BulkEnroll() {
                             />
                           </td>
                           <td className="p-3 font-bold" style={{ color: C.ink }}>
-                            {st.first_name} {st.last_name}
+                            {[st.first_name, st.last_name].filter(Boolean).join(' ') || `تلميذ #${st.id}`}
                           </td>
                           <td className="p-3 font-mono text-gray-500">{st.student_code || '—'}</td>
                           <td className="p-3">{currentSec}</td>
@@ -658,7 +660,7 @@ export function BulkEnroll() {
                       <tr key={st.id} className="hover:bg-gray-50">
                         <td className="p-3 text-center text-gray-400 font-mono">{index + 1}</td>
                         <td className="p-3 font-bold" style={{ color: C.ink }}>
-                          {st.first_name} {st.last_name}
+                          {[st.first_name, st.last_name].filter(Boolean).join(' ') || `تلميذ #${st.id}`}
                         </td>
                         <td className="p-3 font-mono text-gray-500">{st.student_code || '—'}</td>
                         <td className="p-3">{guardian}</td>
@@ -822,7 +824,9 @@ export function BulkEnroll() {
               <tbody className="divide-y" style={{ borderColor: C.line }}>
                 {results.map((res, index) => {
                   const studentObj = students.find((s) => s.id === res.student_id);
-                  const studentName = studentObj ? `${studentObj.first_name} ${studentObj.last_name}` : `تلميذ #${res.student_id}`;
+                  const studentName = studentObj
+                    ? ([studentObj.first_name, studentObj.last_name].filter(Boolean).join(' ') || `تلميذ #${res.student_id}`)
+                    : `تلميذ #${res.student_id}`;
 
                   return (
                     <tr key={res.student_id} className="hover:bg-gray-50">
