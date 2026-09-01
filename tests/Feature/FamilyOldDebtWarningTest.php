@@ -465,4 +465,25 @@ class FamilyOldDebtWarningTest extends TestCase
         $this->assertSame($studentFeesBefore, DB::table('student_fees')->count());
         $this->assertSame($cashBefore, DB::table('cash_transactions')->count());
     }
+
+    public function test_non_existent_family_returns_404(): void
+    {
+        $this->getJson('/api/families/999999/old-debts')
+            ->assertStatus(404);
+    }
+
+    public function test_guardian_without_students_returns_200_with_empty_debts(): void
+    {
+        $emptyGuardian = Guardian::create([
+            'first_name' => 'فارغ',
+            'last_name' => 'بلا أبناء',
+            'phone' => '11223344',
+            'address' => 'قفصة',
+        ]);
+
+        $this->getJson('/api/families/' . $emptyGuardian->id . '/old-debts')
+            ->assertOk()
+            ->assertJsonPath('count', 0)
+            ->assertJsonPath('total', 0);
+    }
 }

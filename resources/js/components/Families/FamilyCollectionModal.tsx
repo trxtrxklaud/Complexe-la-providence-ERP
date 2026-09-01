@@ -47,14 +47,23 @@ export function FamilyCollectionModal({ family, onClose, onSuccess }: Props) {
   // تنبيه الديون القديمة (قراءة فقط): يُجلب مرة واحدة عند فتح النافذة أو تغيّر
   // العائلة، ولا يُعاد مع كل تعديل مبلغ. فشله لا يعطّل الاستخلاص إطلاقاً.
   const [oldDebts, setOldDebts] = useState<FamilyOldDebtsResponse | null>(null);
+  const [oldDebtsFetchFailed, setOldDebtsFetchFailed] = useState<boolean>(false);
 
   useEffect(() => {
     let active = true;
     fetchFamilyOldDebts(family.id)
-      .then((res) => { if (active) setOldDebts(res); })
+      .then((res) => {
+        if (active) {
+          setOldDebts(res);
+          setOldDebtsFetchFailed(false);
+        }
+      })
       .catch((err) => {
         console.error('family old-debts warning failed', err);
-        if (active) setOldDebts(null);
+        if (active) {
+          setOldDebts(null);
+          setOldDebtsFetchFailed(true);
+        }
       });
     return () => { active = false; };
   }, [family.id]);
@@ -279,6 +288,14 @@ export function FamilyCollectionModal({ family, onClose, onSuccess }: Props) {
             </div>
           )}
 
+          {/* حالة تعذر جلب تنبيه الديون القديمة — معلوماتي خفيف لا يعطّل الاستخلاص */}
+          {oldDebtsFetchFailed && (
+            <div className="p-3.5 rounded-2xl bg-slate-50 text-slate-700 text-xs border border-slate-200 flex items-center gap-2.5">
+              <AlertCircle size={18} className="shrink-0 text-slate-500" />
+              <span>تعذر التحقق من الديون القديمة الآن؛ يمكنك متابعة استخلاص رسوم السنة الحالية.</span>
+            </div>
+          )}
+
           {/* تنبيه غير حاجب للديون القديمة — معلوماتي فقط، لا يغيّر مبلغ الاستخلاص ولا يعطّله */}
           {oldDebts && oldDebts.count > 0 && (
             <div className="p-4 rounded-2xl bg-amber-50 text-amber-900 text-xs sm:text-sm border border-amber-300 shadow-xs">
@@ -287,12 +304,12 @@ export function FamilyCollectionModal({ family, onClose, onSuccess }: Props) {
                 <div className="space-y-1.5 flex-1">
                   <div className="font-bold">تنبيه: على بعض التلاميذ ديون قديمة.</div>
                   <div>
-                    الإجمالي المتبقي: <span dir="ltr" className="font-bold">{money(oldDebts.total)} د.ت</span> • عدد التلاميذ: {oldDebts.count}
+                    الإجمالي المتبقي: <bdi className="font-bold">{money(oldDebts.total)} د.ت</bdi> • عدد التلاميذ: {oldDebts.count}
                   </div>
                   <ul className="space-y-0.5">
                     {(Object.values(oldDebts.students) as FamilyOldDebtStudent[]).map((s) => (
                       <li key={s.student_id}>
-                        • {s.student_name}{s.student_code ? ` (${s.student_code})` : ''} — المتبقي: <span dir="ltr">{money(s.amount)} د.ت</span> ({s.debts_count} دين)
+                        • {s.student_name}{s.student_code ? ` (${s.student_code})` : ''} — المتبقي: <bdi>{money(s.amount)} د.ت</bdi> ({s.debts_count} دين)
                       </li>
                     ))}
                   </ul>

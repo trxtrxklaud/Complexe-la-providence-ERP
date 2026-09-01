@@ -240,12 +240,24 @@ export function CollectionPage() {
         setPriorSelections(pSel);
         setPriorAmounts(pAm);
         // تنبيه الديون القديمة المدخلة يدوياً (قراءة فقط — لا حركة مالية هنا)
-        const manualDebtOutstanding = (debt: any): number => Number(debt.outstanding ?? debt.outstanding_amount ?? 0);
-        const manualDebts = (obRes.manual_debts || []).filter((d: any) => manualDebtOutstanding(d) > 0);
+        const manualDebtOutstanding = (debt: { outstanding_amount?: number; outstanding?: number }): number =>
+          Number(debt.outstanding_amount ?? debt.outstanding ?? 0);
+        const manualDebts = (obRes.manual_debts || []).filter(
+          (d: { outstanding_amount?: number; outstanding?: number }) => manualDebtOutstanding(d) > 0
+        );
         if (manualDebts.length > 0) {
           setManualDebtAlert({
-            total: manualDebts.reduce((s: number, d: any) => s + manualDebtOutstanding(d), 0),
-            items: manualDebts.map((d: any) => ({ id: d.id, description: d.description, outstanding: manualDebtOutstanding(d) })),
+            total: manualDebts.reduce(
+              (s: number, d: { outstanding_amount?: number; outstanding?: number }) => s + manualDebtOutstanding(d),
+              0
+            ),
+            items: manualDebts.map(
+              (d: { id: number; description: string; outstanding_amount?: number; outstanding?: number }) => ({
+                id: d.id,
+                description: d.description,
+                outstanding: manualDebtOutstanding(d),
+              })
+            ),
           });
         } else {
           setManualDebtAlert(null);

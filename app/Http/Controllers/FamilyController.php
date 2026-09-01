@@ -62,8 +62,16 @@ class FamilyController extends Controller
         try {
             $students = $this->resolveFamilyStudentsForOldDebts($id);
 
-            if ($students->isEmpty()) {
+            if ($students === null) {
                 return response()->json(['message' => 'العائلة غير موجودة'], 404);
+            }
+
+            if ($students->isEmpty()) {
+                return response()->json([
+                    'students' => new \stdClass,
+                    'count' => 0,
+                    'total' => 0.0,
+                ]);
             }
 
             $studentIds = $students->pluck('id')->all();
@@ -136,37 +144,43 @@ class FamilyController extends Controller
     }
 
     /**
-     * حلّ أبناء العائلة بنفس قواعد FamilyService::resolveFamilyStudents
-     * (معرف Guardian رقمي، أو هاتف منقّح phone_XXX، أو معرف تلميذ student_X).
-     * نسخة مصغّرة للقراءة فقط كي لا يُعدَّل FamilyService.
+     * حلّ أبناء العائلة باستعلامات قاعدة بيانات محددة دون تحميل كل السجلات بالذاكرة.
+     * يرجع null إذا كانت العائلة غير موجودة أصلاً (لإرجاع 404)، ومجموعة فارغة إذا كانت العائلة موجودة بلا أبناء.
      */
-    protected function resolveFamilyStudentsForOldDebts(string|int $familyKey): \Illuminate\Support\Collection
+    protected function resolveFamilyStudentsForOldDebts(string|int $familyKey): ?\Illuminate\Support\Collection
     {
         if (is_numeric($familyKey)) {
             $guardian = Guardian::with('students')->find((int) $familyKey);
 
-            if ($guardian && $guardian->students->isNotEmpty()) {
+            if ($guardian) {
                 return $guardian->students;
             }
+
+            return null;
         }
 
         $phoneKey = str_replace('phone_', '', (string) $familyKey);
         $phoneDigits = FamilyService::normalizePhone($phoneKey);
 
         if ($phoneDigits) {
-            return Student::query()->get()->filter(function (Student $student) use ($phoneDigits) {
-                return FamilyService::normalizePhone($student->guardian_phone) === $phoneDigits
-                    || FamilyService::normalizePhone($student->mother_phone) === $phoneDigits;
-            })->values();
+            $students = Student::query()
+                ->where('guardian_phone', $phoneDigits)
+                ->orWhere('mother_phone', $phoneDigits)
+                ->orWhere('guardian_phone', 'LIKE', "%{$phoneDigits}%")
+                ->orWhere('mother_phone', 'LIKE', "%{$phoneDigits}%")
+                ->get();
+
+            return $students->isNotEmpty() ? $students : null;
         }
 
-        if (str_starts_with((string) $familyKey, 'student_') || is_numeric($familyKey)) {
+        if (str_starts_with((string) $familyKey, 'student_')) {
             $studentId = (int) str_replace('student_', '', (string) $familyKey);
+            $student = Student::find($studentId);
 
-            return Student::whereKey($studentId)->get();
+            return $student ? collect([$student]) : null;
         }
 
-        return collect();
+        return null;
     }
 
     /**
