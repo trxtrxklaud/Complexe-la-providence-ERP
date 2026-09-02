@@ -84,7 +84,6 @@ export function BulkEnroll() {
 
   // Filters & Search (Step 1)
   const [search, setSearch] = useState('');
-  const [sourceSectionFilter, setSourceSectionFilter] = useState('');
   const [hideEnrolled, setHideEnrolled] = useState(false);
 
   // Selected Students Map: student_id -> boolean
@@ -113,11 +112,8 @@ export function BulkEnroll() {
 
   useEffect(() => {
     loadSections();
+    loadStudents();
   }, []);
-
-  useEffect(() => {
-    loadStudents(sourceSectionFilter);
-  }, [sourceSectionFilter]);
 
   async function loadSections() {
     try {
@@ -131,12 +127,10 @@ export function BulkEnroll() {
     }
   }
 
-  async function loadStudents(section: string) {
+  async function loadStudents() {
     try {
       setLoadingStudents(true);
-      const data = section
-        ? await getStudents({ level: section, student_name: '', phone: '', birthday: '', year: '', cnte: '', per_page: 100 })
-        : await getStudents({ per_page: 100 });
+      const data = await getStudents({ per_page: 500 });
       setStudents(data || []);
     } catch (err) {
       console.error('Failed to load students:', err);
@@ -340,7 +334,7 @@ export function BulkEnroll() {
     setResults([]);
     setErrorMessage('');
     setStep(1);
-    loadStudents(sourceSectionFilter);
+    loadStudents();
   }
 
   const targetSectionLabel = useMemo(() => {
@@ -427,35 +421,17 @@ export function BulkEnroll() {
               </div>
             </div>
 
-            {/* Search and Filters */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div className="relative">
-                <Search className="w-4 h-4 absolute right-3 top-3 text-gray-400" />
-                <input
-                  type="text"
-                  placeholder="بحث بالاسم أو الرمز..."
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  className="w-full pr-9 pl-3 py-2 text-sm border rounded-lg focus:ring-2 focus:ring-[#3B4A36] focus:outline-none"
-                  style={{ borderColor: C.line }}
-                />
-              </div>
-
-              <div>
-                <select
-                  value={sourceSectionFilter}
-                  onChange={(e) => setSourceSectionFilter(e.target.value)}
-                  className="w-full px-3 py-2 text-sm border rounded-lg bg-white focus:ring-2 focus:ring-[#3B4A36] focus:outline-none"
-                  style={{ borderColor: C.line }}
-                >
-                  <option value="">جميع الأقسام السابقة</option>
-                  {sections.map((sec) => (
-                    <option key={sec.id} value={sec.id}>
-                      {sec.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
+            {/* Search */}
+            <div className="relative">
+              <Search className="w-4 h-4 absolute right-3 top-3 text-gray-400" />
+              <input
+                type="text"
+                placeholder="بحث بالاسم أو الرمز..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="w-full pr-9 pl-3 py-2 text-sm border rounded-lg focus:ring-2 focus:ring-[#3B4A36] focus:outline-none"
+                style={{ borderColor: C.line }}
+              />
             </div>
 
             {/* Students Table */}
