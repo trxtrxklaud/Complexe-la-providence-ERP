@@ -241,7 +241,7 @@ export function CollectionPage() {
         setPriorAmounts(pAm);
         // تنبيه الديون القديمة المدخلة يدوياً (قراءة فقط — لا حركة مالية هنا)
         const manualDebtOutstanding = (debt: { outstanding_amount?: number; outstanding?: number }): number =>
-          Number(debt.outstanding_amount ?? debt.outstanding ?? 0);
+          Number(debt.outstanding ?? debt.outstanding_amount ?? 0);
         const manualDebts = (obRes.manual_debts || []).filter(
           (d: { outstanding_amount?: number; outstanding?: number }) => manualDebtOutstanding(d) > 0
         );

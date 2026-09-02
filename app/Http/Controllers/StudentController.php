@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Http\Requests\TransferStudentsRequest;
 use App\Models\AcademicYear;
+use App\Models\CashTransaction;
 use App\Models\Enrollment;
 use App\Models\Section;
 use App\Models\Student;
@@ -54,6 +55,7 @@ class StudentController extends Controller
     private static function paymentRules(): array
     {
         return [
+            'client_request_id' => ['nullable', 'required_with:registration_amount', 'string', 'max:255'],
             'registration_amount' => ['nullable', 'numeric', 'min:0.01'],
             'payment_method' => ['nullable', 'required_with:registration_amount', 'in:cash,bank_transfer,check,card'],
             'payment_date' => ['nullable', 'required_with:registration_amount', 'date'],
@@ -101,10 +103,17 @@ class StudentController extends Controller
                 'label' => trim(($section->level?->name ? $section->level->name.' ' : '').$section->name),
             ]);
 
+        $activeYears = AcademicYear::where('is_active', true)->get(['id', 'name']);
+        $activeYear = $activeYears->count() === 1 ? [
+            'id' => $activeYears->first()->id,
+            'name' => $activeYears->first()->name,
+        ] : null;
+
         return response()->json([
             'levels' => $sections,
             'sections' => $sections,
             'years' => AcademicYear::orderByDesc('start_date')->get(['id', 'name']),
+            'active_year' => $activeYear,
         ]);
     }
 
@@ -436,7 +445,35 @@ class StudentController extends Controller
 
         try {
             $result = DB::transaction(function () use ($student, $validated, $request) {
-                $enrollment = $this->enrollmentService->reenrollStudent($student->id, $validated);
+                $activeYearId = AcademicYear::where('is_active', true)->value('id');
+
+                $enrollment = Enrollment::where('student_id', $student->id)
+                    ->where('academic_year_id', $activeYearId)
+                    ->where('status', 'active')
+                    ->first();
+
+                if ($enrollment) {
+                    $hasPaidRegistration = $enrollment->studentFees()
+                        ->where('status', 'paid')
+                        ->where(function ($q) {
+                            $q->whereHas('feeType', fn ($ft) => $ft->where('ledger_category', CashTransaction::CATEGORY_REGISTRATION_FEE))
+                              ->orWhere('description', 'like', '%ترسيم%')
+                              ->orWhere('description', 'like', '%تسجيل%');
+                        })
+                        ->exists();
+
+                    $requestedFeeItems = $validated['fee_items'] ?? null;
+                    $hasOtherItems = ! empty($requestedFeeItems) && collect($requestedFeeItems)->contains(function ($item) {
+                        $desc = $item['description'] ?? '';
+                        return ! str_contains($desc, 'ترسيم') && ! str_contains($desc, 'تسجيل');
+                    });
+
+                    if ($hasPaidRegistration && ! $hasOtherItems && empty($requestedFeeItems)) {
+                        throw new \InvalidArgumentException('الطالب مُرسَّم بالفعل في السنة الدراسية الحالية');
+                    }
+                } else {
+                    $enrollment = $this->enrollmentService->reenrollStudent($student->id, $validated);
+                }
 
                 $payload = $validated;
                 $payload['payment_notes'] = $validated['payment_notes'] ?? 'معلوم تجديد الترسيم';
@@ -475,8 +512,6 @@ class StudentController extends Controller
                 ] : null,
             ], 201);
         } catch (\InvalidArgumentException $e) {
-            // code يسمح للواجهة بالتفريق بين رفض حقيقي وبين حالة "مُرسَّم سلفاً"
-            // التي علاجها قبض المعلوم على الترسيم القائم، لا إنشاء ترسيم ثانٍ.
             return response()->json([
                 'message' => $e->getMessage(),
                 'code' => str_contains($e->getMessage(), 'مُرسَّم بالفعل') ? 'already_enrolled' : null,
@@ -486,121 +521,6 @@ class StudentController extends Controller
 
             return response()->json(['message' => 'حدث خطأ أثناء الترسيم'], 500);
         }
-    }
-
-    /**
-     * ترسيم جماعي لتلاميذ قدامى دفعة واحدة.
-     *
-     * يُنفّذ الترسيم لكل تلميذ داخل Transaction منفصلة حتى لا يؤدي تعثّر تلميذ واحد
-     * إلى إحباط بقية التلاميذ، مع إعادة استخدام نفس منطق EnrollmentService و RegistrationPaymentService.
-     */
-    public function bulkReenroll(Request $request): JsonResponse
-    {
-        $validated = $request->validate([
-            'section_id' => ['required', 'integer', 'exists:sections,id'],
-            'payment_method' => ['nullable', 'in:cash,bank_transfer,check,card'],
-            'payment_date' => ['nullable', 'date'],
-            'notes' => ['nullable', 'string', 'max:1000'],
-            'students' => ['required', 'array', 'min:1'],
-            'students.*.student_id' => ['required', 'integer', 'exists:students,id'],
-            'students.*.registration_amount' => ['nullable', 'numeric', 'min:0'],
-            'students.*.fee_items' => ['nullable', 'array'],
-            'students.*.fee_items.*.fee_type_id' => ['nullable', 'integer'],
-            'students.*.fee_items.*.amount' => ['nullable', 'numeric', 'min:0'],
-            'students.*.fee_items.*.description' => ['nullable', 'string', 'max:255'],
-        ], self::SECTION_MESSAGES);
-
-        $results = [];
-        $userId = $request->user()?->id;
-        $commonSectionId = (int) $validated['section_id'];
-        $commonPaymentMethod = $validated['payment_method'] ?? 'cash';
-        $commonPaymentDate = $validated['payment_date'] ?? now()->toDateString();
-        $commonNotes = $validated['notes'] ?? 'معلوم تجديد الترسيم (ترسيم جماعي)';
-
-        foreach ($validated['students'] as $item) {
-            $studentId = (int) $item['student_id'];
-            $regAmount = isset($item['registration_amount']) ? (float) $item['registration_amount'] : 0.0;
-            $feeItems = $item['fee_items'] ?? null;
-
-            try {
-                $entry = DB::transaction(function () use ($studentId, $commonSectionId, $regAmount, $feeItems, $commonPaymentMethod, $commonPaymentDate, $commonNotes, $userId) {
-                    $enrollment = $this->enrollmentService->reenrollStudent($studentId, [
-                        'section_id' => $commonSectionId,
-                        'notes' => $commonNotes,
-                    ]);
-
-                    $payment = null;
-                    if ($regAmount > 0) {
-                        $payload = [
-                            'registration_amount' => $regAmount,
-                            'payment_method' => $commonPaymentMethod,
-                            'payment_date' => $commonPaymentDate,
-                            'payment_notes' => $commonNotes,
-                            'fee_items' => $feeItems,
-                        ];
-
-                        $payment = $this->registrationPaymentService->record(
-                            $enrollment,
-                            $payload,
-                            $userId,
-                        );
-                    }
-
-                    return [$enrollment, $payment];
-                });
-
-                [$enrollment, $payment] = $entry;
-
-                if ($payment) {
-                    $payment->loadMissing(['paymentAllocations.studentFee']);
-                }
-
-                $results[] = [
-                    'student_id' => $studentId,
-                    'status' => 'enrolled',
-                    'message' => 'تم الترسيم بنجاح',
-                    'enrollment_id' => $enrollment->id,
-                    'payment' => $payment ? [
-                        'id' => $payment->id,
-                        'amount' => $payment->amount,
-                        'payment_date' => $payment->payment_date?->toDateString(),
-                        'method' => $payment->method,
-                        'notes' => $payment->notes,
-                        'receipt_number' => 'REC-'.str_pad((string) $payment->id, 6, '0', STR_PAD_LEFT),
-                        'items' => $payment->paymentAllocations->map(fn ($a) => [
-                            'name' => $a->studentFee?->description ?: 'بند',
-                            'amount' => (float) $a->amount_allocated,
-                        ]),
-                    ] : null,
-                ];
-            } catch (\InvalidArgumentException $e) {
-                $isAlready = str_contains($e->getMessage(), 'مُرسَّم بالفعل') || str_contains($e->getMessage(), 'already enrolled');
-                $results[] = [
-                    'student_id' => $studentId,
-                    'status' => $isAlready ? 'already_enrolled' : 'failed',
-                    'message' => $e->getMessage(),
-                    'payment' => null,
-                ];
-            } catch (\Exception $e) {
-                report($e);
-                $results[] = [
-                    'student_id' => $studentId,
-                    'status' => 'failed',
-                    'message' => 'حدث خطأ أثناء الترسيم',
-                    'payment' => null,
-                ];
-            }
-        }
-
-        return response()->json([
-            'results' => $results,
-            'summary' => [
-                'total' => count($validated['students']),
-                'enrolled' => count(array_filter($results, fn ($r) => $r['status'] === 'enrolled')),
-                'already_enrolled' => count(array_filter($results, fn ($r) => $r['status'] === 'already_enrolled')),
-                'failed' => count(array_filter($results, fn ($r) => $r['status'] === 'failed')),
-            ],
-        ], 200);
     }
 
     /**

@@ -40,6 +40,7 @@ class ReenrollRegistrationPaymentTest extends TestCase
         $this->makeRegistrationFeeType(150);
 
         $response = $this->postJson('/api/students/' . $old->student_id . '/reenroll', [
+            'client_request_id' => 'req-test-150',
             'section_id' => $old->section_id,
             'registration_amount' => 150,
             'payment_method' => 'cash',
@@ -82,6 +83,7 @@ class ReenrollRegistrationPaymentTest extends TestCase
         $feeType = $this->makeRegistrationFeeType(20);
 
         $this->postJson('/api/students/' . $old->student_id . '/reenroll', [
+            'client_request_id' => 'req-test-70',
             'section_id' => $old->section_id,
             'registration_amount' => 70,
             'payment_method' => 'cash',
@@ -120,6 +122,7 @@ class ReenrollRegistrationPaymentTest extends TestCase
         $this->makeRegistrationFeeType(150);
 
         $this->postJson('/api/students/' . $old->student_id . '/reenroll', [
+            'client_request_id' => 'req-test-120',
             'section_id' => $old->section_id,
             'registration_amount' => 120,
             'payment_method' => 'cash',
@@ -159,6 +162,7 @@ class ReenrollRegistrationPaymentTest extends TestCase
         $this->makeRegistrationFeeType(150);
 
         $this->postJson('/api/students/' . $old->student_id . '/reenroll', [
+            'client_request_id' => 'req-no-method',
             'section_id' => $old->section_id,
             'registration_amount' => 150,
         ])->assertUnprocessable();
@@ -176,6 +180,7 @@ class ReenrollRegistrationPaymentTest extends TestCase
         $this->makeRegistrationFeeType(150);
 
         $payload = [
+            'client_request_id' => 'req-sec-1',
             'section_id' => $old->section_id,
             'registration_amount' => 150,
             'payment_method' => 'cash',
@@ -183,7 +188,7 @@ class ReenrollRegistrationPaymentTest extends TestCase
         ];
 
         $this->postJson('/api/students/' . $old->student_id . '/reenroll', $payload)->assertCreated();
-        $this->postJson('/api/students/' . $old->student_id . '/reenroll', $payload)->assertStatus(422);
+        $this->postJson('/api/students/' . $old->student_id . '/reenroll', array_merge($payload, ['client_request_id' => 'req-sec-2']))->assertStatus(422);
 
         $this->assertSame(2, Enrollment::count(), 'ترسيم مزدوج في نفس السنة يضاعف الرسوم');
         $this->assertSame(1, CashTransaction::count(), 'ويضاعف المدخول معها');
@@ -222,6 +227,7 @@ class ReenrollRegistrationPaymentTest extends TestCase
         ]);
 
         $payload = [
+            'client_request_id' => 'req-detailed-items',
             'section_id' => $old->section_id,
             'registration_amount' => 135, // 70 + 30 + 20 + 15
             'payment_method' => 'cash',
@@ -270,6 +276,7 @@ class ReenrollRegistrationPaymentTest extends TestCase
 
         // تجربة إرسال مبالغ معدلة من المستخدم وبنود دون معرف مسبق
         $payload = [
+            'client_request_id' => 'req-custom-prices',
             'section_id' => $old->section_id,
             'registration_amount' => 160, // 70 + 50 + 40
             'payment_method' => 'cash',

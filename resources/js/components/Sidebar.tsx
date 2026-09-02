@@ -262,16 +262,9 @@ export function Sidebar() {
                         <>
                             <NavItem
                                 to={isCashier ? '/students/enroll' : '/students'}
-                                isActive={startsWith('/students') && !startsWith('/students/bulk-gender') && !startsWith('/students/bulk-enroll')}
+                                isActive={startsWith('/students') && !startsWith('/students/bulk-gender')}
                                 label="التلاميذ"
                                 icon={<GraduationCap size={20} />}
-                                collapsed={collapsed}
-                            />
-                            <NavItem
-                                to="/students/bulk-enroll"
-                                isActive={startsWith('/students/bulk-enroll')}
-                                label="ترسيم جماعي"
-                                icon={<UserPlus size={20} />}
                                 collapsed={collapsed}
                             />
                             <NavItem

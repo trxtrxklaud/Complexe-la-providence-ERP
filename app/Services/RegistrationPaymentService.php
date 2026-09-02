@@ -46,6 +46,17 @@ class RegistrationPaymentService
 
         $feeItems = $data['fee_items'] ?? null;
 
+        // مفتاح عدم التكرار: client_request_id إلزامي لكل طلب دفع لمنع التكرار دون توليد مفاتيح تخمينية
+        $idempotencyKey = $data['client_request_id']
+            ?? $data['idempotency_key']
+            ?? ($data['request_id'] ?? null);
+
+        if (empty($idempotencyKey) || ! is_string($idempotencyKey) || trim($idempotencyKey) === '') {
+            throw \Illuminate\Validation\ValidationException::withMessages([
+                'client_request_id' => ['معرّف الطلب client_request_id إلزامي لإتمام عملية الدفع ومنع التكرار.'],
+            ]);
+        }
+
         return $this->payments->recordPayment([
             'student_id'      => $enrollment->student_id,
             'enrollment_id'   => $enrollment->id,
@@ -53,8 +64,7 @@ class RegistrationPaymentService
             'payment_date'    => $data['payment_date'] ?? now()->toDateString(),
             'method'          => $data['payment_method'] ?? 'cash',
             'notes'           => $data['payment_notes'] ?? 'معلوم الترسيم عند التسجيل',
-            // مفتاح ثابت لكل ترسيم: إعادة إرسال النموذج لا تضاعف المدخول.
-            'idempotency_key' => 'enrollment-' . $enrollment->id . '-registration',
+            'idempotency_key' => trim($idempotencyKey),
             'allocations'     => $this->allocations($enrollment, $amount, $feeItems),
         ], $createdBy);
     }

@@ -8,12 +8,27 @@ export interface Guardian {
     relationship?: string;
 }
 
+export interface StudentFeeItem {
+    id: number;
+    fee_type_id?: number | null;
+    fee_type?: { id?: number; name_ar?: string; ledger_category?: string } | null;
+    description: string;
+    amount_due: number | string;
+    direct_paid_amount?: number | string;
+    status: 'pending' | 'partial' | 'paid' | 'cancelled';
+    due_date?: string | null;
+}
+
 export interface Enrollment {
     id: number;
-    level: { name: string } | null;
-    section: { name: string } | null;
-    academic_year?: { name: string } | null;
+    academic_year_id?: number;
+    section_id?: number;
+    level_id?: number;
+    level: { id?: number; name: string } | null;
+    section: { id?: number; name: string } | null;
+    academic_year?: { id?: number; name: string; is_active?: boolean } | null;
     status?: string | null;
+    student_fees?: StudentFeeItem[];
 }
 
 export interface EnrollmentResponse {
@@ -104,6 +119,7 @@ export type StudentSearchOptions = {
     levels: SectionOption[];
     sections?: SectionOption[];
     years: Array<{ id: number; name: string }>;
+    active_year?: { id: number; name: string } | null;
 };
 
 export type TransferStudent = {

@@ -15,7 +15,7 @@ use Illuminate\Support\Str;
 
 class EnrollmentService
 {
-    public function __construct(private FeeService $feeService) {}
+    public function __construct() {}
 
     public function enrollStudent(array $data, ?UploadedFile $photoFile = null): Enrollment
     {
@@ -64,9 +64,6 @@ class EnrollmentService
                 'notes'            => $data['notes'] ?? null,
             ]);
 
-            // توليد الرسوم تلقائياً ✅
-            $this->feeService->generateFeesForEnrollment($enrollment);
-
             return $enrollment;
         });
     }
@@ -103,8 +100,6 @@ class EnrollmentService
                 'previous_enrollment_id' => $previousEnrollment?->id,
                 'notes'                  => $data['notes'] ?? null,
             ]);
-
-            $this->feeService->generateFeesForEnrollment($enrollment);
 
             return $enrollment;
         });
