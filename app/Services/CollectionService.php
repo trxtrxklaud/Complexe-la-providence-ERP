@@ -13,6 +13,7 @@ use App\Models\MonthlyDiscount;
 use App\Models\OpeningBalance;
 use App\Models\Payment;
 use App\Models\PaymentAllocation;
+use App\Models\Student;
 use App\Models\StudentFee;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
@@ -281,9 +282,7 @@ class CollectionService
                 // بدون هذا السطر كان الاستخلاص لا يظهر في الخزينة ولا في التقارير.
                 $this->ledgerService->recordPayment($payment);
 
-                $guardian = $enrollment->student->guardians
-                    ->sortByDesc(fn ($g) => $g->pivot->is_primary_contact ?? 0)
-                    ->first();
+                $guardianPayload = self::resolveGuardianPayload($enrollment->student);
 
                 $actor = auth()->user();
 
@@ -317,11 +316,7 @@ class CollectionService
                         'section' => $enrollment->section?->name,
                         'academic_year' => $enrollment->academicYear?->name,
                     ],
-                    'guardian' => $guardian ? [
-                        'first_name' => $guardian->first_name,
-                        'last_name' => $guardian->last_name,
-                        'phone' => $guardian->phone,
-                    ] : null,
+                    'guardian' => $guardianPayload,
                     'created_by' => [
                         'id' => $createdBy,
                         'code' => $actor?->code ?? $actor?->username ?? (string) $createdBy,
@@ -343,6 +338,61 @@ class CollectionService
             }
             throw $e;
         }
+    }
+
+    /**
+     * بيانات وليّ الأمر لعرضها في الوصل.
+     *
+     * الأصل هو جدول الربط guardian_student (مع تفضيل جهة الاتصال الأساسية)،
+     * لأنه يحمل بيانات الوليّ المُنشأة عند الترسيم. لكن التلاميذ الذين دخلوا
+     * عبر الاستيراد ليست لهم صفوف في الربط، وبياناتهم محفوظة في أعمدة
+     * students المسطَّحة؛ فبدون هذا التراجع كان الوصل يُطبع بلا اسم الوليّ
+     * ولا هاتفه رغم توفّر البيانات.
+     *
+     * طبقة عرض بحتة: لا تكتب شيئاً ولا تمسّ أيّ مبلغ أو قيد نقدي، ولا تُغيّر
+     * تجميع العائلات (FamilyService يبقى على مصدره كما هو).
+     *
+     * @return array{first_name: string|null, last_name: string|null, phone: string|null, email: string|null}|null
+     */
+    public static function resolveGuardianPayload(?Student $student): ?array
+    {
+        if (! $student) {
+            return null;
+        }
+
+        $guardian = $student->relationLoaded('guardians')
+            ? $student->guardians
+                ->sortByDesc(fn ($g) => $g->pivot->is_primary_contact ?? 0)
+                ->first()
+            : $student->guardians()
+                ->orderByDesc('guardian_student.is_primary_contact')
+                ->first();
+
+        if ($guardian) {
+            return [
+                'first_name' => $guardian->first_name,
+                'last_name' => $guardian->last_name,
+                'phone' => $guardian->phone,
+                'email' => $guardian->email,
+            ];
+        }
+
+        $first = trim((string) ($student->guardian_first_name ?? ''));
+        $last = trim((string) ($student->guardian_last_name ?? ''));
+        $phone = trim((string) ($student->guardian_phone ?? ''));
+        $email = trim((string) ($student->guardian_email ?? ''));
+
+        // لا اسم ولا هاتف ⇒ لا بيانات وليّ فعلاً: نُبقي null كما كان السلوك.
+        if ($first === '' && $last === '' && $phone === '') {
+            return null;
+        }
+
+        return [
+            'first_name' => $first !== '' ? $first : null,
+            'last_name' => $last !== '' ? $last : null,
+            'phone' => $phone !== '' ? $phone : null,
+            'email' => $email !== '' ? $email : null,
+        ];
     }
 
     private function validateClubItems(array $items, Enrollment $enrollment, array $months): array

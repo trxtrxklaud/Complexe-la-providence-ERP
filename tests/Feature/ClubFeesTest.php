@@ -656,4 +656,56 @@ class ClubFeesTest extends TestCase
         $this->assertEquals(30.00, $record1Oct['amount_due']);
         $this->assertEquals(30.00, $record2Oct['amount_due']);
     }
+
+    /** 25. إلغاء قسم من إدارة النوادي يحذف معاليمه غير الخالصة ويحدّث لوحة المتخلدات والتقرير فوراً. */
+    public function test_unlinking_section_removes_unpaid_fees_from_arrears_dashboard_and_report(): void
+    {
+        $year = $this->makeAcademicYear();
+        $enrollmentA = $this->makeEnrollment($year);
+        $enrollmentB = $this->makeEnrollment($year);
+
+        $club = $this->clubService->createClub([
+            'name' => 'نادي الروبوتيك',
+            'monthly_fee' => 20.00,
+            'is_active' => true,
+        ], [], [$enrollmentA->section_id, $enrollmentB->section_id]);
+
+        // توليد معاليم لشهر 2025-09
+        $this->clubService->generateMonthFees($year->id, '2025-09', $club->id);
+
+        // قبل التعديل: التلميذان يظهران في لوحة المتخلدات والتقرير
+        $dashBefore = $this->clubService->getArrearsDashboard(['academic_year_id' => $year->id]);
+        $this->assertEquals(2, $dashBefore['summary']['students_count']);
+        $this->assertEquals(40.00, $dashBefore['summary']['total_remaining']);
+
+        $reportBefore = $this->clubService->getReport(['academic_year_id' => $year->id, 'month' => '2025-09']);
+        $this->assertEquals(2, $reportBefore['summary']['students_count']);
+        $this->assertEquals(40.00, $reportBefore['summary']['total_remaining']);
+
+        // إلغاء القسم A من النادي في إدارة النوادي
+        $this->clubService->updateClub($club, [
+            'name' => 'نادي الروبوتيك',
+            'monthly_fee' => 20.00,
+            'is_active' => true,
+        ], null, [$enrollmentB->section_id]);
+
+        // بعد التعديل: يتبقى التلميذ B فقط في لوحة المتخلدات والتقرير
+        $dashAfter = $this->clubService->getArrearsDashboard(['academic_year_id' => $year->id]);
+        $this->assertEquals(1, $dashAfter['summary']['students_count']);
+        $this->assertEquals(20.00, $dashAfter['summary']['total_remaining']);
+
+        $reportAfter = $this->clubService->getReport(['academic_year_id' => $year->id, 'month' => '2025-09']);
+        $this->assertEquals(1, $reportAfter['summary']['students_count']);
+        $this->assertEquals(20.00, $reportAfter['summary']['total_remaining']);
+
+        // التأكد من حذف معاليم واشتراك التلميذ A
+        $this->assertDatabaseMissing('club_monthly_fees', [
+            'student_id' => $enrollmentA->student_id,
+            'club_id' => $club->id,
+        ]);
+        $this->assertDatabaseMissing('club_subscriptions', [
+            'student_id' => $enrollmentA->student_id,
+            'club_id' => $club->id,
+        ]);
+    }
 }

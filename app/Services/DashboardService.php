@@ -9,6 +9,7 @@ use App\Models\FeeType;
 use App\Models\ManualStudentDebt;
 use App\Models\OldEmployeeDebt;
 use App\Models\Payment;
+use App\Services\ClubService;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 
@@ -183,6 +184,8 @@ class DashboardService
             ->whereNull('cancelled_at')
             ->where('month', $currentMonth)
             ->where('academic_year_id', $activeYear->id);
+
+        app(ClubService::class)->applyClubEligibilityScope($clubMonthlyQuery, $activeYear->id);
 
         $clubRemaining = (float) (clone $clubMonthlyQuery)
             ->selectRaw('COALESCE(SUM(CASE WHEN amount_due - amount_paid > 0 THEN amount_due - amount_paid ELSE 0 END), 0) AS remaining')

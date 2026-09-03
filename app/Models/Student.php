@@ -21,6 +21,10 @@ class Student extends Model
         'guardian_last_name',
         'mother_name',
         'guardian_phone',
+        // العمود موجود في القاعدة ويُقرأ في الوصل (CollectionService::resolveGuardianPayload)
+        // ويُتحقَّق منه في StudentController@store، لكنه كان ساقطاً من هنا فيُهمَل
+        // بصمت عند الإسناد الجَماعي. الكتابة تبقى محدودة بما تسمح به قواعد التحقق.
+        'guardian_email',
         'mother_phone',
     ];
 

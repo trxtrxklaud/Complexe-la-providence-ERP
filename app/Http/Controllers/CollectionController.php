@@ -86,16 +86,14 @@ class CollectionController extends Controller
             // المغادر والمنقول لا يُستخلص منهما في هذا القسم.
             ->where('status', 'active')
             ->with([
-                'student:id,first_name,last_name,student_code',
+                // أعمدة وليّ الأمر المسطَّحة لازمة للتراجع عليها حين لا يوجد
+                // صفّ في guardian_student (تلاميذ الاستيراد).
+                'student:id,first_name,last_name,student_code,guardian_first_name,guardian_last_name,guardian_phone,guardian_email',
                 'student.guardians',
             ])
             ->get();
 
         $result = $enrollments->map(function ($e) {
-            $guardian = $e->student?->guardians
-                ?->sortByDesc(fn ($g) => $g->pivot->is_primary_contact ?? 0)
-                ->first();
-
             return [
                 'enrollment_id' => $e->id,
                 'student' => [
@@ -104,11 +102,7 @@ class CollectionController extends Controller
                     'last_name' => $e->student->last_name,
                     'student_code' => $e->student->student_code,
                 ],
-                'guardian' => $guardian ? [
-                    'first_name' => $guardian->first_name,
-                    'last_name' => $guardian->last_name,
-                    'phone' => $guardian->phone,
-                ] : null,
+                'guardian' => CollectionService::resolveGuardianPayload($e->student),
             ];
         })
             ->sortBy(fn ($row) => trim($row['student']['first_name'].' '.$row['student']['last_name']))
