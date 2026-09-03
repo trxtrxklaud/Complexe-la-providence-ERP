@@ -626,100 +626,130 @@ class StudentController extends Controller
             'reason' => ['required', 'string', 'min:3', 'max:500'],
         ]);
 
-        $activeYear = AcademicYear::where('is_active', true)->first();
-        if (! $activeYear) {
-            return response()->json(['message' => 'لا توجد سنة دراسية نشطة.'], 422);
-        }
-
-        $enrollment = Enrollment::where('student_id', $student->id)
-            ->where('academic_year_id', $activeYear->id)
-            ->where('status', 'active')
-            ->first();
-
-        if (! $enrollment) {
-            return response()->json(['message' => 'لا يوجد ترسيم نشط لهذا التلميذ في السنة الدراسية الحالية.'], 422);
-        }
-
-        // التحقق من عدم وجود مدفوعات أخرى غير معلوم الترسيم (مثل أقساط شهرية أو نوادي)
-        $hasOtherActivePayments = Payment::where('enrollment_id', $enrollment->id)
-            ->whereNull('cancelled_at')
-            ->whereDoesntHave('paymentAllocations', function ($q) {
-                $q->whereHas('studentFee', fn ($sf) =>
-                    $sf->where('ledger_category', CashTransaction::CATEGORY_REGISTRATION_FEE)
-                       ->orWhere('description', 'like', '%ترسيم%')
-                       ->orWhere('description', 'like', '%تسجيل%')
-                );
-            })
-            ->exists();
-
-        if ($hasOtherActivePayments) {
-            return response()->json([
-                'message' => 'لا يمكن إلغاء الترسيم لوجود دفعات مالية أخرى مسجلة للتلميذ (معاليم شهرية أو نوادي). يرجى إلغاؤها أولاً.',
-            ], 422);
-        }
-
-        DB::transaction(function () use ($enrollment, $student, $data, $request) {
-            // 1. إلغاء أي دفعات مرتبطة بالترسيم وسحبها من الخزينة
-            $payments = Payment::where('enrollment_id', $enrollment->id)
-                ->whereNull('cancelled_at')
-                ->get();
-
-            foreach ($payments as $payment) {
-                $feeIds = $payment->paymentAllocations()->pluck('student_fee_id')->unique()->all();
-
-                $payment->update([
-                    'cancelled_at' => now(),
-                    'cancelled_by' => $request->user()?->id,
-                    'cancellation_reason' => $data['reason'],
-                ]);
-
-                foreach ($feeIds as $feeId) {
-                    $fee = StudentFee::find($feeId);
-                    if ($fee) {
-                        $fee->delete();
-                    }
-                }
-
-                // سحب أثر الدفعة من الدفتر النقدي المركزي
-                $this->ledgerService->cancelFor($payment, $request->user()?->id, $data['reason']);
-
-                AuditService::log(
-                    'payment.cancel',
-                    'إلغاء دفعة معلوم الترسيم رقم #'.$payment->id.' للتلميذ: '.trim($student->first_name.' '.$student->last_name).' بمبلغ '.$payment->amount.' د.ت',
-                    $payment,
-                    ['reason' => $data['reason']]
-                );
+        try {
+            $activeYear = AcademicYear::where('is_active', true)->first();
+            if (! $activeYear) {
+                return response()->json(['message' => 'لا توجد سنة دراسية نشطة.'], 422);
             }
 
-            // 2. حذف أي رسوم غير مدفوعة مرتبطة بهذا الترسيم
-            $enrollment->studentFees()->whereDoesntHave('paymentAllocations', fn ($q) =>
-                $q->whereHas('payment', fn ($p) => $p->whereNull('cancelled_at'))
-            )->delete();
+            $enrollment = Enrollment::where('student_id', $student->id)
+                ->where('academic_year_id', $activeYear->id)
+                ->where('status', 'active')
+                ->first();
 
-            // 3. حذف أي اشتراكات نوادي أو تخفيضات ملحقة بالترسيم
-            $enrollment->clubSubscriptions()->delete();
-            $enrollment->discounts()->delete();
+            if (! $enrollment) {
+                return response()->json(['message' => 'لا يوجد ترسيم نشط لهذا التلميذ في السنة الدراسية الحالية.'], 422);
+            }
 
-            // 4. حذف الترسيم نفسه (SoftDelete)
-            $sectionName = $enrollment->section?->name;
-            $enrollment->delete();
+            // التحقق من عدم وجود مدفوعات أخرى غير معلوم الترسيم (مثل أقساط شهرية أو نوادي)
+            $hasOtherActivePayments = Payment::where('enrollment_id', $enrollment->id)
+                ->whereNull('cancelled_at')
+                ->where(function ($query) {
+                    $query->whereNotNull('months')
+                        ->orWhereHas('paymentAllocations.studentFee', function ($q) {
+                            $q->where('description', 'not like', '%ترسيم%')
+                              ->where('description', 'not like', '%تسجيل%')
+                              ->whereDoesntHave('feeType', fn ($ft) =>
+                                  $ft->where('ledger_category', CashTransaction::CATEGORY_REGISTRATION_FEE)
+                              );
+                        });
+                })
+                ->exists();
 
-            // 5. تسجيل عملية إلغاء الترسيم في سجل التدقيق ليراها صاحب النظام
-            AuditService::log(
-                'enrollment.cancel',
-                'إلغاء ترسيم التلميذ: '.trim($student->first_name.' '.$student->last_name).($sectionName ? ' من قسم '.$sectionName : '').' - السبب: '.$data['reason'],
-                $student,
-                [
-                    'enrollment_id' => $enrollment->id,
-                    'academic_year_id' => $enrollment->academic_year_id,
-                    'section_id' => $enrollment->section_id,
-                    'reason' => $data['reason'],
-                ]
-            );
-        });
+            if ($hasOtherActivePayments) {
+                return response()->json([
+                    'message' => 'لا يمكن إلغاء الترسيم لوجود دفعات مالية أخرى مسجلة للتلميذ (معاليم شهرية أو نوادي). يرجى إلغاؤها أولاً.',
+                ], 422);
+            }
 
-        return response()->json([
-            'message' => 'تم إلغاء الترسيم واسترجاع المبالغ من الخزينة بنجاح',
-        ]);
+            DB::transaction(function () use ($enrollment, $student, $data, $request) {
+                // 1. إلغاء أي دفعات مرتبطة بالترسيم وسحبها من الخزينة
+                $payments = Payment::where('enrollment_id', $enrollment->id)
+                    ->whereNull('cancelled_at')
+                    ->get();
+
+                foreach ($payments as $payment) {
+                    $feeIds = $payment->paymentAllocations()->pluck('student_fee_id')->unique()->all();
+
+                    $payment->update([
+                        'cancelled_at' => now(),
+                        'cancelled_by' => $request->user()?->id,
+                        'cancellation_reason' => $data['reason'],
+                    ]);
+
+                    foreach ($feeIds as $feeId) {
+                        $fee = StudentFee::find($feeId);
+                        if ($fee) {
+                            $hasOtherActiveAllocations = $fee->paymentAllocations()
+                                ->where('payment_id', '!=', $payment->id)
+                                ->whereHas('payment', fn ($q) => $q->whereNull('cancelled_at'))
+                                ->exists();
+
+                            if (! $hasOtherActiveAllocations && ! $fee->waivers()->exists()) {
+                                $fee->delete();
+                            }
+                        }
+                    }
+
+                    // سحب أثر الدفعة من الدفتر النقدي المركزي
+                    $this->ledgerService->cancelFor($payment, $request->user()?->id, $data['reason']);
+
+                    AuditService::log(
+                        'payment.cancel',
+                        'إلغاء دفعة معلوم الترسيم رقم #'.$payment->id.' للتلميذ: '.trim($student->first_name.' '.$student->last_name).' بمبلغ '.$payment->amount.' د.ت',
+                        $payment,
+                        ['reason' => $data['reason']]
+                    );
+                }
+
+                // 2. حذف أي رسوم غير مدفوعة مرتبطة بهذا الترسيم
+                $enrollment->studentFees()->whereDoesntHave('paymentAllocations', fn ($q) =>
+                    $q->whereHas('payment', fn ($p) => $p->whereNull('cancelled_at'))
+                )->delete();
+
+                // 3. إلغاء التخفيضات إن وجدت
+                if (method_exists($enrollment, 'discounts')) {
+                    $enrollment->discounts()->whereNull('cancelled_at')->update([
+                        'cancelled_at' => now(),
+                        'cancelled_by' => $request->user()?->id,
+                        'cancellation_reason' => $data['reason'],
+                    ]);
+                }
+
+                if (method_exists($enrollment, 'monthlyDiscounts')) {
+                    $enrollment->monthlyDiscounts()->whereNull('cancelled_at')->update([
+                        'cancelled_at' => now(),
+                        'cancelled_by' => $request->user()?->id,
+                        'cancellation_reason' => $data['reason'],
+                    ]);
+                }
+
+                // 4. حذف الترسيم نفسه (SoftDelete)
+                $sectionName = $enrollment->section?->name;
+                $enrollment->delete();
+
+                // 5. تسجيل عملية إلغاء الترسيم في سجل التدقيق ليراها صاحب النظام
+                AuditService::log(
+                    'enrollment.cancel',
+                    'إلغاء ترسيم التلميذ: '.trim($student->first_name.' '.$student->last_name).($sectionName ? ' من قسم '.$sectionName : '').' - السبب: '.$data['reason'],
+                    $student,
+                    [
+                        'enrollment_id' => $enrollment->id,
+                        'academic_year_id' => $enrollment->academic_year_id,
+                        'section_id' => $enrollment->section_id,
+                        'reason' => $data['reason'],
+                    ]
+                );
+            });
+
+            return response()->json([
+                'message' => 'تم إلغاء الترسيم واسترجاع المبالغ من الخزينة بنجاح',
+            ]);
+        } catch (\Exception $e) {
+            report($e);
+            return response()->json([
+                'message' => 'حدث خطأ أثناء إلغاء الترسيم: ' . $e->getMessage(),
+            ], 500);
+        }
     }
 }
