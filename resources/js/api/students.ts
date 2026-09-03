@@ -374,3 +374,26 @@ export async function updateStudentGender(
     }
     return res.json();
 }
+
+/**
+ * إلغاء ترسيم تلميذ في السنة النشطة مع سحب المبالغ من الخزينة وحذف الترسيم وتوثيق العملية.
+ */
+export async function cancelStudentEnrollment(
+    studentId: number,
+    reason: string,
+): Promise<{ message: string }> {
+    const res = await fetch(`${API_BASE}/students/${studentId}/cancel-enrollment`, {
+        method: 'POST',
+        headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ reason }),
+    });
+    if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new ApiError(
+            firstValidationMessage(err, 'تعذّر إلغاء الترسيم'),
+            typeof err?.code === 'string' ? err.code : null,
+        );
+    }
+    return res.json();
+}

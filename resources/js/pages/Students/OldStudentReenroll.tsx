@@ -1,17 +1,19 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { Search, ArrowRight, GraduationCap, CreditCard, AlertCircle, CheckCircle, Printer, Loader2 } from 'lucide-react';
+import { Search, ArrowRight, GraduationCap, CreditCard, AlertCircle, CheckCircle, Printer, Loader2, Ban } from 'lucide-react';
 import {
   getStudents,
   getSectionOptions,
   reenrollStudent,
   recordRegistrationPayment,
   getStudentPaymentHistory,
+  cancelStudentEnrollment,
   type SectionOption,
 } from '../../api/students';
 import { ListSkeleton } from '../../components/DataSkeleton';
 import { EnrollmentFeeItemsSelector } from '../../components/Payments/EnrollmentFeeItemsSelector';
 import { ReceiptModal, type ReceiptData } from '../Payments/ReceiptModal';
+import { CancelReasonModal } from '../../components/CancelReasonModal';
 
 const C = {
   forest: '#3B4A36',
@@ -58,6 +60,8 @@ export function OldStudentReenroll() {
   const [createdReceipt, setCreatedReceipt] = useState<ReceiptData | null>(null);
   const [recentReceipts, setRecentReceipts] = useState<Record<number, ReceiptData>>({});
   const [printingStudentId, setPrintingStudentId] = useState<number | null>(null);
+  const [studentToCancel, setStudentToCancel] = useState<any | null>(null);
+  const [cancelling, setCancelling] = useState(false);
 
   // يُرفع حين يردّ الخادم code = already_enrolled: التلميذ ترسيمه قائم في السنة
   // النشطة (546 تلميذاً دخلوا عبر ترحيل الترقية دون أن يُقبض معلومهم)، فالمطلوب
@@ -262,6 +266,30 @@ export function OldStudentReenroll() {
       alert(err?.message || 'تعذر جلب وصل الترسيم');
     } finally {
       setPrintingStudentId(null);
+    }
+  }
+
+  async function handleConfirmCancel(reason: string) {
+    if (!studentToCancel) return;
+    try {
+      setCancelling(true);
+      const res = await cancelStudentEnrollment(studentToCancel.id, reason);
+      const cancelledId = studentToCancel.id;
+      setRecentReceipts((prev) => {
+        const copy = { ...prev };
+        delete copy[cancelledId];
+        return copy;
+      });
+      setSuccess(res.message || 'تم إلغاء الترسيم واسترجاع المبالغ من الخزينة بنجاح');
+      setStudentToCancel(null);
+      if (selectedStudent?.id === cancelledId) {
+        closeStudent();
+      }
+      loadStudents(sectionFilter);
+    } catch (err: any) {
+      alert(err?.message || 'تعذّر إلغاء الترسيم');
+    } finally {
+      setCancelling(false);
     }
   }
 
@@ -508,6 +536,15 @@ export function OldStudentReenroll() {
                       <Printer size={18} />
                     )}
                     <span>طباعة وصل الترسيم</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setStudentToCancel(selectedStudent)}
+                    className="w-full py-3.5 rounded-xl border border-red-200 bg-red-50 text-red-700 font-bold flex items-center justify-center gap-2 transition hover:bg-red-100 shadow-sm"
+                  >
+                    <Ban size={18} />
+                    <span>إلغاء الترسيم واسترجاع المبالغ من الخزينة</span>
                   </button>
 
                   <button
@@ -848,25 +885,40 @@ export function OldStudentReenroll() {
 
                   <div className="flex items-center gap-2 shrink-0">
                     {status.isEnrolled && (
-                      <button
-                        type="button"
-                        onClick={(e) => handlePrintReceipt(student, e)}
-                        disabled={isPrinting}
-                        className="inline-flex items-center gap-1.5 text-xs font-bold px-3 py-2 rounded-xl border transition shadow-sm hover:bg-emerald-50 disabled:opacity-50"
-                        style={{
-                          borderColor: '#A3D9B5',
-                          backgroundColor: '#F0F9F4',
-                          color: '#1E6338',
-                        }}
-                        title="طباعة وصل الترسيم"
-                      >
-                        {isPrinting ? (
-                          <Loader2 size={14} className="animate-spin" />
-                        ) : (
-                          <Printer size={14} />
-                        )}
-                        <span>طباعة الوصل</span>
-                      </button>
+                      <>
+                        <button
+                          type="button"
+                          onClick={(e) => handlePrintReceipt(student, e)}
+                          disabled={isPrinting}
+                          className="inline-flex items-center gap-1.5 text-xs font-bold px-3 py-2 rounded-xl border transition shadow-sm hover:bg-emerald-50 disabled:opacity-50"
+                          style={{
+                            borderColor: '#A3D9B5',
+                            backgroundColor: '#F0F9F4',
+                            color: '#1E6338',
+                          }}
+                          title="طباعة وصل الترسيم"
+                        >
+                          {isPrinting ? (
+                            <Loader2 size={14} className="animate-spin" />
+                          ) : (
+                            <Printer size={14} />
+                          )}
+                          <span>طباعة الوصل</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setStudentToCancel(student);
+                          }}
+                          className="inline-flex items-center gap-1 text-xs font-bold px-2.5 py-2 rounded-xl border border-red-200 bg-red-50 text-red-700 transition hover:bg-red-100 shadow-sm"
+                          title="إلغاء الترسيم واسترجاع المبالغ"
+                        >
+                          <Ban size={14} />
+                          <span>إلغاء الترسيم</span>
+                        </button>
+                      </>
                     )}
 
                     {!status.isEnrolled ? (
@@ -896,6 +948,16 @@ export function OldStudentReenroll() {
         <ReceiptModal
           receipt={createdReceipt}
           onClose={() => setCreatedReceipt(null)}
+        />
+      )}
+
+      {studentToCancel && (
+        <CancelReasonModal
+          title={`إلغاء ترسيم التلميذ: ${studentToCancel.first_name || ''} ${studentToCancel.last_name || ''}`}
+          description="سيتم إلغاء الترسيم من القسم، واسترجاع أي مبالغ مقبوضة من الخزينة المركزية، وتوثيق العملية في سجل التدقيق ليراها صاحب النظام."
+          busy={cancelling}
+          onConfirm={handleConfirmCancel}
+          onClose={() => setStudentToCancel(null)}
         />
       )}
     </div>

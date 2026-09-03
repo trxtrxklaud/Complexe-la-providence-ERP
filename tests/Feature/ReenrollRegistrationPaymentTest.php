@@ -293,6 +293,78 @@ class ReenrollRegistrationPaymentTest extends TestCase
         $this->assertEqualsWithDelta(160, (float) CashTransaction::sum('amount'), 0.001);
     }
 
+    public function test_cancel_enrollment_with_payment_reverses_cash_and_logs_audit(): void
+    {
+        $user = $this->makeRegistrar();
+        Sanctum::actingAs($user);
+
+        $old = $this->makeEnrollment();
+        $this->startNewYear();
+        $this->makeRegistrationFeeType(150);
+
+        // 1. ترسيم ودفع 150 د
+        $res = $this->postJson('/api/students/' . $old->student_id . '/reenroll', [
+            'client_request_id' => 'req-test-cancel',
+            'section_id' => $old->section_id,
+            'registration_amount' => 150,
+            'payment_method' => 'cash',
+            'payment_date' => '2026-08-03',
+        ]);
+        $res->assertCreated();
+
+        $this->assertEquals(1, CashTransaction::whereNull('cancelled_at')->count());
+        $this->assertEquals(1, Payment::whereNull('cancelled_at')->count());
+        $this->assertEquals(1, Enrollment::where('student_id', $old->student_id)->whereNull('deleted_at')->where('academic_year_id', AcademicYear::where('is_active', true)->value('id'))->count());
+
+        // 2. إلغاء الترسيم مع سبب موثّق
+        $cancelRes = $this->postJson('/api/students/' . $old->student_id . '/cancel-enrollment', [
+            'reason' => 'طلب الولي إلغاء الترسيم واسترجاع المبلغ',
+        ]);
+        $cancelRes->assertOk();
+
+        // 3. التحقق من سحب الأثر المالي من الخزينة
+        $this->assertEquals(0, CashTransaction::whereNull('cancelled_at')->count(), 'يجب سحب القيد المالي من الخزينة');
+        $this->assertNotNull(CashTransaction::first()->cancelled_at);
+
+        // 4. التحقق من إلغاء الدفعة
+        $payment = Payment::first();
+        $this->assertNotNull($payment->cancelled_at);
+        $this->assertSame('طلب الولي إلغاء الترسيم واسترجاع المبلغ', $payment->cancellation_reason);
+
+        // 5. التحقق من حذف الترسيم في السنة النشطة
+        $this->assertEquals(0, Enrollment::where('student_id', $old->student_id)->whereNull('deleted_at')->where('academic_year_id', AcademicYear::where('is_active', true)->value('id'))->count());
+
+        // 6. التحقق من التوثيق في سجل التدقيق لصاحب النظام
+        $this->assertDatabaseHas('audit_logs', [
+            'action' => 'enrollment.cancel',
+            'model_id' => $old->student_id,
+        ]);
+
+        // 7. التحقق من إمكانية إعادة ترسيم التلميذ مجدداً بدون تعارض
+        $reReenroll = $this->postJson('/api/students/' . $old->student_id . '/reenroll', [
+            'client_request_id' => 'req-test-reenroll-after-cancel',
+            'section_id' => $old->section_id,
+            'registration_amount' => 150,
+            'payment_method' => 'cash',
+            'payment_date' => '2026-08-04',
+        ]);
+        $reReenroll->assertCreated();
+        $this->assertEquals(1, CashTransaction::whereNull('cancelled_at')->count());
+    }
+
+    public function test_cancel_enrollment_requires_reason(): void
+    {
+        Sanctum::actingAs($this->makeRegistrar());
+
+        $old = $this->makeEnrollment();
+        $this->startNewYear();
+
+        $response = $this->postJson('/api/students/' . $old->student_id . '/cancel-enrollment', [
+            'reason' => '',
+        ]);
+        $response->assertStatus(422);
+    }
+
     /** سنة دراسية جديدة نشطة: بدونها يعتبر الخادم التلميذ مُرسّماً فيرفض التجديد. */
     private function startNewYear(): AcademicYear
     {
