@@ -80,6 +80,7 @@ class ClubFeesTest extends TestCase
         $year = $this->makeAcademicYear();
         $enrollment = $this->makeEnrollment($year);
         $mentalClub = Club::where('name', 'الحساب الذهني')->firstOrFail();
+        $mentalClub->sections()->attach($enrollment->section_id);
 
         $this->clubService->generateMonthFees($year->id, '2026-05', $mentalClub->id);
 
@@ -101,6 +102,7 @@ class ClubFeesTest extends TestCase
         $year = $this->makeAcademicYear();
         $enrollment = $this->makeEnrollment($year);
         $roboticsClub = Club::where('name', 'الروبوتيك')->firstOrFail();
+        $roboticsClub->sections()->attach($enrollment->section_id);
 
         $this->clubService->generateMonthFees($year->id, '2026-05', $roboticsClub->id);
 
@@ -124,6 +126,7 @@ class ClubFeesTest extends TestCase
         $enrollment2 = $this->makeEnrollment($year);
 
         $mentalClub = Club::where('name', 'الحساب الذهني')->firstOrFail();
+        $mentalClub->sections()->attach($enrollment1->section_id);
 
         $this->clubService->generateMonthFees($year->id, '2026-05', $mentalClub->id);
 
@@ -707,5 +710,36 @@ class ClubFeesTest extends TestCase
             'student_id' => $enrollmentA->student_id,
             'club_id' => $club->id,
         ]);
+    }
+
+    /** 26. النادي غير المربوط بأي قسم لا يولّد رسوماً لأي تلميذ في المدرسة وتكون متخلداته صفراً. */
+    public function test_club_without_sections_enrolls_zero_students_and_cleans_all_fees(): void
+    {
+        $year = $this->makeAcademicYear();
+        $enrollment1 = $this->makeEnrollment($year);
+        $enrollment2 = $this->makeEnrollment($year);
+
+        // إنشاء نادٍ بدون أي أقسام
+        $club = $this->clubService->createClub([
+            'name' => 'نادي الحساب الذهني',
+            'monthly_fee' => 20.00,
+            'is_active' => true,
+        ], [], []);
+
+        // محاولة توليد معاليم الشهر للنادي
+        $result = $this->clubService->generateMonthFees($year->id, '2025-09', $club->id);
+        $this->assertEquals(0, $result['created']);
+
+        // التأكد من عدم وجود أي سجلات للنادي
+        $this->assertDatabaseMissing('club_monthly_fees', ['club_id' => $club->id]);
+        $this->assertDatabaseMissing('club_subscriptions', ['club_id' => $club->id]);
+
+        $report = $this->clubService->getReport(['academic_year_id' => $year->id, 'club_id' => $club->id, 'month' => '2025-09']);
+        $this->assertEquals(0, $report['summary']['students_count']);
+        $this->assertEquals(0.00, $report['summary']['total_due']);
+
+        $dash = $this->clubService->getArrearsDashboard(['academic_year_id' => $year->id, 'club_id' => $club->id]);
+        $this->assertEquals(0, $dash['summary']['students_count']);
+        $this->assertEquals(0.00, $dash['summary']['total_remaining']);
     }
 }

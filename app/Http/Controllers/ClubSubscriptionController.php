@@ -6,6 +6,7 @@ use App\Models\ClubSubscription;
 use App\Services\ClubService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
 
 class ClubSubscriptionController extends Controller
@@ -19,6 +20,15 @@ class ClubSubscriptionController extends Controller
             'club:id,name,monthly_fee',
             'academicYear:id,name',
         ])
+            ->whereHas('club', fn ($cq) => $cq->where('is_active', true))
+            ->whereHas('enrollment', function ($eq) {
+                $eq->whereExists(function ($sq) {
+                    $sq->select(DB::raw(1))
+                        ->from('club_sections')
+                        ->whereColumn('club_sections.club_id', 'club_subscriptions.club_id')
+                        ->whereColumn('club_sections.section_id', 'enrollments.section_id');
+                });
+            })
             ->when($request->filled('academic_year_id'), fn ($q) => $q->where('academic_year_id', $request->integer('academic_year_id')))
             ->when($request->filled('club_id'), fn ($q) => $q->where('club_id', $request->integer('club_id')))
             ->when($request->filled('student_id'), fn ($q) => $q->where('student_id', $request->integer('student_id')))

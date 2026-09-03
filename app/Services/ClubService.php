@@ -135,13 +135,13 @@ class ClubService
             });
 
         if (! empty($activeSectionIds)) {
-            $feesQuery->whereHas('enrollment', function ($eq) use ($activeSectionIds) {
-                $eq->whereNotIn('section_id', $activeSectionIds);
+            $feesQuery->where(function ($q) use ($activeSectionIds) {
+                $q->whereDoesntHave('enrollment')
+                    ->orWhereHas('enrollment', fn ($eq) => $eq->whereNotIn('section_id', $activeSectionIds));
             });
         } // If empty, clean all unpaid fees for this club in active year
 
         $feesToDelete = $feesQuery->get();
-        $studentIds = $feesToDelete->pluck('student_id')->unique()->all();
 
         foreach ($feesToDelete as $fee) {
             $fee->studentFee()?->delete();
@@ -149,27 +149,65 @@ class ClubService
         }
 
         // 2. Clean up ClubSubscriptions for students whose section is no longer attached
-        if (! empty($studentIds)) {
-            $subsQuery = ClubSubscription::where('club_id', $club->id)
-                ->where('academic_year_id', $activeYearId)
-                ->whereIn('student_id', $studentIds);
+        $subsQuery = ClubSubscription::where('club_id', $club->id)
+            ->where('academic_year_id', $activeYearId);
 
-            if (! empty($activeSectionIds)) {
-                $subsQuery->whereHas('enrollment', function ($eq) use ($activeSectionIds) {
-                    $eq->whereNotIn('section_id', $activeSectionIds);
-                });
+        if (! empty($activeSectionIds)) {
+            $subsQuery->where(function ($q) use ($activeSectionIds) {
+                $q->whereDoesntHave('enrollment')
+                    ->orWhereHas('enrollment', fn ($eq) => $eq->whereNotIn('section_id', $activeSectionIds));
+            });
+        }
+
+        $subs = $subsQuery->get();
+        foreach ($subs as $sub) {
+            $hasPaidFees = ClubMonthlyFee::where('club_subscription_id', $sub->id)
+                ->where('amount_paid', '>', 0)
+                ->exists();
+            if (! $hasPaidFees) {
+                $sub->delete();
             }
+        }
+    }
 
-            $subs = $subsQuery->get();
-            foreach ($subs as $sub) {
-                $hasPaidFees = ClubMonthlyFee::where('club_subscription_id', $sub->id)
-                    ->where('amount_paid', '>', 0)
-                    ->exists();
-                if (! $hasPaidFees) {
-                    $sub->delete();
+    /**
+     * تنظيف كافة رسوم واشتراكات النوادي غير المدفوعة للتلاميذ الذين لا تنتمي أقسامهم لأقسام النادي المعتمدة.
+     */
+    public function cleanAllOrphanClubFees(?int $academicYearId = null): int
+    {
+        $yearId = $academicYearId ?? AcademicYear::where('is_active', true)->whereNull('closed_at')->value('id');
+        if (! $yearId) {
+            return 0;
+        }
+
+        $clubs = Club::with('sections')->get();
+        $cleaned = 0;
+        foreach ($clubs as $club) {
+            $activeSectionIds = $club->sections->pluck('id')->all();
+            if (! empty($activeSectionIds)) {
+                $this->cleanUnpaidFeesForRemovedSections($club, $activeSectionIds);
+            } else {
+                // If club has no sections, remove unpaid fees for students without an active subscription
+                $feesToDelete = ClubMonthlyFee::query()
+                    ->where('club_id', $club->id)
+                    ->where('academic_year_id', $yearId)
+                    ->where(function ($q) {
+                        $q->whereNull('amount_paid')->orWhere('amount_paid', '<=', 0);
+                    })
+                    ->whereDoesntHave('subscription', fn ($subQ) => $subQ->where('status', 'active')->whereNull('excluded_at'))
+                    ->whereDoesntHave('studentFee.paymentAllocations', function ($allocQ) {
+                        $allocQ->whereHas('payment', fn ($p) => $p->whereNull('cancelled_at'));
+                    })
+                    ->get();
+
+                foreach ($feesToDelete as $fee) {
+                    $fee->studentFee()?->delete();
+                    $fee->delete();
                 }
             }
         }
+
+        return $cleaned;
     }
 
     /**
@@ -367,19 +405,18 @@ class ClubService
 
         $validMonths = $this->getAcademicYearMonths($enrollment->academic_year_id, null, null, false);
 
-        // Find active clubs assigned to this enrollment's section (or level/subscriptions)
+        // Find active clubs assigned to this enrollment's section or where student is actively subscribed
         $eligibleClubs = Club::query()
             ->where('is_active', true)
             ->where(function ($cq) use ($enrollment) {
                 $cq->whereHas('sections', fn ($sq) => $sq->where('sections.id', $enrollment->section_id))
-                    ->orWhere(function ($orQ) use ($enrollment) {
-                        $orQ->whereDoesntHave('sections')
-                            ->whereHas('levels', fn ($lq) => $lq->where('levels.id', $enrollment->level_id));
-                    })
-                    ->orWhereHas('subscriptions', fn ($subQ) => $subQ->where('student_id', $enrollment->student_id)
-                        ->where('academic_year_id', $enrollment->academic_year_id)
-                        ->where('status', 'active')
-                        ->whereNull('excluded_at'));
+                    ->orWhere(function ($noSec) use ($enrollment) {
+                        $noSec->whereDoesntHave('sections')
+                            ->whereHas('subscriptions', fn ($subQ) => $subQ->where('student_id', $enrollment->student_id)
+                                ->where('academic_year_id', $enrollment->academic_year_id)
+                                ->where('status', 'active')
+                                ->whereNull('excluded_at'));
+                    });
             })
             ->get();
 
@@ -463,6 +500,8 @@ class ClubService
                 throw new InvalidArgumentException("الشهر {$month} لا ينتمي إلى السنة الدراسية {$academicYear->name}");
             }
 
+            $this->cleanAllOrphanClubFees($academicYearId);
+
             $clubsQuery = Club::query()->where('is_active', true);
             if ($clubId) {
                 $clubsQuery->where('id', $clubId);
@@ -470,34 +509,29 @@ class ClubService
             $clubs = $clubsQuery->get();
 
             foreach ($clubs as $club) {
+                // If club has sections: ONLY enrollments in those sections!
+                // If club has NO sections: ONLY students with an explicit active subscription!
                 $enrollmentsQuery = Enrollment::where('academic_year_id', $academicYearId)
                     ->where('status', 'active')
-                    ->where(function ($eligQ) use ($club) {
-                        $eligQ->whereExists(function ($sq) use ($club) {
+                    ->where(function ($eq) use ($club, $academicYearId) {
+                        $eq->whereExists(function ($sq) use ($club) {
                             $sq->select(DB::raw(1))
                                 ->from('club_sections')
                                 ->where('club_id', $club->id)
                                 ->whereColumn('club_sections.section_id', 'enrollments.section_id');
-                        })->orWhere(function ($orLev) use ($club) {
-                            $orLev->whereNotExists(function ($sq) use ($club) {
+                        })->orWhere(function ($noSec) use ($club, $academicYearId) {
+                            $noSec->whereNotExists(function ($sq) use ($club) {
                                 $sq->select(DB::raw(1))
                                     ->from('club_sections')
                                     ->where('club_id', $club->id);
-                            })->whereExists(function ($lq) use ($club) {
-                                $lq->select(DB::raw(1))
-                                    ->from('club_levels')
+                            })->whereExists(function ($subQ) use ($club, $academicYearId) {
+                                $subQ->select(DB::raw(1))
+                                    ->from('club_subscriptions')
                                     ->where('club_id', $club->id)
-                                    ->whereColumn('club_levels.level_id', 'enrollments.level_id');
-                            });
-                        })->orWhere(function ($orAll) use ($club) {
-                            $orAll->whereNotExists(function ($sq) use ($club) {
-                                $sq->select(DB::raw(1))
-                                    ->from('club_sections')
-                                    ->where('club_id', $club->id);
-                            })->whereNotExists(function ($lq) use ($club) {
-                                $lq->select(DB::raw(1))
-                                    ->from('club_levels')
-                                    ->where('club_id', $club->id);
+                                    ->where('academic_year_id', $academicYearId)
+                                    ->where('status', 'active')
+                                    ->whereNull('excluded_at')
+                                    ->whereColumn('club_subscriptions.student_id', 'enrollments.student_id');
                             });
                         });
                     });
@@ -1186,7 +1220,7 @@ class ClubService
     }
 
     /**
-     * نطاق التحقق من مطابقة تسجيل التلميذ مع أقسام ومستويات النادي المعتمدة في إدارة النوادي.
+     * نطاق التحقق من مطابقة تسجيل التلميذ مع أقسام النادي المعتمدة في إدارة النوادي حصراً.
      */
     public function applyClubEligibilityScope($query, int $academicYearId)
     {
@@ -1196,28 +1230,25 @@ class ClubService
                 ->whereColumn('enrollments.id', 'club_monthly_fees.enrollment_id')
                 ->whereColumn('enrollments.student_id', 'club_monthly_fees.student_id')
                 ->where('enrollments.academic_year_id', $academicYearId)
-                ->where(function ($eligibilityQ) {
-                    $eligibilityQ->whereExists(function ($sq) {
+                ->where(function ($eligQ) use ($academicYearId) {
+                    $eligQ->whereExists(function ($sq) {
                         $sq->select(DB::raw(1))
                             ->from('club_sections')
                             ->whereColumn('club_sections.club_id', 'club_monthly_fees.club_id')
                             ->whereColumn('club_sections.section_id', 'enrollments.section_id');
-                    })->orWhere(function ($noSecQ) {
-                        $noSecQ->whereNotExists(function ($sq) {
+                    })->orWhere(function ($noSec) use ($academicYearId) {
+                        $noSec->whereNotExists(function ($sq) {
                             $sq->select(DB::raw(1))
                                 ->from('club_sections')
                                 ->whereColumn('club_sections.club_id', 'club_monthly_fees.club_id');
-                        })->where(function ($levQ) {
-                            $levQ->whereNotExists(function ($lq) {
-                                $lq->select(DB::raw(1))
-                                    ->from('club_levels')
-                                    ->whereColumn('club_levels.club_id', 'club_monthly_fees.club_id');
-                            })->orWhereExists(function ($lq) {
-                                $lq->select(DB::raw(1))
-                                    ->from('club_levels')
-                                    ->whereColumn('club_levels.club_id', 'club_monthly_fees.club_id')
-                                    ->whereColumn('club_levels.level_id', 'enrollments.level_id');
-                            });
+                        })->whereExists(function ($subQ) use ($academicYearId) {
+                            $subQ->select(DB::raw(1))
+                                ->from('club_subscriptions')
+                                ->whereColumn('club_subscriptions.club_id', 'club_monthly_fees.club_id')
+                                ->whereColumn('club_subscriptions.student_id', 'club_monthly_fees.student_id')
+                                ->where('club_subscriptions.academic_year_id', $academicYearId)
+                                ->where('club_subscriptions.status', 'active')
+                                ->whereNull('club_subscriptions.excluded_at');
                         });
                     });
                 });

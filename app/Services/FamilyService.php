@@ -487,6 +487,10 @@ class FamilyService
             $clubMonthlyFees = ClubMonthlyFee::with(['club', 'studentFee'])
                 ->where('enrollment_id', $enrollment->id)
                 ->whereNull('cancelled_at')
+                ->whereHas('club', function ($cq) use ($enrollment) {
+                    $cq->where('is_active', true)
+                        ->whereHas('sections', fn ($sq) => $sq->where('sections.id', $enrollment->section_id));
+                })
                 ->get()
                 ->groupBy('club_id');
 

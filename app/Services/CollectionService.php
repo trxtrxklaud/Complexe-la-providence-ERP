@@ -808,10 +808,10 @@ class CollectionService
                         $subQ->whereHas('sections', fn ($s) => $s->where('sections.id', $enrollment->section_id))
                             ->orWhere(function ($noSec) use ($enrollment) {
                                 $noSec->whereDoesntHave('sections')
-                                    ->whereHas('levels', fn ($l) => $l->where('levels.id', $enrollment->level_id));
-                            })
-                            ->orWhere(function ($all) {
-                                $all->whereDoesntHave('sections')->whereDoesntHave('levels');
+                                    ->whereHas('subscriptions', fn ($sq) => $sq->where('student_id', $enrollment->student_id)
+                                        ->where('academic_year_id', $enrollment->academic_year_id)
+                                        ->where('status', 'active')
+                                        ->whereNull('excluded_at'));
                             });
                     });
             })
