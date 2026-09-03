@@ -219,10 +219,10 @@ export function EnrollmentFeeItemsSelector({ onTotalChange }: Props) {
               {/* مدخلات مخفية للـ FormData لترسل تلقائياً عند حفظ النموذج */}
               {isSelected && (
                 <>
-                  <input type="hidden" name={`fee_items[${idx}][fee_type_id]`} value={item.fee_type_id > 0 ? item.fee_type_id : ''} />
-                  <input type="hidden" name={`fee_items[${idx}][amount]`} value={item.price} />
-                  <input type="hidden" name={`fee_items[${idx}][description]`} value={item.name} />
-                  <input type="hidden" name={`fee_items[${idx}][category]`} value={item.category} />
+                  <input id={`fee_items_${idx}_fee_type_id`} type="hidden" name={`fee_items[${idx}][fee_type_id]`} value={item.fee_type_id > 0 ? item.fee_type_id : ''} />
+                  <input id={`fee_items_${idx}_amount`} type="hidden" name={`fee_items[${idx}][amount]`} value={item.price} />
+                  <input id={`fee_items_${idx}_description`} type="hidden" name={`fee_items[${idx}][description]`} value={item.name} />
+                  <input id={`fee_items_${idx}_category`} type="hidden" name={`fee_items[${idx}][category]`} value={item.category} />
                 </>
               )}
 
@@ -261,10 +261,12 @@ export function EnrollmentFeeItemsSelector({ onTotalChange }: Props) {
 
                   {/* حقل السعر القابل للتعديل مباشرة */}
                   <div className="mt-2 flex items-center gap-2">
-                    <label className="text-[11px] font-semibold text-slate-500 shrink-0">
+                    <label htmlFor={`fee_item_price_${item.id_key}`} className="text-[11px] font-semibold text-slate-500 shrink-0">
                       السعر (د.ت):
                     </label>
                     <input
+                      id={`fee_item_price_${item.id_key}`}
+                      name={`fee_item_price_${item.id_key}`}
                       type="number"
                       step="0.5"
                       min="0"

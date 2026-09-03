@@ -37,6 +37,7 @@ export function CancelReasonModal({ title, description, busy, onConfirm, onClose
         <label htmlFor="cancel-reason-input" className="block text-xs mb-1.5" style={{ color: C.muted }}>سبب الإلغاء (إجباري)</label>
         <textarea
           id="cancel-reason-input"
+          name="cancellation_reason"
           value={reason}
           onChange={(e) => setReason(e.target.value)}
           rows={3}
