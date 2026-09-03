@@ -539,17 +539,11 @@ class StudentController extends Controller
      */
     public function registrationPayment(Request $request, Student $student): JsonResponse
     {
-        $validated = $request->validate([
+        $validated = $request->validate(array_merge([
             'registration_amount' => ['required', 'numeric', 'min:0.01'],
             'payment_method' => ['required', 'in:cash,bank_transfer,check,card'],
             'payment_date' => ['required', 'date'],
-            'payment_notes' => ['nullable', 'string', 'max:1000'],
-            'fee_items' => ['nullable', 'array'],
-            'fee_items.*.fee_type_id' => ['nullable', 'integer'],
-            'fee_items.*.amount' => ['nullable', 'numeric', 'min:0'],
-            'fee_items.*.description' => ['nullable', 'string', 'max:255'],
-            'fee_items.*.category' => ['nullable', 'string', 'max:50'],
-        ], self::SECTION_MESSAGES);
+        ], self::paymentRules()), self::SECTION_MESSAGES);
 
         $academicYear = AcademicYear::where('is_active', true)->first();
 
@@ -579,6 +573,8 @@ class StudentController extends Controller
                 $payload,
                 $request->user()?->id,
             ));
+        } catch (ValidationException $e) {
+            throw $e;
         } catch (QueryException $e) {
             report($e);
 
@@ -590,7 +586,7 @@ class StudentController extends Controller
         } catch (\Exception $e) {
             report($e);
 
-            return response()->json(['message' => 'حدث خطأ أثناء تسجيل المبلغ'], 500);
+            return response()->json(['message' => 'حدث خطأ أثناء تسجيل المبلغ: ' . $e->getMessage()], 500);
         }
 
         if (! $payment) {
