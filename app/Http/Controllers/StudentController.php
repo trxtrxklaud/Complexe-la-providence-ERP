@@ -641,73 +641,34 @@ class StudentController extends Controller
                 return response()->json(['message' => 'لا يوجد ترسيم نشط لهذا التلميذ في السنة الدراسية الحالية.'], 422);
             }
 
-            // التحقق من عدم وجود مدفوعات أخرى غير معلوم الترسيم (مثل أقساط شهرية أو نوادي)
-            $hasOtherActivePayments = Payment::where('enrollment_id', $enrollment->id)
-                ->whereNull('cancelled_at')
-                ->where(function ($query) {
-                    $query->whereNotNull('months')
-                        ->orWhereHas('paymentAllocations.studentFee', function ($q) {
-                            $q->where('description', 'not like', '%ترسيم%')
-                              ->where('description', 'not like', '%تسجيل%')
-                              ->whereDoesntHave('feeType', fn ($ft) =>
-                                  $ft->where('ledger_category', CashTransaction::CATEGORY_REGISTRATION_FEE)
-                              );
-                        });
-                })
-                ->exists();
-
-            if ($hasOtherActivePayments) {
-                return response()->json([
-                    'message' => 'لا يمكن إلغاء الترسيم لوجود دفعات مالية أخرى مسجلة للتلميذ (معاليم شهرية أو نوادي). يرجى إلغاؤها أولاً.',
-                ], 422);
-            }
-
             DB::transaction(function () use ($enrollment, $student, $data, $request) {
-                // 1. إلغاء أي دفعات مرتبطة بالترسيم وسحبها من الخزينة
+                // 1. إلغاء أي دفعات مسجلة على هذا الترسيم وسحبها فوراً من الخزينة
                 $payments = Payment::where('enrollment_id', $enrollment->id)
                     ->whereNull('cancelled_at')
                     ->get();
 
                 foreach ($payments as $payment) {
-                    $feeIds = $payment->paymentAllocations()->pluck('student_fee_id')->unique()->all();
-
                     $payment->update([
                         'cancelled_at' => now(),
                         'cancelled_by' => $request->user()?->id,
                         'cancellation_reason' => $data['reason'],
                     ]);
 
-                    foreach ($feeIds as $feeId) {
-                        $fee = StudentFee::find($feeId);
-                        if ($fee) {
-                            $hasOtherActiveAllocations = $fee->paymentAllocations()
-                                ->where('payment_id', '!=', $payment->id)
-                                ->whereHas('payment', fn ($q) => $q->whereNull('cancelled_at'))
-                                ->exists();
-
-                            if (! $hasOtherActiveAllocations && ! $fee->waivers()->exists()) {
-                                $fee->delete();
-                            }
-                        }
-                    }
-
                     // سحب أثر الدفعة من الدفتر النقدي المركزي
                     $this->ledgerService->cancelFor($payment, $request->user()?->id, $data['reason']);
 
                     AuditService::log(
                         'payment.cancel',
-                        'إلغاء دفعة معلوم الترسيم رقم #'.$payment->id.' للتلميذ: '.trim($student->first_name.' '.$student->last_name).' بمبلغ '.$payment->amount.' د.ت',
+                        'إلغاء دفعة ترسيم رقم #'.$payment->id.' للتلميذ: '.trim($student->first_name.' '.$student->last_name).' بمبلغ '.$payment->amount.' د.ت',
                         $payment,
                         ['reason' => $data['reason']]
                     );
                 }
 
-                // 2. حذف أي رسوم غير مدفوعة مرتبطة بهذا الترسيم
-                $enrollment->studentFees()->whereDoesntHave('paymentAllocations', fn ($q) =>
-                    $q->whereHas('payment', fn ($p) => $p->whereNull('cancelled_at'))
-                )->delete();
+                // 2. حذف رسوم هذا الترسيم
+                $enrollment->studentFees()->delete();
 
-                // 3. إلغاء التخفيضات إن وجدت
+                // 3. إلغاء أي تخفيضات مرتبطة بالترسيم إن وجدت
                 if (method_exists($enrollment, 'discounts')) {
                     $enrollment->discounts()->whereNull('cancelled_at')->update([
                         'cancelled_at' => now(),
