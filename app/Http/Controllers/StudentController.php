@@ -7,6 +7,7 @@ use App\Models\AcademicYear;
 use App\Models\CashTransaction;
 use App\Models\Enrollment;
 use App\Models\Payment;
+use App\Models\PaymentAllocation;
 use App\Models\Section;
 use App\Models\Student;
 use App\Models\StudentFee;
@@ -638,10 +639,17 @@ class StudentController extends Controller
             }
 
             DB::transaction(function () use ($enrollment, $student, $data, $request) {
-                // 1. إلغاء أي دفعات مسجلة على هذا الترسيم وسحبها فوراً من الخزينة
-                $payments = Payment::where('enrollment_id', $enrollment->id)
-                    ->whereNull('cancelled_at')
-                    ->get();
+                // 1. العثور على أي دفعات مسجلة على هذا الترسيم وسحبها فوراً من الخزينة
+                $payments = Payment::where(function ($q) use ($enrollment, $student) {
+                    $q->where('enrollment_id', $enrollment->id)
+                      ->orWhere(function ($sq) use ($student) {
+                          $sq->where('student_id', $student->id)
+                             ->where(function ($nq) {
+                                 $nq->where('notes', 'like', '%ترسيم%')
+                                    ->orWhere('notes', 'like', '%تسجيل%');
+                             });
+                      });
+                })->whereNull('cancelled_at')->get();
 
                 foreach ($payments as $payment) {
                     $payment->update([
@@ -661,12 +669,21 @@ class StudentController extends Controller
                     );
                 }
 
-                // 2. حذف رسوم الترسيم المؤقتة ليعود التلميذ إلى حالة غير خالص
-                $enrollment->studentFees()->whereDoesntHave('paymentAllocations', fn ($q) =>
-                    $q->whereHas('payment', fn ($p) => $p->whereNull('cancelled_at'))
-                )->delete();
+                // 2. حذف مخصصات الدفعات الملغاة حتى تنفصل الرسوم عن الدفعات الملغاة
+                if ($payments->isNotEmpty()) {
+                    PaymentAllocation::whereIn('payment_id', $payments->pluck('id'))->delete();
+                }
 
-                // 3. التلميذ يبقى في قسمه وترسيمه قائم، مع توثيق عملية الإلغاء في سجل التدقيق
+                // 3. حذف الرسوم التي أنشئت لعملية الترسيم واللوازم المؤقتة
+                $enrollment->studentFees()->whereNull('fee_plan_id')->delete();
+
+                // 4. إعادة احتساب أي رسوم متبقية لتعود غير مدفوعة (pending)
+                $paymentService = app(\App\Services\PaymentService::class);
+                foreach ($enrollment->studentFees()->get() as $remainingFee) {
+                    $paymentService->recalculateStudentFeeStatus($remainingFee->id);
+                }
+
+                // 5. التلميذ يبقى في قسمه وترسيمه قائم، مع توثيق عملية الإلغاء في سجل التدقيق
                 $sectionName = $enrollment->section?->name;
                 AuditService::log(
                     'enrollment.payment_cancel',

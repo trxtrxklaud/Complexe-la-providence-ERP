@@ -173,15 +173,19 @@ export function OldStudentReenroll() {
     }
 
     const fees = enr.student_fees || enr.studentFees || [];
-    const hasPaidFee = fees.some((f: any) =>
-      (f.status === 'paid' || Number(f.amount_paid) > 0) &&
-      (
-        f.description?.includes('ترسيم') ||
+    const hasPaidFee = fees.some((f: any) => {
+      if (f.status !== 'paid' && Number(f.amount_paid || 0) <= 0) {
+        return false;
+      }
+      const allocations = f.payment_allocations || f.paymentAllocations || [];
+      const hasActiveAllocations = allocations.length > 0 && allocations.some((a: any) => !a.payment?.cancelled_at);
+
+      const isReg = f.description?.includes('ترسيم') ||
         f.description?.includes('تسجيل') ||
-        f.fee_type?.ledger_category === 'registration_fee' ||
-        (f.payment_allocations && f.payment_allocations.length > 0)
-      )
-    );
+        f.fee_type?.ledger_category === 'registration_fee';
+
+      return isReg && (f.status === 'paid' || hasActiveAllocations);
+    });
 
     return {
       isEnrolled: true,
@@ -244,23 +248,7 @@ export function OldStudentReenroll() {
         setRecentReceipts((prev) => ({ ...prev, [student.id]: receiptData }));
         setCreatedReceipt(receiptData);
       } else {
-        const receiptData: ReceiptData = {
-          payment_id: `ENR-${activeEnrollment?.id || student.id}`,
-          receipt_number: `ENR-${String(student.id).padStart(6, '0')}`,
-          payment_date: todayLocal(),
-          method: 'cash',
-          notes: 'وصل إثبات ترسيم مدرسي',
-          student_name: `${student.first_name || ''} ${student.last_name || ''}`.trim(),
-          student_code: student.student_code || '',
-          guardian_name: guardianName,
-          guardian_phone: guardian?.phone || student.guardian_phone || '',
-          section_name: `${levelName} ${sectionName}`.trim(),
-          academic_year: academicYear,
-          amount: '0.00',
-          total: '0.00',
-          items: [{ description: 'تجديد ترسيم التلميذ في القسم', amount: '0.00' }],
-        };
-        setCreatedReceipt(receiptData);
+        alert('لا توجد دفعة مالية سارية للترسيم (العملية ملغاة أو لم يتم الخلاص بعد).');
       }
     } catch (err: any) {
       alert(err?.message || 'تعذر جلب وصل الترسيم');
@@ -280,11 +268,9 @@ export function OldStudentReenroll() {
         delete copy[cancelledId];
         return copy;
       });
-      setSuccess(res.message || 'تم إلغاء الترسيم واسترجاع المبالغ من الخزينة بنجاح');
+      setSuccess(res.message || 'تم إلغاء خلاص الترسيم واسترجاع المبالغ من الخزينة بنجاح');
       setStudentToCancel(null);
-      if (selectedStudent?.id === cancelledId) {
-        closeStudent();
-      }
+      closeStudent();
       loadStudents(sectionFilter);
     } catch (err: any) {
       alert(err?.message || 'تعذّر إلغاء الترسيم');

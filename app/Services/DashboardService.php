@@ -103,6 +103,7 @@ class DashboardService
 
         $totalCollected = (float) Payment::whereNotNull('enrollment_id')
             ->whereHas('enrollment', fn ($q) => $q->where('academic_year_id', $activeYear->id))
+            ->whereNull('cancelled_at')
             ->sum('amount');
 
         $totalExpected = (float) DB::table('student_fees')
@@ -128,23 +129,40 @@ class DashboardService
             ->where('enrollments.academic_year_id', $activeYear->id)
             ->where('enrollments.status', 'active')
             ->whereNull('enrollments.deleted_at')
-            ->whereExists(function ($query) use ($regFeeTypeIds, $yearlyFeePlanIds) {
-                $query->select(DB::raw(1))
-                    ->from('student_fees')
-                    ->join('payment_allocations', 'payment_allocations.student_fee_id', '=', 'student_fees.id')
-                    ->join('payments', 'payments.id', '=', 'payment_allocations.payment_id')
-                    ->whereColumn('student_fees.enrollment_id', 'enrollments.id')
-                    ->whereNull('payments.cancelled_at')
-                    ->where(function ($typeQ) use ($regFeeTypeIds, $yearlyFeePlanIds) {
-                        if (! empty($regFeeTypeIds)) {
-                            $typeQ->whereIn('student_fees.fee_type_id', $regFeeTypeIds);
-                        }
-                        if (! empty($yearlyFeePlanIds)) {
-                            $typeQ->orWhereIn('student_fees.fee_plan_id', $yearlyFeePlanIds);
-                        }
-                    })
-                    ->groupBy('student_fees.id', 'student_fees.amount_due')
-                    ->havingRaw('SUM(payment_allocations.amount_allocated) >= student_fees.amount_due AND student_fees.amount_due > 0');
+            ->where(function ($mainQ) use ($regFeeTypeIds, $yearlyFeePlanIds) {
+                // 1. وجود دفعة سارية غير ملغاة خاصة بالترسيم
+                $mainQ->whereExists(function ($pq) {
+                    $pq->select(DB::raw(1))
+                        ->from('payments')
+                        ->whereColumn('payments.enrollment_id', 'enrollments.id')
+                        ->whereNull('payments.cancelled_at')
+                        ->where(function ($sub) {
+                            $sub->where('payments.notes', 'like', '%ترسيم%')
+                                ->orWhere('payments.notes', 'like', '%تسجيل%')
+                                ->orWhere('payments.idempotency_key', 'like', 'enrollment-%');
+                        });
+                })
+                // 2. أو وجود مخصصات دفع غير ملغاة تغطي رسم الترسيم
+                ->orWhereExists(function ($query) use ($regFeeTypeIds, $yearlyFeePlanIds) {
+                    $query->select(DB::raw(1))
+                        ->from('student_fees')
+                        ->join('payment_allocations', 'payment_allocations.student_fee_id', '=', 'student_fees.id')
+                        ->join('payments', 'payments.id', '=', 'payment_allocations.payment_id')
+                        ->whereColumn('student_fees.enrollment_id', 'enrollments.id')
+                        ->whereNull('payments.cancelled_at')
+                        ->where(function ($typeQ) use ($regFeeTypeIds, $yearlyFeePlanIds) {
+                            if (! empty($regFeeTypeIds)) {
+                                $typeQ->whereIn('student_fees.fee_type_id', $regFeeTypeIds);
+                            }
+                            if (! empty($yearlyFeePlanIds)) {
+                                $typeQ->orWhereIn('student_fees.fee_plan_id', $yearlyFeePlanIds);
+                            }
+                            $typeQ->orWhere('student_fees.description', 'like', '%ترسيم%')
+                                  ->orWhere('student_fees.description', 'like', '%تسجيل%');
+                        })
+                        ->groupBy('student_fees.id', 'student_fees.amount_due')
+                        ->havingRaw('SUM(payment_allocations.amount_allocated) >= student_fees.amount_due AND student_fees.amount_due > 0');
+                });
             })
             ->distinct('enrollments.student_id')
             ->count('enrollments.student_id');
