@@ -153,6 +153,7 @@ export function AddFeeItemModal({ family, onClose, onSuccess }: Props) {
             <label htmlFor={`add-fee-${family.id}-student`} className="block font-bold text-slate-700 mb-1">اختر التلميذ المعني</label>
             <select
               id={`add-fee-${family.id}-student`}
+              name="student_id"
               value={selectedStudentId}
               onChange={(e) => setSelectedStudentId(Number(e.target.value))}
               className="w-full p-2.5 text-xs border rounded-xl bg-slate-50 font-medium"
@@ -201,6 +202,7 @@ export function AddFeeItemModal({ family, onClose, onSuccess }: Props) {
               <label htmlFor={`add-fee-${family.id}-reg-amount`} className="block font-semibold text-slate-700">قيمة معلوم الترسيم (د.ت)</label>
               <input
                 id={`add-fee-${family.id}-reg-amount`}
+                name="reg_amount"
                 type="number"
                 step="0.001"
                 min="1"
@@ -216,6 +218,7 @@ export function AddFeeItemModal({ family, onClose, onSuccess }: Props) {
                 <label htmlFor={`add-fee-${family.id}-club-id`} className="block font-semibold text-slate-700 mb-1">اختر النادي</label>
                 <select
                   id={`add-fee-${family.id}-club-id`}
+                  name="club_id"
                   value={selectedClubId}
                   onChange={(e) => handleClubChange(Number(e.target.value))}
                   className="w-full p-2 border rounded-lg bg-white"
@@ -232,6 +235,7 @@ export function AddFeeItemModal({ family, onClose, onSuccess }: Props) {
                 <label htmlFor={`add-fee-${family.id}-club-month`} className="block font-semibold text-slate-700 mb-1">اختر الشهر المعني</label>
                 <select
                   id={`add-fee-${family.id}-club-month`}
+                  name="club_month"
                   value={selectedClubMonth}
                   onChange={(e) => setSelectedClubMonth(e.target.value)}
                   className="w-full p-2 border rounded-lg bg-white"
@@ -248,6 +252,7 @@ export function AddFeeItemModal({ family, onClose, onSuccess }: Props) {
                 <label htmlFor={`add-fee-${family.id}-club-amount`} className="block font-semibold text-slate-700 mb-1">مبلغ معلوم النادي (د.ت)</label>
                 <input
                   id={`add-fee-${family.id}-club-amount`}
+                  name="club_amount"
                   type="number"
                   step="0.001"
                   min="1"
@@ -268,6 +273,7 @@ export function AddFeeItemModal({ family, onClose, onSuccess }: Props) {
                 <label htmlFor={`add-fee-${family.id}-payment-date`} className="block text-slate-600 mb-1">تاريخ الاستخلاص</label>
                 <input
                   id={`add-fee-${family.id}-payment-date`}
+                  name="payment_date"
                   type="date"
                   value={paymentDate}
                   onChange={(e) => setPaymentDate(e.target.value)}
@@ -279,6 +285,7 @@ export function AddFeeItemModal({ family, onClose, onSuccess }: Props) {
                 <label htmlFor={`add-fee-${family.id}-payment-method`} className="block text-slate-600 mb-1">طريقة الدفع</label>
                 <select
                   id={`add-fee-${family.id}-payment-method`}
+                  name="payment_method"
                   value={method}
                   onChange={(e) => setMethod(e.target.value)}
                   className="w-full p-2 border rounded-lg bg-white"

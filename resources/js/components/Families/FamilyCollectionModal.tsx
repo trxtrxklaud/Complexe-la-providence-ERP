@@ -511,8 +511,10 @@ export function FamilyCollectionModal({ family, onClose, onSuccess }: Props) {
 
                               {isSelected && (
                                 <div className="flex items-center gap-2">
-                                  <label className="text-[11px] text-slate-600">المبلغ المدفوع:</label>
+                                  <label htmlFor={`family_arr_amount_${arr.student_fee_id}`} className="text-[11px] text-slate-600">المبلغ المدفوع:</label>
                                   <input
+                                    id={`family_arr_amount_${arr.student_fee_id}`}
+                                    name={`family_arr_amount_${arr.student_fee_id}`}
                                     type="number"
                                     min="1"
                                     max={arr.remaining_amount}
@@ -544,8 +546,10 @@ export function FamilyCollectionModal({ family, onClose, onSuccess }: Props) {
 
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <div>
-                <label className="block text-[11px] font-medium text-slate-600 mb-1">تاريخ الاستخلاص *</label>
+                <label htmlFor="family_payment_date" className="block text-[11px] font-medium text-slate-600 mb-1">تاريخ الاستخلاص *</label>
                 <input
+                  id="family_payment_date"
+                  name="family_payment_date"
                   type="date"
                   required
                   value={paymentDate}
@@ -555,8 +559,10 @@ export function FamilyCollectionModal({ family, onClose, onSuccess }: Props) {
               </div>
 
               <div>
-                <label className="block text-[11px] font-medium text-slate-600 mb-1">طريقة الدفع *</label>
+                <label htmlFor="family_payment_method" className="block text-[11px] font-medium text-slate-600 mb-1">طريقة الدفع *</label>
                 <select
+                  id="family_payment_method"
+                  name="family_payment_method"
                   value={method}
                   onChange={(e) => setMethod(e.target.value)}
                   className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs bg-white focus:outline-hidden focus:ring-2 focus:ring-slate-300"
