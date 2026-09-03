@@ -1,11 +1,12 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { Search, ArrowRight, GraduationCap, CreditCard, AlertCircle, CheckCircle } from 'lucide-react';
+import { Search, ArrowRight, GraduationCap, CreditCard, AlertCircle, CheckCircle, Printer, Loader2 } from 'lucide-react';
 import {
   getStudents,
   getSectionOptions,
   reenrollStudent,
   recordRegistrationPayment,
+  getStudentPaymentHistory,
   type SectionOption,
 } from '../../api/students';
 import { ListSkeleton } from '../../components/DataSkeleton';
@@ -55,6 +56,8 @@ export function OldStudentReenroll() {
   const [paymentNotes, setPaymentNotes] = useState('');
   const [feeItems, setFeeItems] = useState<Array<{ fee_type_id: number; amount: number; description: string }>>([]);
   const [createdReceipt, setCreatedReceipt] = useState<ReceiptData | null>(null);
+  const [recentReceipts, setRecentReceipts] = useState<Record<number, ReceiptData>>({});
+  const [printingStudentId, setPrintingStudentId] = useState<number | null>(null);
 
   // يُرفع حين يردّ الخادم code = already_enrolled: التلميذ ترسيمه قائم في السنة
   // النشطة (546 تلميذاً دخلوا عبر ترحيل الترقية دون أن يُقبض معلومهم)، فالمطلوب
@@ -147,14 +150,129 @@ export function OldStudentReenroll() {
     setAlreadyEnrolled(false);
   }
 
+  function getStudentStatus(student: any) {
+    if (!student) return { isEnrolled: false, isPaid: false, sectionName: '', levelName: '' };
+
+    if (recentReceipts[student.id]) {
+      const enr = student.enrollments?.[0];
+      return {
+        isEnrolled: true,
+        isPaid: true,
+        sectionName: enr?.section?.name || '',
+        levelName: enr?.level?.name || '',
+      };
+    }
+
+    const enr = student.enrollments?.[0];
+    if (!enr || enr.status !== 'active') {
+      return { isEnrolled: false, isPaid: false, sectionName: '', levelName: '' };
+    }
+
+    const fees = enr.student_fees || enr.studentFees || [];
+    const hasPaidFee = fees.some((f: any) =>
+      (f.status === 'paid' || Number(f.amount_paid) > 0) &&
+      (
+        f.description?.includes('ترسيم') ||
+        f.description?.includes('تسجيل') ||
+        f.fee_type?.ledger_category === 'registration_fee' ||
+        (f.payment_allocations && f.payment_allocations.length > 0)
+      )
+    );
+
+    return {
+      isEnrolled: true,
+      isPaid: hasPaidFee,
+      sectionName: enr.section?.name || '',
+      levelName: enr.level?.name || '',
+    };
+  }
+
+  async function handlePrintReceipt(student: any, e?: React.MouseEvent) {
+    if (e) e.stopPropagation();
+
+    if (recentReceipts[student.id]) {
+      setCreatedReceipt(recentReceipts[student.id]);
+      return;
+    }
+
+    try {
+      setPrintingStudentId(student.id);
+      const history = await getStudentPaymentHistory(student.id);
+      const payment = history.find((p: any) =>
+        !p.cancelled_at && (
+          p.allocations?.some((a: any) => a.fee?.description?.includes('ترسيم') || a.fee?.description?.includes('تسجيل')) ||
+          p.reference?.includes('registration') ||
+          p.reference?.includes('reg') ||
+          p.notes?.includes('ترسيم')
+        )
+      ) || history.find((p: any) => !p.cancelled_at);
+
+      const guardian = student.guardians?.[0];
+      const guardianName = guardian ? `${guardian.first_name || ''} ${guardian.last_name || ''}`.trim() : (student.guardian_name || '');
+      const activeEnrollment = student.enrollments?.[0];
+      const sectionName = activeEnrollment?.section?.name || '';
+      const levelName = activeEnrollment?.level?.name || '';
+      const academicYear = payment?.enrollment?.academic_year?.name || activeEnrollment?.academic_year?.name || '2026-2027';
+
+      if (payment) {
+        const receiptData: ReceiptData = {
+          payment_id: payment.id,
+          receipt_number: `REC-${String(payment.id).padStart(6, '0')}`,
+          payment_date: payment.payment_date || todayLocal(),
+          method: payment.method || 'cash',
+          notes: payment.reference || payment.notes || 'معلوم الترسيم',
+          student_name: `${student.first_name || ''} ${student.last_name || ''}`.trim(),
+          student_code: student.student_code || '',
+          guardian_name: guardianName,
+          guardian_phone: guardian?.phone || student.guardian_phone || '',
+          section_name: `${levelName} ${sectionName}`.trim(),
+          academic_year: academicYear,
+          amount: payment.amount,
+          total: payment.amount,
+          items: payment.allocations && payment.allocations.length > 0
+            ? payment.allocations.map((a: any) => ({
+                description: a.fee?.description || 'معلوم الترسيم',
+                amount: a.amount,
+              }))
+            : [{ description: 'معلوم الترسيم', amount: payment.amount }],
+        };
+
+        setRecentReceipts((prev) => ({ ...prev, [student.id]: receiptData }));
+        setCreatedReceipt(receiptData);
+      } else {
+        const receiptData: ReceiptData = {
+          payment_id: `ENR-${activeEnrollment?.id || student.id}`,
+          receipt_number: `ENR-${String(student.id).padStart(6, '0')}`,
+          payment_date: todayLocal(),
+          method: 'cash',
+          notes: 'وصل إثبات ترسيم مدرسي',
+          student_name: `${student.first_name || ''} ${student.last_name || ''}`.trim(),
+          student_code: student.student_code || '',
+          guardian_name: guardianName,
+          guardian_phone: guardian?.phone || student.guardian_phone || '',
+          section_name: `${levelName} ${sectionName}`.trim(),
+          academic_year: academicYear,
+          amount: '0.00',
+          total: '0.00',
+          items: [{ description: 'تجديد ترسيم التلميذ في القسم', amount: '0.00' }],
+        };
+        setCreatedReceipt(receiptData);
+      }
+    } catch (err: any) {
+      alert(err?.message || 'تعذر جلب وصل الترسيم');
+    } finally {
+      setPrintingStudentId(null);
+    }
+  }
+
   function openStudent(student: any) {
     setSelectedStudent(student);
-    // القسم المختار في البحث اقتراح أوّلي لا أكثر؛ يبقى قابلاً للتغيير قبل الحفظ.
-    setSectionId(sectionFilter);
+    const status = getStudentStatus(student);
+    setSectionId(status.sectionName && student.enrollments?.[0]?.section_id ? String(student.enrollments[0].section_id) : sectionFilter);
     setSubmitted(false);
     setError('');
     setSuccess('');
-    setAlreadyEnrolled(false);
+    setAlreadyEnrolled(status.isEnrolled && !status.isPaid);
     // تاريخ اليوم افتراضاً: القبض يقع لحظة الترسيم في الحالة الغالبة،
     // ويبقى قابلاً للتعديل لمن يسجّل قبضاً وقع أمس.
     setPaymentDate(todayLocal());
@@ -184,13 +302,14 @@ export function OldStudentReenroll() {
       const sectionName = response.enrollment?.section?.name || '';
       const levelName = response.enrollment?.level?.name || '';
 
-      setCreatedReceipt({
+      const receiptData: ReceiptData = {
         payment_id: response.payment.id,
         receipt_number: response.payment.receipt_number || `REC-${String(response.payment.id).padStart(6, '0')}`,
         payment_date: response.payment.payment_date || paymentDate,
         method: response.payment.method || paymentMethod,
         notes: response.payment.notes || paymentNotes,
         student_name: student,
+        student_code: selectedStudent?.student_code || '',
         guardian_name: guardianName,
         guardian_phone: selectedStudent?.guardians?.[0]?.phone || '',
         section_name: `${levelName} ${sectionName}`.trim(),
@@ -206,7 +325,12 @@ export function OldStudentReenroll() {
           : (feeItems && feeItems.length > 0
               ? feeItems.map((fi) => ({ name: fi.description, description: fi.description, amount: fi.amount }))
               : [{ description: 'معلوم تجديد الترسيم', amount: amount }]),
-      });
+      };
+
+      if (selectedStudent?.id) {
+        setRecentReceipts((prev) => ({ ...prev, [selectedStudent.id]: receiptData }));
+      }
+      setCreatedReceipt(receiptData);
     }
 
     setSelectedStudent(null);
@@ -353,11 +477,58 @@ export function OldStudentReenroll() {
           </div>
         </div>
 
-        <div className="bg-white rounded-[22px] p-6 border" style={{ borderColor: C.line }}>
-          <h3 className="font-bold text-lg mb-4 flex items-center gap-2" style={{ color: C.ink }}>
-            <GraduationCap size={20} />
-            {alreadyEnrolled ? 'قبض معلوم الترسيم — الترسيم قائم' : 'تجديد الترسيم — السنة الدراسية النشطة'}
-          </h3>
+        {(() => {
+          const currentStudentStatus = getStudentStatus(selectedStudent);
+          if (currentStudentStatus.isEnrolled && currentStudentStatus.isPaid) {
+            return (
+              <div className="bg-white rounded-[22px] p-6 border" style={{ borderColor: C.line }}>
+                <div className="flex items-start gap-3 p-5 rounded-2xl bg-emerald-50 border border-emerald-200 mb-6">
+                  <CheckCircle className="text-emerald-700 mt-0.5 shrink-0" size={24} />
+                  <div>
+                    <h3 className="font-bold text-emerald-900 text-lg">
+                      التلميذ مُرسَّم بالفعل في السنة الدراسية الحالية وتم خلاص معلوم الترسيم
+                    </h3>
+                    <p className="text-sm text-emerald-700 mt-1">
+                      القسم الحالي: <span className="font-bold">{currentStudentStatus.levelName ? currentStudentStatus.levelName + ' ' : ''}{currentStudentStatus.sectionName}</span> — العملية مسجلة في الخزينة، ويمكنك طباعة الوصل مباشرة دون تكرار العملية.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="space-y-3">
+                  <button
+                    type="button"
+                    onClick={() => handlePrintReceipt(selectedStudent)}
+                    disabled={printingStudentId === selectedStudent.id}
+                    className="w-full py-4 rounded-xl text-white font-bold flex items-center justify-center gap-2 transition hover:opacity-90 shadow-sm"
+                    style={{ backgroundColor: C.forest }}
+                  >
+                    {printingStudentId === selectedStudent.id ? (
+                      <Loader2 size={18} className="animate-spin" />
+                    ) : (
+                      <Printer size={18} />
+                    )}
+                    <span>طباعة وصل الترسيم</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={closeStudent}
+                    className="w-full py-3 rounded-xl border font-medium text-center transition hover:bg-slate-50"
+                    style={{ borderColor: C.line, color: C.muted }}
+                  >
+                    العودة إلى قائمة القسم لترسيم تلميذ آخر
+                  </button>
+                </div>
+              </div>
+            );
+          }
+
+          return (
+            <div className="bg-white rounded-[22px] p-6 border" style={{ borderColor: C.line }}>
+              <h3 className="font-bold text-lg mb-4 flex items-center gap-2" style={{ color: C.ink }}>
+                <GraduationCap size={20} />
+                {alreadyEnrolled ? 'قبض معلوم الترسيم — الترسيم قائم' : 'تجديد الترسيم — السنة الدراسية النشطة'}
+              </h3>
 
           <div className="space-y-4">
             {!alreadyEnrolled && (
@@ -541,6 +712,8 @@ export function OldStudentReenroll() {
             )}
           </div>
         </div>
+          );
+        })()}
       </div>
     );
   }
@@ -630,31 +803,91 @@ export function OldStudentReenroll() {
           <div className="p-10 text-center" style={{ color: C.muted }}>لا يوجد تلاميذ مطابقون للبحث</div>
         ) : (
           <div className="divide-y" style={{ borderColor: C.line }}>
-            {filtered.map((student) => (
-              <button
-                key={student.id}
-                type="button"
-                onClick={() => openStudent(student)}
-                className="w-full flex items-center gap-4 p-4 text-right hover:bg-[#FAFBF8] transition"
-              >
-                <div className="w-11 h-11 rounded-full flex items-center justify-center text-white font-semibold"
-                     style={{ backgroundColor: C.forest }}>
-                  {(student.first_name || '؟')[0]}
+            {filtered.map((student) => {
+              const status = getStudentStatus(student);
+              const isPrinting = printingStudentId === student.id;
+
+              return (
+                <div
+                  key={student.id}
+                  onClick={() => openStudent(student)}
+                  className="w-full flex items-center justify-between gap-4 p-4 text-right hover:bg-[#FAFBF8] transition cursor-pointer"
+                >
+                  <div className="flex items-center gap-4 flex-1 min-w-0">
+                    <div
+                      className="w-11 h-11 rounded-full flex items-center justify-center text-white font-semibold shrink-0"
+                      style={{ backgroundColor: status.isEnrolled ? (status.isPaid ? '#2A7A4C' : '#D97706') : C.forest }}
+                    >
+                      {(student.first_name || '؟')[0]}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <p className="font-medium text-base truncate" style={{ color: C.ink }}>
+                          {student.first_name} {student.last_name}
+                        </p>
+                        {status.isEnrolled && (
+                          <span
+                            className="inline-flex items-center gap-1 text-xs font-bold px-2.5 py-0.5 rounded-full shrink-0"
+                            style={{
+                              backgroundColor: status.isPaid ? '#E8F5E9' : '#FFFBEB',
+                              color: status.isPaid ? '#1E6338' : '#B45309',
+                              border: `1px solid ${status.isPaid ? '#C8E6C9' : '#FDE68A'}`,
+                            }}
+                          >
+                            <CheckCircle size={12} />
+                            {status.isPaid ? 'مُرسَّم — خالص' : 'مُرسَّم — غير خالص'}
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-sm truncate mt-0.5" style={{ color: C.muted }}>
+                        {student.student_code || `ID: ${student.id}`}
+                        {status.sectionName ? ` — القسم: ${status.levelName ? status.levelName + ' ' : ''}${status.sectionName}` : ''}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2 shrink-0">
+                    {status.isEnrolled && (
+                      <button
+                        type="button"
+                        onClick={(e) => handlePrintReceipt(student, e)}
+                        disabled={isPrinting}
+                        className="inline-flex items-center gap-1.5 text-xs font-bold px-3 py-2 rounded-xl border transition shadow-sm hover:bg-emerald-50 disabled:opacity-50"
+                        style={{
+                          borderColor: '#A3D9B5',
+                          backgroundColor: '#F0F9F4',
+                          color: '#1E6338',
+                        }}
+                        title="طباعة وصل الترسيم"
+                      >
+                        {isPrinting ? (
+                          <Loader2 size={14} className="animate-spin" />
+                        ) : (
+                          <Printer size={14} />
+                        )}
+                        <span>طباعة الوصل</span>
+                      </button>
+                    )}
+
+                    {!status.isEnrolled ? (
+                      <span
+                        className="text-xs px-3.5 py-1.5 rounded-full font-bold shadow-sm"
+                        style={{ backgroundColor: C.sage, color: C.forest }}
+                      >
+                        تجديد الترسيم
+                      </span>
+                    ) : !status.isPaid ? (
+                      <span
+                        className="text-xs px-3 py-1.5 rounded-full font-semibold border"
+                        style={{ backgroundColor: '#FFFBEB', color: '#B45309', borderColor: '#FDE68A' }}
+                      >
+                        تسجيل الخلاص
+                      </span>
+                    ) : null}
+                  </div>
                 </div>
-                <div className="flex-1">
-                  <p className="font-medium" style={{ color: C.ink }}>
-                    {student.first_name} {student.last_name}
-                  </p>
-                  <p className="text-sm" style={{ color: C.muted }}>
-                    {student.student_code || `ID: ${student.id}`}
-                    {student.enrollments?.[0]?.section?.name ? ` — ${student.enrollments[0].section.name}` : ''}
-                  </p>
-                </div>
-                <span className="text-xs px-3 py-1 rounded-full" style={{ backgroundColor: C.sage, color: C.forest }}>
-                  تجديد الترسيم
-                </span>
-              </button>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>
