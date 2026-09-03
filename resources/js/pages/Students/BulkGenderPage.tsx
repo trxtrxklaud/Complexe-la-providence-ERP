@@ -9,7 +9,7 @@ type StudentRow = {
   student_code: string | null;
   first_name: string;
   last_name: string;
-  gender: Gender | null;
+  gender: Gender | 'unknown' | null;
   enrollments?: Array<{
     section?: { name: string } | null;
     level?: { name: string } | null;
@@ -77,8 +77,13 @@ export function BulkGenderPage() {
     setStudents([]);
     setRowStates({});
 
+    const params: Record<string, string | number> = { level: sectionId, per_page: 100, page: 1 };
+    if (unsetOnly) {
+      params.gender = 'unknown';
+    }
+
     apiFetch<PaginatedStudents>('/students', {
-      params: { level: sectionId, per_page: 100, page: 1 },
+      params,
       signal: controller.signal,
       fallbackMessage: 'تعذّر تحميل قائمة التلاميذ',
     })
@@ -95,16 +100,16 @@ export function BulkGenderPage() {
       });
 
     return () => controller.abort();
-  }, [sectionId]);
+  }, [sectionId, unsetOnly]);
 
   const unsetCount = useMemo(
-    () => students.reduce((count, student) => count + (student.gender === null ? 1 : 0), 0),
+    () => students.reduce((count, student) => count + (student.gender === null || student.gender === 'unknown' ? 1 : 0), 0),
     [students],
   );
 
   const visibleStudents = useMemo(
     () => (unsetOnly
-      ? students.filter((student) => student.gender === null || rowStates[student.id] !== undefined)
+      ? students.filter((student) => student.gender === null || student.gender === 'unknown' || rowStates[student.id] !== undefined)
       : students),
     [rowStates, students, unsetOnly],
   );
@@ -115,8 +120,13 @@ export function BulkGenderPage() {
     setLoadError('');
 
     try {
+      const params: Record<string, string | number> = { level: sectionId, per_page: 100, page: nextPage };
+      if (unsetOnly) {
+        params.gender = 'unknown';
+      }
+
       const response = await apiFetch<PaginatedStudents>('/students', {
-        params: { level: sectionId, per_page: 100, page: nextPage },
+        params,
         fallbackMessage: 'تعذّر تحميل المزيد من التلاميذ',
       });
       setStudents((current) => {
@@ -238,7 +248,7 @@ export function BulkGenderPage() {
                 </tr>
               ) : visibleStudents.map((student) => {
                 const rowState = rowStates[student.id];
-                const unset = student.gender === null;
+                const unset = student.gender === null || student.gender === 'unknown';
                 return (
                   <tr key={student.id} className={unset ? 'bg-amber-50/80' : 'bg-white hover:bg-slate-50/70'}>
                     <td className="px-5 py-3 font-medium text-slate-700" dir="ltr">{student.student_code || '—'}</td>
