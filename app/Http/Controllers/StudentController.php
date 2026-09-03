@@ -661,34 +661,16 @@ class StudentController extends Controller
                     );
                 }
 
-                // 2. حذف رسوم هذا الترسيم
-                $enrollment->studentFees()->delete();
+                // 2. حذف رسوم الترسيم المؤقتة ليعود التلميذ إلى حالة غير خالص
+                $enrollment->studentFees()->whereDoesntHave('paymentAllocations', fn ($q) =>
+                    $q->whereHas('payment', fn ($p) => $p->whereNull('cancelled_at'))
+                )->delete();
 
-                // 3. إلغاء أي تخفيضات مرتبطة بالترسيم إن وجدت
-                if (method_exists($enrollment, 'discounts')) {
-                    $enrollment->discounts()->whereNull('cancelled_at')->update([
-                        'cancelled_at' => now(),
-                        'cancelled_by' => $request->user()?->id,
-                        'cancellation_reason' => $data['reason'],
-                    ]);
-                }
-
-                if (method_exists($enrollment, 'monthlyDiscounts')) {
-                    $enrollment->monthlyDiscounts()->whereNull('cancelled_at')->update([
-                        'cancelled_at' => now(),
-                        'cancelled_by' => $request->user()?->id,
-                        'cancellation_reason' => $data['reason'],
-                    ]);
-                }
-
-                // 4. حذف الترسيم نفسه (SoftDelete)
+                // 3. التلميذ يبقى في قسمه وترسيمه قائم، مع توثيق عملية الإلغاء في سجل التدقيق
                 $sectionName = $enrollment->section?->name;
-                $enrollment->delete();
-
-                // 5. تسجيل عملية إلغاء الترسيم في سجل التدقيق ليراها صاحب النظام
                 AuditService::log(
-                    'enrollment.cancel',
-                    'إلغاء ترسيم التلميذ: '.trim($student->first_name.' '.$student->last_name).($sectionName ? ' من قسم '.$sectionName : '').' - السبب: '.$data['reason'],
+                    'enrollment.payment_cancel',
+                    'إلغاء خلاص معلوم ترسيم التلميذ: '.trim($student->first_name.' '.$student->last_name).($sectionName ? ' في قسم '.$sectionName : '').' واسترجاع المبالغ من الخزينة - السبب: '.$data['reason'],
                     $student,
                     [
                         'enrollment_id' => $enrollment->id,
@@ -700,7 +682,7 @@ class StudentController extends Controller
             });
 
             return response()->json([
-                'message' => 'تم إلغاء الترسيم واسترجاع المبالغ من الخزينة بنجاح',
+                'message' => 'تم إلغاء خلاص الترسيم واسترجاع المبالغ من الخزينة بنجاح، وبقاء التلميذ في قسمه',
             ]);
         } catch (\Exception $e) {
             report($e);

@@ -53,10 +53,11 @@ export function EnrollmentFeeItemsSelector({ onTotalChange }: Props) {
           return n.includes('ورق') || n.includes('papier');
         });
 
-        const regPrice = regFeeType ? (parseFloat(regFeeType.price) || 70) : 70;
+        // الأسعار المعتمدة للترسيم واللوازم: 70 د للترسيم، 40 د لرزمة الأوراق، 30 د للميدعة، 20 د للمنظومة
+        const regPrice = regFeeType && parseFloat(regFeeType.price) > 20 ? parseFloat(regFeeType.price) : 70;
         const blousePrice = blouseFeeType ? (parseFloat(blouseFeeType.price) || 30) : 30;
         const viePrice = vieFeeType ? (parseFloat(vieFeeType.price) || 20) : 20;
-        const paperPrice = paperFeeType ? (parseFloat(paperFeeType.price) || 15) : 15;
+        const paperPrice = paperFeeType && parseFloat(paperFeeType.price) > 15 ? parseFloat(paperFeeType.price) : 40;
 
         // البنود الأربعة المحددة بدقة
         const list: FeeItemConfig[] = [

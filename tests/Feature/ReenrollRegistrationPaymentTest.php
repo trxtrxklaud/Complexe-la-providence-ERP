@@ -331,12 +331,12 @@ class ReenrollRegistrationPaymentTest extends TestCase
         $this->assertNotNull($payment->cancelled_at);
         $this->assertSame('طلب الولي إلغاء الترسيم واسترجاع المبلغ', $payment->cancellation_reason);
 
-        // 5. التحقق من حذف الترسيم في السنة النشطة
-        $this->assertEquals(0, Enrollment::where('student_id', $old->student_id)->whereNull('deleted_at')->where('academic_year_id', AcademicYear::where('is_active', true)->value('id'))->count());
+        // 5. التحقق من بقاء التلميذ في قسمه وعدم حذفه من الترسيم
+        $this->assertEquals(1, Enrollment::where('student_id', $old->student_id)->whereNull('deleted_at')->where('academic_year_id', AcademicYear::where('is_active', true)->value('id'))->count());
 
         // 6. التحقق من التوثيق في سجل التدقيق لصاحب النظام
         $this->assertDatabaseHas('audit_logs', [
-            'action' => 'enrollment.cancel',
+            'action' => 'enrollment.payment_cancel',
             'model_id' => $old->student_id,
         ]);
 

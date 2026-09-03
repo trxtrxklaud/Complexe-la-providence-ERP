@@ -544,7 +544,7 @@ export function OldStudentReenroll() {
                     className="w-full py-3.5 rounded-xl border border-red-200 bg-red-50 text-red-700 font-bold flex items-center justify-center gap-2 transition hover:bg-red-100 shadow-sm"
                   >
                     <Ban size={18} />
-                    <span>إلغاء الترسيم واسترجاع المبالغ من الخزينة</span>
+                    <span>إلغاء خلاص الترسيم واسترجاع المبلغ</span>
                   </button>
 
                   <button
@@ -913,10 +913,10 @@ export function OldStudentReenroll() {
                             setStudentToCancel(student);
                           }}
                           className="inline-flex items-center gap-1 text-xs font-bold px-2.5 py-2 rounded-xl border border-red-200 bg-red-50 text-red-700 transition hover:bg-red-100 shadow-sm"
-                          title="إلغاء الترسيم واسترجاع المبالغ"
+                          title="إلغاء خلاص الترسيم واسترجاع المبلغ"
                         >
                           <Ban size={14} />
-                          <span>إلغاء الترسيم</span>
+                          <span>إلغاء الخلاص</span>
                         </button>
                       </>
                     )}
@@ -953,8 +953,8 @@ export function OldStudentReenroll() {
 
       {studentToCancel && (
         <CancelReasonModal
-          title={`إلغاء ترسيم التلميذ: ${studentToCancel.first_name || ''} ${studentToCancel.last_name || ''}`}
-          description="سيتم إلغاء الترسيم من القسم، واسترجاع أي مبالغ مقبوضة من الخزينة المركزية، وتوثيق العملية في سجل التدقيق ليراها صاحب النظام."
+          title={`إلغاء خلاص معلوم ترسيم التلميذ: ${studentToCancel.first_name || ''} ${studentToCancel.last_name || ''}`}
+          description="سيتم إلغاء عملية الدفع واسترجاع معلوم الترسيم من الخزينة المركزية، مع إبقاء التلميذ في قسمه وتحويل وضعه إلى غير خالص."
           busy={cancelling}
           onConfirm={handleConfirmCancel}
           onClose={() => setStudentToCancel(null)}
