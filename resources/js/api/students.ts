@@ -253,6 +253,14 @@ export async function getStudentPaymentHistory(id: number): Promise<StudentPayme
 }
 
 export async function enrollStudent(formData: FormData): Promise<EnrollmentResponse> {
+    const regAmount = formData.get('registration_amount');
+    if (regAmount && Number(regAmount) > 0 && !formData.get('client_request_id')) {
+        const reqId = typeof crypto !== 'undefined' && crypto.randomUUID
+            ? crypto.randomUUID()
+            : `req-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+        formData.set('client_request_id', reqId);
+    }
+
     const res = await fetch(`${API_BASE}/students/enroll`, {
         method: 'POST',
         headers: authHeaders(), // بدون Content-Type — browser يضبطه تلقائياً مع FormData
@@ -268,6 +276,7 @@ export async function enrollStudent(formData: FormData): Promise<EnrollmentRespo
 
 /** معلوم التجديد المقبوض لحظة الترسيم؛ الثلاثة معاً أو لا شيء منها. */
 export type ReenrollPayment = {
+    client_request_id?: string;
     registration_amount: number;
     payment_method: 'cash' | 'bank_transfer' | 'check' | 'card';
     payment_date: string;
@@ -288,11 +297,18 @@ export async function reenrollStudent(studentId: number, data: {
     section_id: number;
     notes?: string;
 } & Partial<ReenrollPayment>): Promise<EnrollmentResponse> {
+    const payload = { ...data };
+    if (payload.registration_amount && Number(payload.registration_amount) > 0 && !payload.client_request_id) {
+        payload.client_request_id = typeof crypto !== 'undefined' && crypto.randomUUID
+            ? crypto.randomUUID()
+            : `req-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+    }
+
     const res = await fetch(`${API_BASE}/students/${studentId}/reenroll`, {
         method: 'POST',
         headers: { ...authHeaders(), 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify(data),
+        body: JSON.stringify(payload),
     });
     if (!res.ok) {
         const err = await res.json().catch(() => ({}));
@@ -314,11 +330,18 @@ export async function recordRegistrationPayment(
     studentId: number,
     data: ReenrollPayment,
 ): Promise<EnrollmentResponse> {
+    const payload = { ...data };
+    if (payload.registration_amount && Number(payload.registration_amount) > 0 && !payload.client_request_id) {
+        payload.client_request_id = typeof crypto !== 'undefined' && crypto.randomUUID
+            ? crypto.randomUUID()
+            : `req-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+    }
+
     const res = await fetch(`${API_BASE}/students/${studentId}/registration-payment`, {
         method: 'POST',
         headers: { ...authHeaders(), 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify(data),
+        body: JSON.stringify(payload),
     });
     if (!res.ok) {
         const err = await res.json().catch(() => ({}));
