@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { Search, ArrowRight, GraduationCap, CreditCard, AlertCircle, CheckCircle, Printer, Loader2, Ban } from 'lucide-react';
 import {
@@ -157,8 +157,16 @@ export function OldStudentReenroll() {
   function getStudentStatus(student: any) {
     if (!student) return { isEnrolled: false, isPaid: false, sectionName: '', levelName: '' };
 
+    const enrollments: any[] = student.enrollments || [];
+    const activeEnrollments = enrollments.filter((e: any) => e.status === 'active');
+    const isEnrolled = activeEnrollments.length > 0 || (enrollments.length > 0 && enrollments[0]?.status === 'active');
+
+    // Prefer active enrollment with student fees, then latest active, then first
+    const enr = activeEnrollments.find((e: any) => (e.student_fees || e.studentFees || []).length > 0)
+      || activeEnrollments[0]
+      || enrollments[0];
+
     if (recentReceipts[student.id]) {
-      const enr = student.enrollments?.[0];
       return {
         isEnrolled: true,
         isPaid: true,
@@ -167,24 +175,33 @@ export function OldStudentReenroll() {
       };
     }
 
-    const enr = student.enrollments?.[0];
-    if (!enr || enr.status !== 'active') {
+    if (!isEnrolled || !enr) {
       return { isEnrolled: false, isPaid: false, sectionName: '', levelName: '' };
     }
 
-    const fees = enr.student_fees || enr.studentFees || [];
-    const hasPaidFee = fees.some((f: any) => {
-      if (f.status !== 'paid' && Number(f.amount_paid || 0) <= 0) {
-        return false;
-      }
-      const allocations = f.payment_allocations || f.paymentAllocations || [];
-      const hasActiveAllocations = allocations.length > 0 && allocations.some((a: any) => !a.payment?.cancelled_at);
+    // Check across all enrollments if any has paid registration fee or non-cancelled allocation
+    const hasPaidFee = enrollments.some((e: any) => {
+      if (e.status !== 'active' && activeEnrollments.length > 0) return false;
+      const fees = e.student_fees || e.studentFees || [];
+      return fees.some((f: any) => {
+        const isReg = f.description?.includes('ترسيم') ||
+          f.description?.includes('تسجيل') ||
+          f.fee_type?.ledger_category === 'registration_fee';
 
-      const isReg = f.description?.includes('ترسيم') ||
-        f.description?.includes('تسجيل') ||
-        f.fee_type?.ledger_category === 'registration_fee';
+        if (!isReg) return false;
 
-      return isReg && (f.status === 'paid' || hasActiveAllocations);
+        if (f.status === 'paid') return true;
+
+        const allocations = f.payment_allocations || f.paymentAllocations || [];
+        const hasActiveAllocations = allocations.length > 0 && allocations.some((a: any) => {
+          if (a.payment && a.payment.cancelled_at) {
+            return false;
+          }
+          return Number(a.amount_allocated || 0) > 0;
+        });
+
+        return hasActiveAllocations;
+      });
     });
 
     return {
@@ -206,7 +223,7 @@ export function OldStudentReenroll() {
     try {
       setPrintingStudentId(student.id);
       const history = await getStudentPaymentHistory(student.id);
-      const payment = history.find((p: any) =>
+      const payment: any = history.find((p: any) =>
         !p.cancelled_at && (
           p.allocations?.some((a: any) => a.fee?.description?.includes('ترسيم') || a.fee?.description?.includes('تسجيل')) ||
           p.reference?.includes('registration') ||

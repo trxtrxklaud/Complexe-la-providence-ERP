@@ -468,13 +468,24 @@ class StudentController extends Controller
                         ->exists();
 
                     $requestedFeeItems = $validated['fee_items'] ?? null;
-                    $hasOtherItems = ! empty($requestedFeeItems) && collect($requestedFeeItems)->contains(function ($item) {
-                        $desc = $item['description'] ?? '';
-                        return ! str_contains($desc, 'ترسيم') && ! str_contains($desc, 'تسجيل');
-                    });
 
-                    if ($hasPaidRegistration && ! $hasOtherItems && empty($requestedFeeItems)) {
-                        throw new \InvalidArgumentException('الطالب مُرسَّم بالفعل في السنة الدراسية الحالية');
+                    if ($hasPaidRegistration) {
+                        $containsRegistration = false;
+                        if (! empty($requestedFeeItems) && is_array($requestedFeeItems)) {
+                            foreach ($requestedFeeItems as $item) {
+                                $desc = $item['description'] ?? '';
+                                if (str_contains($desc, 'ترسيم') || str_contains($desc, 'تسجيل')) {
+                                    $containsRegistration = true;
+                                    break;
+                                }
+                            }
+                        } else {
+                            $containsRegistration = true;
+                        }
+
+                        if ($containsRegistration) {
+                            throw new \InvalidArgumentException('الطالب مُرسَّم بالفعل في السنة الدراسية الحالية وتم خلاص معلوم الترسيم');
+                        }
                     }
                 } else {
                     $enrollment = $this->enrollmentService->reenrollStudent($student->id, $validated);
@@ -563,6 +574,37 @@ class StudentController extends Controller
             return response()->json([
                 'message' => 'التلميذ غير مُرسَّم في السنة الدراسية الحالية. رسّمه أوّلاً ثمّ اقبض المعلوم.',
             ], 422);
+        }
+
+        $hasPaidRegistration = $enrollment->studentFees()
+            ->where('status', 'paid')
+            ->where(function ($q) {
+                $q->whereHas('feeType', fn ($ft) => $ft->where('ledger_category', CashTransaction::CATEGORY_REGISTRATION_FEE))
+                  ->orWhere('description', 'like', '%ترسيم%')
+                  ->orWhere('description', 'like', '%تسجيل%');
+            })
+            ->exists();
+
+        $requestedFeeItems = $validated['fee_items'] ?? null;
+        if ($hasPaidRegistration) {
+            $containsRegistration = false;
+            if (! empty($requestedFeeItems) && is_array($requestedFeeItems)) {
+                foreach ($requestedFeeItems as $item) {
+                    $desc = $item['description'] ?? '';
+                    if (str_contains($desc, 'ترسيم') || str_contains($desc, 'تسجيل')) {
+                        $containsRegistration = true;
+                        break;
+                    }
+                }
+            } else {
+                $containsRegistration = true;
+            }
+
+            if ($containsRegistration) {
+                return response()->json([
+                    'message' => 'سبق قبض معلوم الترسيم لهذا التلميذ في هذه السنة الدراسية.',
+                ], 422);
+            }
         }
 
         $payload = $validated;

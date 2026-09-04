@@ -98,7 +98,15 @@ class StudentService
 
         $query = Student::with([
             'enrollments' => fn ($enrollmentQuery) =>
-                $filterEnrollments($enrollmentQuery)->with(['level', 'section', 'academicYear', 'studentFees.paymentAllocations']),
+                $filterEnrollments($enrollmentQuery)
+                    ->orderByDesc('id')
+                    ->with([
+                        'level',
+                        'section',
+                        'academicYear',
+                        'studentFees.paymentAllocations.payment',
+                        'studentFees.feeType',
+                    ]),
             'guardians'   => fn($q) => $q->wherePivot('is_primary_contact', true),
         ]);
 
