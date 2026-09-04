@@ -205,7 +205,7 @@ export function OldStudentReenroll() {
     });
 
     return {
-      isEnrolled: true,
+      isEnrolled: hasPaidFee,
       isPaid: hasPaidFee,
       sectionName: enr.section?.name || '',
       levelName: enr.level?.name || '',

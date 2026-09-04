@@ -332,10 +332,10 @@ class ReenrollRegistrationPaymentTest extends TestCase
         $this->assertNotNull($payment->cancelled_at);
         $this->assertSame('طلب الولي إلغاء الترسيم واسترجاع المبلغ', $payment->cancellation_reason);
 
-        // 5. التحقق من الحذف اللطيف للترسيم بالكامل (soft delete)
+        // 5. التحقق من بقاء التلميذ في القسم نشطاً (بدون حذف نهائي وبدون soft delete)
         $activeYearId = AcademicYear::where('is_active', true)->value('id');
-        $this->assertEquals(0, Enrollment::where('student_id', $old->student_id)->whereNull('deleted_at')->where('academic_year_id', $activeYearId)->count());
-        $this->assertEquals(1, Enrollment::onlyTrashed()->where('student_id', $old->student_id)->where('academic_year_id', $activeYearId)->count());
+        $this->assertEquals(1, Enrollment::where('student_id', $old->student_id)->whereNull('deleted_at')->where('academic_year_id', $activeYearId)->count());
+        $this->assertEquals(0, Enrollment::onlyTrashed()->where('student_id', $old->student_id)->where('academic_year_id', $activeYearId)->count());
 
         // 6. التحقق من التوثيق في سجل التدقيق لصاحب النظام
         $this->assertDatabaseHas('audit_logs', [
@@ -419,8 +419,8 @@ class ReenrollRegistrationPaymentTest extends TestCase
         $cancelRes->assertOk();
 
         $activeYearId = AcademicYear::where('is_active', true)->value('id');
-        // الترسيم محذوف (soft deleted)
-        $this->assertEquals(0, Enrollment::where('student_id', $old->student_id)->whereNull('deleted_at')->where('academic_year_id', $activeYearId)->count());
+        // التلميذ يبقى في القسم نشطاً
+        $this->assertEquals(1, Enrollment::where('student_id', $old->student_id)->whereNull('deleted_at')->where('academic_year_id', $activeYearId)->count());
         // الدفعة ملغاة
         $this->assertEquals(0, Payment::whereNull('cancelled_at')->count());
         $this->assertEquals(1, Payment::whereNotNull('cancelled_at')->count());
@@ -433,6 +433,19 @@ class ReenrollRegistrationPaymentTest extends TestCase
         // العداد في لوحة التحكم عاد 0
         $dashboard = $this->getJson('/api/dashboard')->assertOk()->json('data');
         $this->assertEquals(0, $dashboard['paid_registration_count']);
+
+        // إعادة ترسيم التلميذ تنجح دون تعارض
+        $reReenroll = $this->postJson('/api/students/' . $old->student_id . '/reenroll', [
+            'client_request_id' => 'req-accept-re-enroll-1',
+            'section_id' => $old->section_id,
+            'registration_amount' => 70,
+            'payment_method' => 'cash',
+            'payment_date' => '2026-09-04',
+        ]);
+        $reReenroll->assertCreated();
+        $this->assertEquals(1, Payment::whereNull('cancelled_at')->count());
+        $this->assertEquals(1, CashTransaction::whereNull('cancelled_at')->count());
+        $this->assertEquals(1, Enrollment::where('student_id', $old->student_id)->whereNull('deleted_at')->where('academic_year_id', $activeYearId)->count());
     }
 
     /** 3) اختبار منع التكرار: محاولة ترسيم تلميذ مُرسَّم بالفعل تُرجع 422 ولا تُنشئ أي سجل جديد */

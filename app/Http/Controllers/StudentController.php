@@ -478,26 +478,47 @@ class StudentController extends Controller
                     ->first();
 
                 if ($activeEnrollment) {
-                    throw new \InvalidArgumentException('الطالب مُرسَّم بالفعل في السنة الدراسية الحالية');
-                }
+                    $hasPaidRegistration = $activeEnrollment->studentFees()
+                        ->where('status', 'paid')
+                        ->where(function ($q) {
+                            $q->whereHas('feeType', fn ($ft) => $ft->where('ledger_category', CashTransaction::CATEGORY_REGISTRATION_FEE))
+                              ->orWhere('description', 'like', '%ترسيم%')
+                              ->orWhere('description', 'like', '%تسجيل%');
+                        })
+                        ->exists();
 
-                $trashedEnrollment = Enrollment::onlyTrashed()
-                    ->where('student_id', $student->id)
-                    ->where('academic_year_id', $activeYearId)
-                    ->first();
+                    if ($hasPaidRegistration) {
+                        throw new \InvalidArgumentException('الطالب مُرسَّم بالفعل في السنة الدراسية الحالية');
+                    }
 
-                if ($trashedEnrollment) {
-                    $trashedEnrollment->restore();
-                    $levelId = Section::find($validated['section_id'])?->level_id ?? $trashedEnrollment->level_id;
-                    $trashedEnrollment->update([
-                        'section_id' => $validated['section_id'],
-                        'level_id' => $levelId,
-                        'status' => 'active',
-                        'enrollment_date' => now()->toDateString(),
-                    ]);
-                    $enrollment = $trashedEnrollment;
+                    $section = Section::find((int) $validated['section_id']);
+                    if ($section) {
+                        $activeEnrollment->update([
+                            'section_id' => $section->id,
+                            'level_id' => $section->level_id,
+                            'notes' => $validated['notes'] ?? $activeEnrollment->notes,
+                        ]);
+                    }
+                    $enrollment = $activeEnrollment;
                 } else {
-                    $enrollment = $this->enrollmentService->reenrollStudent($student->id, $validated);
+                    $trashedEnrollment = Enrollment::onlyTrashed()
+                        ->where('student_id', $student->id)
+                        ->where('academic_year_id', $activeYearId)
+                        ->first();
+
+                    if ($trashedEnrollment) {
+                        $trashedEnrollment->restore();
+                        $levelId = Section::find($validated['section_id'])?->level_id ?? $trashedEnrollment->level_id;
+                        $trashedEnrollment->update([
+                            'section_id' => $validated['section_id'],
+                            'level_id' => $levelId,
+                            'status' => 'active',
+                            'enrollment_date' => now()->toDateString(),
+                        ]);
+                        $enrollment = $trashedEnrollment;
+                    } else {
+                        $enrollment = $this->enrollmentService->reenrollStudent($student->id, $validated);
+                    }
                 }
 
                 $payload = $validated;
@@ -737,14 +758,16 @@ class StudentController extends Controller
                 // c) حذف رسوم الترسيم (student_fees) المرتبطة بهذا الترسيم
                 $enrollment->studentFees()->delete();
 
-                // d) حذف الترسيم نفسه بـ soft delete (deleted_at = now)
+                // d) الترسيم نفسه: التلميذ يبقى في القسم بدون دفعات أو رسوم ترسيم (لا حذف نهائي ولا حذف لطيف)
                 $sectionId = $enrollment->section_id;
-                $enrollment->delete();
+                $enrollment->update([
+                    'status' => 'active',
+                ]);
 
                 // تدقيق العملية: تسجيل حدث enrollment.cancel في audit_logs
                 AuditService::log(
                     'enrollment.cancel',
-                    'إلغاء شامل لترسيم التلميذ: '.trim($student->first_name.' '.$student->last_name).' واسترجاع المبالغ من الخزينة - السبب: '.$reason,
+                    'إلغاء ترسيم التلميذ واسترجاع المبالغ من الخزينة مع إبقائه في القسم: '.trim($student->first_name.' '.$student->last_name).' - السبب: '.$reason,
                     $student,
                     [
                         'user_id' => $userId,
