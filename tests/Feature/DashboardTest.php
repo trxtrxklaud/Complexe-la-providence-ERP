@@ -164,7 +164,7 @@ class DashboardTest extends TestCase
             'enrollment_date' => now()->toDateString(),
         ]);
 
-        // Student 2: Female with duplicate enrollment row in same active year
+        // Student 2: Female
         $femaleStudent = Student::create([
             'student_code' => 'ST_FEMALE_1',
             'first_name' => 'مريم',
@@ -176,14 +176,6 @@ class DashboardTest extends TestCase
             'academic_year_id' => $year->id,
             'level_id' => $level->id,
             'section_id' => $sec1->id,
-            'status' => 'active',
-            'enrollment_date' => now()->toDateString(),
-        ]);
-        Enrollment::create([
-            'student_id' => $femaleStudent->id,
-            'academic_year_id' => $year->id,
-            'level_id' => $level->id,
-            'section_id' => $sec2->id,
             'status' => 'active',
             'enrollment_date' => now()->toDateString(),
         ]);

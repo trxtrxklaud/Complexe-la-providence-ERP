@@ -83,6 +83,23 @@ class FinancialRegistrationFlowTest extends TestCase
 
     private function createTestEnrollment(Student $student): Enrollment
     {
+        $pastYear = AcademicYear::firstOrCreate(
+            ['name' => '2025-2026'],
+            ['start_date' => '2025-09-01', 'end_date' => '2026-06-30', 'is_active' => false]
+        );
+
+        return Enrollment::create([
+            'student_id' => $student->id,
+            'academic_year_id' => $pastYear->id,
+            'level_id' => $this->level->id,
+            'section_id' => $this->section->id,
+            'enrollment_date' => '2025-09-01',
+            'status' => 'active',
+        ]);
+    }
+
+    private function createActiveEnrollment(Student $student): Enrollment
+    {
         return Enrollment::create([
             'student_id' => $student->id,
             'academic_year_id' => $this->activeYear->id,
@@ -239,7 +256,7 @@ class FinancialRegistrationFlowTest extends TestCase
         ])->assertCreated();
 
         // الدفعة الثانية: معلوم التجهيزات بنفس المبلغ في نفس اليوم
-        $this->postJson("/api/students/{$student->id}/reenroll", [
+        $this->postJson("/api/students/{$student->id}/registration-payment", [
             'client_request_id' => (string) Str::uuid(),
             'section_id' => $this->section->id,
             'registration_amount' => 70,
@@ -260,7 +277,7 @@ class FinancialRegistrationFlowTest extends TestCase
     public function test_arrears_service_does_not_run_before_deadline(): void
     {
         $student = $this->createTestStudent();
-        $this->createTestEnrollment($student);
+        $this->createActiveEnrollment($student);
 
         $arrearsService = app(RegistrationArrearsService::class);
         $result = $arrearsService->generateArrearsAfterDeadline('2026-09-15');
@@ -283,7 +300,7 @@ class FinancialRegistrationFlowTest extends TestCase
         ]);
 
         $student = $this->createTestStudent();
-        $this->createTestEnrollment($student);
+        $this->createActiveEnrollment($student);
 
         $arrearsService = app(RegistrationArrearsService::class);
 

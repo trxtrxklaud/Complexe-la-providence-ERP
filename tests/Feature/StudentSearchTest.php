@@ -276,7 +276,7 @@ class StudentSearchTest extends TestCase
             'status'           => 'active',
         ]);
 
-        // Student 2: Female in Section A with duplicate enrollment row in Section B
+        // Student 2: Female in Section A
         $femaleStudent = Student::create([
             'student_code' => 'ST_F1',
             'first_name'   => 'مريم',
@@ -289,14 +289,6 @@ class StudentSearchTest extends TestCase
             'academic_year_id' => $year->id,
             'level_id'         => $level->id,
             'section_id'       => $sectionA->id,
-            'enrollment_date'  => '2025-09-01',
-            'status'           => 'active',
-        ]);
-        Enrollment::create([
-            'student_id'       => $femaleStudent->id,
-            'academic_year_id' => $year->id,
-            'level_id'         => $level->id,
-            'section_id'       => $sectionB->id,
             'enrollment_date'  => '2025-09-01',
             'status'           => 'active',
         ]);

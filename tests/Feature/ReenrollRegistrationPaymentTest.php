@@ -7,6 +7,7 @@ use App\Models\CashTransaction;
 use App\Models\Enrollment;
 use App\Models\FeeType;
 use App\Models\Payment;
+use App\Models\PaymentAllocation;
 use App\Models\Permission;
 use App\Models\StudentFee;
 use App\Models\User;
@@ -331,12 +332,14 @@ class ReenrollRegistrationPaymentTest extends TestCase
         $this->assertNotNull($payment->cancelled_at);
         $this->assertSame('طلب الولي إلغاء الترسيم واسترجاع المبلغ', $payment->cancellation_reason);
 
-        // 5. التحقق من بقاء التلميذ في قسمه وعدم حذفه من الترسيم
-        $this->assertEquals(1, Enrollment::where('student_id', $old->student_id)->whereNull('deleted_at')->where('academic_year_id', AcademicYear::where('is_active', true)->value('id'))->count());
+        // 5. التحقق من الحذف اللطيف للترسيم بالكامل (soft delete)
+        $activeYearId = AcademicYear::where('is_active', true)->value('id');
+        $this->assertEquals(0, Enrollment::where('student_id', $old->student_id)->whereNull('deleted_at')->where('academic_year_id', $activeYearId)->count());
+        $this->assertEquals(1, Enrollment::onlyTrashed()->where('student_id', $old->student_id)->where('academic_year_id', $activeYearId)->count());
 
         // 6. التحقق من التوثيق في سجل التدقيق لصاحب النظام
         $this->assertDatabaseHas('audit_logs', [
-            'action' => 'enrollment.payment_cancel',
+            'action' => 'enrollment.cancel',
             'model_id' => $old->student_id,
         ]);
 
@@ -350,6 +353,7 @@ class ReenrollRegistrationPaymentTest extends TestCase
         ]);
         $reReenroll->assertCreated();
         $this->assertEquals(1, CashTransaction::whereNull('cancelled_at')->count());
+        $this->assertEquals(1, Enrollment::where('student_id', $old->student_id)->whereNull('deleted_at')->where('academic_year_id', $activeYearId)->count());
     }
 
     public function test_cancel_enrollment_requires_reason(): void
@@ -363,6 +367,106 @@ class ReenrollRegistrationPaymentTest extends TestCase
             'reason' => '',
         ]);
         $response->assertStatus(422);
+    }
+
+    /** 1) اختبار ترسيم ناجح: يُنشئ ترسيماً ودفعة وتخصيصات، والعداد يصبح 1 */
+    public function test_acceptance_successful_enrollment_creates_records_and_counter_is_one(): void
+    {
+        Sanctum::actingAs($this->makeRegistrar());
+
+        $old = $this->makeEnrollment();
+        $this->startNewYear();
+        $this->makeRegistrationFeeType(70);
+
+        $res = $this->postJson('/api/students/' . $old->student_id . '/reenroll', [
+            'client_request_id' => 'req-accept-enroll-1',
+            'section_id' => $old->section_id,
+            'registration_amount' => 70,
+            'payment_method' => 'cash',
+            'payment_date' => '2026-09-04',
+        ]);
+        $res->assertCreated();
+
+        $activeYearId = AcademicYear::where('is_active', true)->value('id');
+        $this->assertEquals(1, Enrollment::where('student_id', $old->student_id)->whereNull('deleted_at')->where('academic_year_id', $activeYearId)->count());
+        $this->assertEquals(1, Payment::whereNull('cancelled_at')->count());
+        $this->assertEquals(1, PaymentAllocation::count());
+
+        $dashboard = $this->getJson('/api/dashboard')->assertOk()->json('data');
+        $this->assertEquals(1, $dashboard['paid_registration_count']);
+    }
+
+    /** 2) اختبار إلغاء شامل: يلغي الترسيم، ويمسح كل الآثار، والعداد يعود 0، والتلميذ يظهر «غير مرسم» */
+    public function test_acceptance_comprehensive_cancel_clears_all_traces_and_counter_is_zero(): void
+    {
+        Sanctum::actingAs($this->makeRegistrar());
+
+        $old = $this->makeEnrollment();
+        $this->startNewYear();
+        $this->makeRegistrationFeeType(70);
+
+        $this->postJson('/api/students/' . $old->student_id . '/reenroll', [
+            'client_request_id' => 'req-accept-cancel-1',
+            'section_id' => $old->section_id,
+            'registration_amount' => 70,
+            'payment_method' => 'cash',
+            'payment_date' => '2026-09-04',
+        ])->assertCreated();
+
+        $cancelRes = $this->postJson('/api/students/' . $old->student_id . '/cancel-enrollment', [
+            'reason' => 'إلغاء شامل بطلب الولي',
+        ]);
+        $cancelRes->assertOk();
+
+        $activeYearId = AcademicYear::where('is_active', true)->value('id');
+        // الترسيم محذوف (soft deleted)
+        $this->assertEquals(0, Enrollment::where('student_id', $old->student_id)->whereNull('deleted_at')->where('academic_year_id', $activeYearId)->count());
+        // الدفعة ملغاة
+        $this->assertEquals(0, Payment::whereNull('cancelled_at')->count());
+        $this->assertEquals(1, Payment::whereNotNull('cancelled_at')->count());
+        // التخصيصات ورسوم الترسيم محذوفة
+        $this->assertEquals(0, PaymentAllocation::count());
+        $this->assertEquals(0, StudentFee::count());
+        // أثر الخزينة ملغى
+        $this->assertEquals(0, CashTransaction::whereNull('cancelled_at')->count());
+
+        // العداد في لوحة التحكم عاد 0
+        $dashboard = $this->getJson('/api/dashboard')->assertOk()->json('data');
+        $this->assertEquals(0, $dashboard['paid_registration_count']);
+    }
+
+    /** 3) اختبار منع التكرار: محاولة ترسيم تلميذ مُرسَّم بالفعل تُرجع 422 ولا تُنشئ أي سجل جديد */
+    public function test_acceptance_duplicate_enrollment_refused_with_422(): void
+    {
+        Sanctum::actingAs($this->makeRegistrar());
+
+        $old = $this->makeEnrollment();
+        $this->startNewYear();
+        $this->makeRegistrationFeeType(70);
+
+        $payload = [
+            'client_request_id' => 'req-accept-dup-1',
+            'section_id' => $old->section_id,
+            'registration_amount' => 70,
+            'payment_method' => 'cash',
+            'payment_date' => '2026-09-04',
+        ];
+
+        $this->postJson('/api/students/' . $old->student_id . '/reenroll', $payload)->assertCreated();
+
+        $enrollmentCountBefore = Enrollment::count();
+        $paymentCountBefore = Payment::count();
+
+        $dupRes = $this->postJson('/api/students/' . $old->student_id . '/reenroll', array_merge($payload, [
+            'client_request_id' => 'req-accept-dup-2',
+        ]));
+
+        $dupRes->assertStatus(422);
+        $dupRes->assertJsonFragment(['message' => 'الطالب مُرسَّم بالفعل في السنة الدراسية الحالية']);
+
+        // لم يُنشأ أي سجل جديد
+        $this->assertEquals($enrollmentCountBefore, Enrollment::count());
+        $this->assertEquals($paymentCountBefore, Payment::count());
     }
 
     /** سنة دراسية جديدة نشطة: بدونها يعتبر الخادم التلميذ مُرسّماً فيرفض التجديد. */

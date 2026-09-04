@@ -452,41 +452,50 @@ class StudentController extends Controller
             $result = DB::transaction(function () use ($student, $validated, $request) {
                 $activeYearId = AcademicYear::where('is_active', true)->value('id');
 
-                $enrollment = Enrollment::where('student_id', $student->id)
+                $clientRequestId = $validated['client_request_id']
+                    ?? $validated['idempotency_key']
+                    ?? ($validated['request_id'] ?? null);
+
+                if (! empty($clientRequestId) && is_string($clientRequestId)) {
+                    $existingPayment = Payment::where('idempotency_key', trim($clientRequestId))
+                        ->where('student_id', $student->id)
+                        ->whereNull('cancelled_at')
+                        ->first();
+
+                    if ($existingPayment) {
+                        $enrollment = Enrollment::find($existingPayment->enrollment_id)
+                            ?? Enrollment::where('student_id', $student->id)
+                                ->where('academic_year_id', $activeYearId)
+                                ->first();
+
+                        return [$enrollment, $existingPayment];
+                    }
+                }
+
+                $activeEnrollment = Enrollment::where('student_id', $student->id)
                     ->where('academic_year_id', $activeYearId)
                     ->where('status', 'active')
                     ->first();
 
-                if ($enrollment) {
-                    $hasPaidRegistration = $enrollment->studentFees()
-                        ->where('status', 'paid')
-                        ->where(function ($q) {
-                            $q->whereHas('feeType', fn ($ft) => $ft->where('ledger_category', CashTransaction::CATEGORY_REGISTRATION_FEE))
-                              ->orWhere('description', 'like', '%ترسيم%')
-                              ->orWhere('description', 'like', '%تسجيل%');
-                        })
-                        ->exists();
+                if ($activeEnrollment) {
+                    throw new \InvalidArgumentException('الطالب مُرسَّم بالفعل في السنة الدراسية الحالية');
+                }
 
-                    $requestedFeeItems = $validated['fee_items'] ?? null;
+                $trashedEnrollment = Enrollment::onlyTrashed()
+                    ->where('student_id', $student->id)
+                    ->where('academic_year_id', $activeYearId)
+                    ->first();
 
-                    if ($hasPaidRegistration) {
-                        $containsRegistration = false;
-                        if (! empty($requestedFeeItems) && is_array($requestedFeeItems)) {
-                            foreach ($requestedFeeItems as $item) {
-                                $desc = $item['description'] ?? '';
-                                if (str_contains($desc, 'ترسيم') || str_contains($desc, 'تسجيل')) {
-                                    $containsRegistration = true;
-                                    break;
-                                }
-                            }
-                        } else {
-                            $containsRegistration = true;
-                        }
-
-                        if ($containsRegistration) {
-                            throw new \InvalidArgumentException('الطالب مُرسَّم بالفعل في السنة الدراسية الحالية وتم خلاص معلوم الترسيم');
-                        }
-                    }
+                if ($trashedEnrollment) {
+                    $trashedEnrollment->restore();
+                    $levelId = Section::find($validated['section_id'])?->level_id ?? $trashedEnrollment->level_id;
+                    $trashedEnrollment->update([
+                        'section_id' => $validated['section_id'],
+                        'level_id' => $levelId,
+                        'status' => 'active',
+                        'enrollment_date' => now()->toDateString(),
+                    ]);
+                    $enrollment = $trashedEnrollment;
                 } else {
                     $enrollment = $this->enrollmentService->reenrollStudent($student->id, $validated);
                 }
@@ -680,8 +689,11 @@ class StudentController extends Controller
                 return response()->json(['message' => 'لا يوجد ترسيم نشط لهذا التلميذ في السنة الدراسية الحالية.'], 422);
             }
 
-            DB::transaction(function () use ($enrollment, $student, $data, $request) {
-                // 1. العثور على أي دفعات مسجلة على هذا الترسيم وسحبها فوراً من الخزينة
+            DB::transaction(function () use ($enrollment, $student, $data, $request, $activeYear) {
+                $userId = $request->user()?->id;
+                $reason = $data['reason'];
+
+                // a) إلغاء الدفعة المرتبطة بالترسيم وسحب أثرها من الخزينة
                 $payments = Payment::where(function ($q) use ($enrollment, $student) {
                     $q->where('enrollment_id', $enrollment->id)
                       ->orWhere(function ($sq) use ($student) {
@@ -690,58 +702,64 @@ class StudentController extends Controller
                                  $nq->where('notes', 'like', '%ترسيم%')
                                     ->orWhere('notes', 'like', '%تسجيل%');
                              });
+                      })
+                      ->orWhereHas('paymentAllocations.studentFee', function ($fq) use ($enrollment) {
+                          $fq->where('enrollment_id', $enrollment->id);
                       });
                 })->whereNull('cancelled_at')->get();
+
+                $lastPaymentId = $payments->last()?->id;
 
                 foreach ($payments as $payment) {
                     $payment->update([
                         'cancelled_at' => now(),
-                        'cancelled_by' => $request->user()?->id,
-                        'cancellation_reason' => $data['reason'],
+                        'cancelled_by' => $userId,
+                        'cancellation_reason' => $reason,
                     ]);
 
                     // سحب أثر الدفعة من الدفتر النقدي المركزي
-                    $this->ledgerService->cancelFor($payment, $request->user()?->id, $data['reason']);
+                    $this->ledgerService->cancelFor($payment, $userId, $reason);
 
                     AuditService::log(
                         'payment.cancel',
                         'إلغاء دفعة ترسيم رقم #'.$payment->id.' للتلميذ: '.trim($student->first_name.' '.$student->last_name).' بمبلغ '.$payment->amount.' د.ت',
                         $payment,
-                        ['reason' => $data['reason']]
+                        ['reason' => $reason]
                     );
                 }
 
-                // 2. حذف مخصصات الدفعات الملغاة حتى تنفصل الرسوم عن الدفعات الملغاة
-                if ($payments->isNotEmpty()) {
-                    PaymentAllocation::whereIn('payment_id', $payments->pluck('id'))->delete();
-                }
+                // b) حذف تخصيصات الدفعة (payment_allocations) المرتبطة بهذا الترسيم
+                $feeIds = $enrollment->studentFees()->pluck('id');
+                PaymentAllocation::whereIn('student_fee_id', $feeIds)
+                    ->orWhereIn('payment_id', $payments->pluck('id'))
+                    ->delete();
 
-                // 3. حذف الرسوم التي أنشئت لعملية الترسيم واللوازم المؤقتة
-                $enrollment->studentFees()->whereNull('fee_plan_id')->delete();
+                // c) حذف رسوم الترسيم (student_fees) المرتبطة بهذا الترسيم
+                $enrollment->studentFees()->delete();
 
-                // 4. إعادة احتساب أي رسوم متبقية لتعود غير مدفوعة (pending)
-                $paymentService = app(\App\Services\PaymentService::class);
-                foreach ($enrollment->studentFees()->get() as $remainingFee) {
-                    $paymentService->recalculateStudentFeeStatus($remainingFee->id);
-                }
+                // d) حذف الترسيم نفسه بـ soft delete (deleted_at = now)
+                $sectionId = $enrollment->section_id;
+                $enrollment->delete();
 
-                // 5. التلميذ يبقى في قسمه وترسيمه قائم، مع توثيق عملية الإلغاء في سجل التدقيق
-                $sectionName = $enrollment->section?->name;
+                // تدقيق العملية: تسجيل حدث enrollment.cancel في audit_logs
                 AuditService::log(
-                    'enrollment.payment_cancel',
-                    'إلغاء خلاص معلوم ترسيم التلميذ: '.trim($student->first_name.' '.$student->last_name).($sectionName ? ' في قسم '.$sectionName : '').' واسترجاع المبالغ من الخزينة - السبب: '.$data['reason'],
+                    'enrollment.cancel',
+                    'إلغاء شامل لترسيم التلميذ: '.trim($student->first_name.' '.$student->last_name).' واسترجاع المبالغ من الخزينة - السبب: '.$reason,
                     $student,
                     [
-                        'enrollment_id' => $enrollment->id,
-                        'academic_year_id' => $enrollment->academic_year_id,
-                        'section_id' => $enrollment->section_id,
-                        'reason' => $data['reason'],
+                        'user_id' => $userId,
+                        'timestamp' => now()->toIso8601String(),
+                        'reason' => $reason,
+                        'student_id' => $student->id,
+                        'section_id' => $sectionId,
+                        'academic_year_id' => $activeYear->id,
+                        'payment_id' => $lastPaymentId,
                     ]
                 );
             });
 
             return response()->json([
-                'message' => 'تم إلغاء خلاص الترسيم واسترجاع المبالغ من الخزينة بنجاح، وبقاء التلميذ في قسمه',
+                'message' => 'تم إلغاء الترسيم واسترجاع المبالغ من الخزينة بنجاح',
             ]);
         } catch (\Exception $e) {
             report($e);
