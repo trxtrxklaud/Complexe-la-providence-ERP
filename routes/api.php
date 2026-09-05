@@ -38,10 +38,10 @@ use App\Http\Controllers\UserController;
 use App\Http\Controllers\UserPermissionOverrideController;
 use Illuminate\Support\Facades\Route;
 
-Route::middleware('throttle:5,1')->post('/login', [AuthController::class, 'login']);
+Route::middleware('throttle:login')->post('/login', [AuthController::class, 'login']);
 
 // كل المسارات المصادَق عليها تمرّ بـ active فيمنع أي حساب معطَل من الوصول.
-Route::middleware(['auth:sanctum', 'active', 'throttle:120,1'])->group(function () {
+Route::middleware(['auth:sanctum', 'active', 'throttle:api'])->group(function () {
     Route::post('/logout', [AuthController::class, 'logout']);
     Route::get('/user', [AuthController::class, 'user']);
     Route::get('/dashboard', [DashboardController::class, 'index']);
@@ -60,7 +60,7 @@ Route::middleware(['auth:sanctum', 'active', 'throttle:120,1'])->group(function 
     });
 
     // الرواتب — صلاحية منفصلة (الحذف النهائي ممنوع، يُستبدل بإلغاء موثّق)
-    Route::middleware('permission:manage_salaries')->group(function () {
+    Route::middleware(['permission:manage_salaries', 'throttle:sensitive'])->group(function () {
         Route::apiResource('/salaries', SalaryController::class)->except(['destroy']);
         Route::post('/salaries/{salary}/cancel', [SalaryController::class, 'cancel']);
 
@@ -78,14 +78,14 @@ Route::middleware(['auth:sanctum', 'active', 'throttle:120,1'])->group(function 
     });
 
     // المصاريف وأصنافها — صلاحية مستقلة
-    Route::middleware('permission:manage_expenses')->group(function () {
+    Route::middleware(['permission:manage_expenses', 'throttle:sensitive'])->group(function () {
         Route::apiResource('/expense-categories', ExpenseCategoryController::class);
         Route::apiResource('/expenses', ExpenseController::class)->except(['destroy']);
         Route::post('/expenses/{expense}/cancel', [ExpenseController::class, 'cancel']);
     });
 
     // الخزينة — السجل० والرصيد والسحوبات
-    Route::middleware('permission:manage_treasury')->group(function () {
+    Route::middleware(['permission:manage_treasury', 'throttle:sensitive'])->group(function () {
         Route::get('/treasury/history', [TreasuryController::class, 'history']);
         Route::get('/treasury/balance', [TreasuryController::class, 'balance']);
 
@@ -207,7 +207,7 @@ Route::middleware(['auth:sanctum', 'active', 'throttle:120,1'])->group(function 
         Route::post('/students/{student}/enroll', [StudentController::class, 'enroll']);
         Route::post('/students/{student}/reenroll', [StudentController::class, 'reenroll']);
 
-        Route::post('/students/{student}/registration-payment', [StudentController::class, 'registrationPayment']);
+        Route::post('/students/{student}/registration-payment', [StudentController::class, 'registrationPayment'])->middleware('throttle:sensitive');
         Route::post('/students/{student}/cancel-enrollment', [StudentController::class, 'cancelEnrollment']);
 
         Route::get('/students/{student}/balance', [PaymentController::class, 'studentBalance']);
@@ -221,7 +221,7 @@ Route::middleware(['auth:sanctum', 'active', 'throttle:120,1'])->group(function 
         Route::get('/payments/my-collections', [PaymentController::class, 'myCollections']);
         Route::apiResource('/payments', PaymentController::class)->except(['update', 'destroy']);
         Route::post('/payments/{payment}/reprint', [PaymentController::class, 'reprint']);
-        Route::post('/payments/{payment}/cancel', [PaymentController::class, 'cancel']);
+        Route::post('/payments/{payment}/cancel', [PaymentController::class, 'cancel'])->middleware('throttle:sensitive');
         Route::middleware('cache.api')->get('/fee-types', [FeeTypeController::class, 'index']);
 
         Route::get('/club-sections', [ClubController::class, 'clubSections']);
@@ -230,7 +230,7 @@ Route::middleware(['auth:sanctum', 'active', 'throttle:120,1'])->group(function 
         Route::middleware('cache.api')->get('/collection/years/{year}/sections', [CollectionController::class, 'sectionsByYear']);
         Route::get('/collection/sections/{section}/students', [CollectionController::class, 'studentsBySection']);
         Route::get('/payments/collect/preview', [CollectionController::class, 'preview']);
-        Route::post('/payments/collect', [CollectionController::class, 'collect']);
+        Route::post('/payments/collect', [CollectionController::class, 'collect'])->middleware('throttle:sensitive');
 
         // رصيد افتتاحي ومعاينة توزيع الدفعة — يراهما القابض قبل تثبيت الوصل.
         Route::get('/collection/students/{student}/opening-balances', [CollectionController::class, 'openingBalances']);
@@ -242,14 +242,14 @@ Route::middleware(['auth:sanctum', 'active', 'throttle:120,1'])->group(function 
         // لبانر غير حاجب؛ لا ينشئ دفعة ولا قيدا ولا يعدّل أي رصيد.
         Route::get('/families/{family}/old-debts', [FamilyController::class, 'oldDebts']);
         Route::get('/families/{family}', [FamilyController::class, 'show']);
-        Route::post('/families/{family}/collect', [FamilyController::class, 'collect']);
+        Route::post('/families/{family}/collect', [FamilyController::class, 'collect'])->middleware('throttle:sensitive');
 
         Route::get('/enrollments/{enrollment}/ledger', [CollectionController::class, 'ledger']);
 
         // استخلاص الديون القديمة — تحصيل عبر CollectionService نفسه (prior_year_debt/in)
         // وقراءات السجلّ والكشف. الإلغاء عبر مسار الوصلات العام أعلاه.
         Route::get('/students/{student}/old-debt-summary', [ManualDebtController::class, 'summary']);
-        Route::post('/manual-debts/{debt}/collect', [ManualDebtController::class, 'collect']);
+        Route::post('/manual-debts/{debt}/collect', [ManualDebtController::class, 'collect'])->middleware('throttle:sensitive');
         Route::get('/manual-debts/{debt}/payments', [ManualDebtController::class, 'payments']);
         Route::get('/manual-debts/{debt}/statement', [ManualDebtController::class, 'statement']);
     });
@@ -257,7 +257,7 @@ Route::middleware(['auth:sanctum', 'active', 'throttle:120,1'])->group(function 
     // التنازل عن الدُّيون — صلاحية مستقلة عن manage_payments عمداً:
     // القابض يقبض المال ولا يُسقِط دَيناً؛ الإسقاط لصاحب النظام وحده.
     // لا يُكتب أي سطر في الخزينة: التنازل لا يحرّك مليماً.
-    Route::middleware('permission:waive_fees')->group(function () {
+    Route::middleware(['permission:waive_fees', 'throttle:sensitive'])->group(function () {
         Route::get('/student-fees/{studentFee}/waivers', [FeeWaiverController::class, 'index']);
         Route::post('/student-fees/{studentFee}/waive', [FeeWaiverController::class, 'store']);
         Route::post('/fee-waivers/{waiver}/cancel', [FeeWaiverController::class, 'cancel']);
