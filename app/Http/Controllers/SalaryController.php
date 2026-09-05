@@ -82,6 +82,7 @@ class SalaryController extends Controller
             'method' => ['nullable', 'string', 'max:50'],
             'reference' => ['nullable', 'string', 'max:100'],
             'notes' => ['nullable', 'string'],
+            'async' => ['nullable', 'boolean'],
         ]);
 
         $gross = (float) ($data['gross_amount'] ?? $data['amount'] ?? 0);
@@ -90,155 +91,19 @@ class SalaryController extends Controller
             return response()->json(['message' => 'الراتب الخام مطلوب'], 422);
         }
 
-        $advanceIds = array_values(array_unique($data['advance_ids'] ?? []));
-
-        $loanRows = collect($data['loan_deductions'] ?? [])
-            ->map(fn (array $row) => [
-                'id' => (int) $row['id'],
-                'amount' => round((float) $row['amount'], 2),
-            ])
-            ->values();
-
-        if ($loanRows->pluck('id')->duplicates()->isNotEmpty()) {
-            return response()->json([
-                'message' => 'لا يمكن خصم قسطَين من نفس السلفة في راتب واحد؛ اجمعهما في مبلغ واحد',
-            ], 422);
-        }
-
         $userId = $request->user()?->id;
 
+        if ($request->boolean('async')) {
+            \App\Jobs\ProcessSalaryCalculation::dispatch($data, $userId);
+
+            return response()->json([
+                'message' => 'تم إرسال عملية حساب وخلاص الراتب إلى قائمة الانتظار للمُعالجة في الخلفية.',
+                'status' => 'queued',
+            ], 202);
+        }
+
         try {
-            $salary = DB::transaction(function () use ($data, $gross, $advanceIds, $loanRows, $userId) {
-                $advances = collect();
-                $loans = collect();
-                $deduction = 0.0;
-
-                if ($advanceIds !== []) {
-                    // القفل يمنع خصم نفس التسبقة مرّتين من راتبَين متزامنَين.
-                    $advances = EmployeeAdvance::whereIn('id', $advanceIds)
-                        ->where('employee_id', $data['employee_id'])
-                        ->where('type', EmployeeAdvance::TYPE_ADVANCE)
-                        ->whereNull('cancelled_at')
-                        ->lockForUpdate()
-                        ->get();
-
-                    if ($advances->count() !== count($advanceIds)) {
-                        throw new RuntimeException('بعض التسبقات المختارة غير موجودة، أو ملغاة، أو لا تخصّ هذا الإطار');
-                    }
-
-                    foreach ($advances as $advance) {
-                        if ($advance->settled_by_salary_id !== null) {
-                            throw new RuntimeException('التسبقة رقم '.$advance->id.' مخصومة من راتب آخر');
-                        }
-
-                        $remaining = round((float) $advance->amount - (float) $advance->settled_amount, 2);
-
-                        if ($remaining <= 0) {
-                            throw new RuntimeException('التسبقة رقم '.$advance->id.' مخلّصة مسبقاً');
-                        }
-
-                        $deduction += $remaining;
-                    }
-                }
-
-                if ($loanRows->isNotEmpty()) {
-                    $loans = EmployeeAdvance::whereIn('id', $loanRows->pluck('id')->all())
-                        ->where('employee_id', $data['employee_id'])
-                        ->where('type', EmployeeAdvance::TYPE_LOAN)
-                        ->whereNull('cancelled_at')
-                        ->lockForUpdate()
-                        ->get()
-                        ->keyBy('id');
-
-                    if ($loans->count() !== $loanRows->count()) {
-                        throw new RuntimeException('بعض السلف المختارة غير موجودة، أو ملغاة، أو لا تخصّ هذا الإطار');
-                    }
-
-                    foreach ($loanRows as $row) {
-                        $loan = $loans[$row['id']];
-
-                        // المتبقّي يُشتقّ من الردّيات القائمة لا من settled_amount المخزّن،
-                        // فالمخزّن قد يكون قديماً إن أُلغي ردّ في نفس اللحظة.
-                        $repaid = (float) $loan->repayments()->whereNull('cancelled_at')->sum('amount');
-                        $remaining = round((float) $loan->amount - $repaid, 2);
-
-                        if ($remaining <= 0) {
-                            throw new RuntimeException('السلفة رقم '.$loan->id.' مخلّصة بالكامل');
-                        }
-
-                        if ($row['amount'] > $remaining) {
-                            throw new RuntimeException(
-                                'قسط السلفة رقم '.$loan->id.' ('.number_format($row['amount'], 2, '.', '').') يتجاوز المتبقّي منها ('.number_format($remaining, 2, '.', '').')'
-                            );
-                        }
-
-                        $deduction += $row['amount'];
-                    }
-                }
-
-                $deduction = round($deduction, 2);
-                $net = round($gross - $deduction, 2);
-
-                if ($net < 0) {
-                    throw new RuntimeException(
-                        'مجموع الخصومات ('.number_format($deduction, 2, '.', '').') يتجاوز الراتب الخام ('.number_format($gross, 2, '.', '').')'
-                    );
-                }
-
-                $salary = Salary::create([
-                    'employee_id' => $data['employee_id'],
-                    'academic_year_id' => $data['academic_year_id'],
-                    'gross_amount' => number_format($gross, 2, '.', ''),
-                    'advance_deduction' => number_format($deduction, 2, '.', ''),
-                    'amount' => number_format($net, 2, '.', ''),
-                    'period_from' => $data['period_from'],
-                    'period_to' => $data['period_to'],
-                    'paid_at' => $data['paid_at'] ?? null,
-                    'method' => $data['method'] ?? null,
-                    'reference' => $data['reference'] ?? null,
-                    'notes' => $data['notes'] ?? null,
-                    'created_by' => $userId,
-                ]);
-
-                foreach ($advances as $advance) {
-                    $advance->update([
-                        'settled_amount' => $advance->amount,
-                        'status' => EmployeeAdvance::STATUS_SETTLED,
-                        'settled_by_salary_id' => $salary->id,
-                    ]);
-                }
-
-                $repaidAt = $data['paid_at'] ?? now()->toDateString();
-
-                foreach ($loanRows as $row) {
-                    $loan = $loans[$row['id']];
-
-                    EmployeeAdvanceRepayment::create([
-                        'employee_advance_id' => $loan->id,
-                        'employee_id' => $loan->employee_id,
-                        // السلف القديمة قد تحمل سنة فارغة؛ سنة الراتب تسدّ الفراغ
-                        // فلا يسقط القسط خارج كل التقارير السنوية.
-                        'academic_year_id' => $loan->academic_year_id ?? $data['academic_year_id'],
-                        'amount' => number_format($row['amount'], 2, '.', ''),
-                        'repaid_at' => $repaidAt,
-                        'method' => EmployeeAdvanceRepayment::METHOD_SALARY_DEDUCTION,
-                        'salary_id' => $salary->id,
-                        'notes' => 'قسط مخصوم ضمن الراتب رقم '.$salary->id,
-                        'created_by' => $userId,
-                    ]);
-
-                    // لا سطر في الدفتر: الخصم من الراتب لا يُدخل مالاً إلى الدرج،
-                    // وأثره النقدي مأخوذ سلفاً في صافي الراتب المُسقَط أدناه.
-                    $loan->recalculateSettlement();
-                }
-
-                // راتب ابتلعته الخصومات بالكامل لم يخرج منه مليم اليوم، فلا سطر له في الدفتر.
-                if ($net > 0) {
-                    $this->ledger->recordSalary($salary);
-                }
-
-                return $salary;
-            });
+            $salary = (new \App\Jobs\ProcessSalaryCalculation($data, $userId))->handle($this->ledger);
         } catch (RuntimeException $e) {
             return response()->json(['message' => $e->getMessage()], 422);
         }

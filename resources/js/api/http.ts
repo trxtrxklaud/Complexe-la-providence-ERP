@@ -85,60 +85,204 @@ export function buildUrl(path: string, params?: QueryParams): string {
   return query ? base + '?' + query : base;
 }
 
-type RequestOptions = {
+// ══════════════════════════════════════════════════════════════
+// In-Memory Caching & Request Deduplication Layer
+// ══════════════════════════════════════════════════════════════
+
+export let USE_CACHE = true;
+
+export function setUseCache(enabled: boolean): void {
+  USE_CACHE = enabled;
+  if (!enabled) {
+    clearCache();
+  }
+}
+
+interface CacheEntry<T> {
+  data: T;
+  timestamp: number;
+  ttl: number;
+}
+
+const cache = new Map<string, CacheEntry<unknown>>();
+const pendingRequests = new Map<string, Promise<unknown>>();
+
+/** مدة بقاء الكاش الافتراضية للبيانات المرجعية (30 دقيقة). */
+const DEFAULT_MASTER_DATA_TTL = 30 * 60 * 1000;
+
+/** المسارات المرجعية التي تخزن تلقائياً في الذاكرة لتفادي تكرار طلبها. */
+const MASTER_DATA_ENDPOINTS = [
+  '/academic-years',
+  '/levels',
+  '/sections',
+  '/fee-types',
+  '/collection/years',
+];
+
+function isMasterDataEndpoint(path: string): boolean {
+  return MASTER_DATA_ENDPOINTS.some((ep) => path.startsWith(ep) || path.includes('/sections'));
+}
+
+export type RequestOptions = {
   method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
   body?: unknown;
   params?: QueryParams;
   fallbackMessage?: string;
   signal?: AbortSignal;
+  cacheTtl?: number;       // تخصيص مدة الكاش بالمللي ثانية
+  forceRefresh?: boolean;   // تجاوز الكاش وإجبار الطلب من الشبكة
 };
 
 /**
- * طلب موحّد: يركّب الرٔوس، يقرأ أخطاء Laravel (422/401)، ويرمي ApiError مفهوماً.
+ * طلب موحّد: يركّب الرٔوس، يقرأ أخطاء Laravel (422/401)، ويرمي ApiError مفهوماً،
+ * مع دعم التخزين المؤقت ومنع تكرار الطلبات المتزامنة.
  */
 export async function apiFetch<T>(path: string, options: RequestOptions = {}): Promise<T> {
-  const { method = 'GET', body, params, fallbackMessage, signal } = options;
-
-  const response = await fetch(buildUrl(path, params), {
-    method,
-    headers: getHeaders(),
+  const {
+    method = 'GET',
+    body,
+    params,
+    fallbackMessage,
     signal,
-    ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
-  });
+    cacheTtl,
+    forceRefresh = false,
+  } = options;
 
-  if (response.status === 204) {
-    return undefined as T;
+  const url = buildUrl(path, params);
+  const cacheKey = `${method}:${url}`;
+
+  // 1. التحقق من الكاش في طلبات GET
+  if (USE_CACHE && method === 'GET' && !forceRefresh) {
+    const cached = cache.get(cacheKey);
+    const effectiveTtl = cacheTtl ?? (isMasterDataEndpoint(path) ? DEFAULT_MASTER_DATA_TTL : 0);
+
+    if (cached && effectiveTtl > 0 && Date.now() - cached.timestamp < effectiveTtl) {
+      return cached.data as T;
+    }
   }
 
-  const payload = await response.json().catch(() => null);
+  // 2. منع تكرار الطلبات المتزامنة قيد التنفيذ (In-Flight Request Deduplication)
+  if (method === 'GET' && !forceRefresh) {
+    const pending = pendingRequests.get(cacheKey);
+    if (pending) {
+      return pending as Promise<T>;
+    }
+  }
 
-  if (!response.ok) {
-    if (response.status === 401 && path !== '/api/login') {
-      setToken(null);
-      window.location.href = '/login';
+  // 3. تنفيذ الطلب عبر الشبكة
+  const executeRequest = async (): Promise<T> => {
+    const response = await fetch(url, {
+      method,
+      headers: getHeaders(),
+      signal,
+      ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
+    });
+
+    if (response.status === 204) {
+      return undefined as T;
     }
 
-    const message =
-      (payload && typeof payload === 'object' && 'message' in payload
-        ? String((payload as { message?: unknown }).message ?? '')
-        : '') ||
-      fallbackMessage ||
-      'حدث خطأ أثناء الاتصال بالخادم';
+    const payload = await response.json().catch(() => null);
 
-    const errors =
-      payload && typeof payload === 'object' && 'errors' in payload
-        ? ((payload as { errors?: Record<string, string[]> }).errors ?? undefined)
-        : undefined;
+    if (!response.ok) {
+      if (response.status === 401 && path !== '/api/login') {
+        setToken(null);
+        window.location.href = '/login';
+      }
 
-    const details =
-      payload && typeof payload === 'object' && 'details' in payload
-        ? ((payload as { details?: Record<string, number> }).details ?? undefined)
-        : undefined;
+      const message =
+        (payload && typeof payload === 'object' && 'message' in payload
+          ? String((payload as { message?: unknown }).message ?? '')
+          : '') ||
+        fallbackMessage ||
+        'حدث خطأ أثناء الاتصال بالخادم';
 
-    throw new ApiError(message, response.status, errors, details);
+      const errors =
+        payload && typeof payload === 'object' && 'errors' in payload
+          ? ((payload as { errors?: Record<string, string[]> }).errors ?? undefined)
+          : undefined;
+
+      const details =
+        payload && typeof payload === 'object' && 'details' in payload
+          ? ((payload as { details?: Record<string, number> }).details ?? undefined)
+          : undefined;
+
+      throw new ApiError(message, response.status, errors, details);
+    }
+
+    // 4. تخزين النتيجة في الكاش لطلبات GET
+    if (USE_CACHE && method === 'GET') {
+      const effectiveTtl = cacheTtl ?? (isMasterDataEndpoint(path) ? DEFAULT_MASTER_DATA_TTL : 0);
+      if (effectiveTtl > 0) {
+        cache.set(cacheKey, {
+          data: payload,
+          timestamp: Date.now(),
+          ttl: effectiveTtl,
+        });
+      }
+    }
+
+    // 5. إبطال الكاش التلقائي عند عمليات التعديل (Mutations)
+    if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)) {
+      handleAutoInvalidation(path);
+    }
+
+    return payload as T;
+  };
+
+  const requestPromise = executeRequest().finally(() => {
+    pendingRequests.delete(cacheKey);
+  });
+
+  if (method === 'GET') {
+    pendingRequests.set(cacheKey, requestPromise);
   }
 
-  return payload as T;
+  return requestPromise;
+}
+
+/** إبطال ذكي للبيانات المؤقتة عند تنفيذ عمليات تعديل */
+function handleAutoInvalidation(path: string): void {
+  if (path.includes('/payments') || path.includes('/collection')) {
+    invalidateCache('/students');
+    invalidateCache('/reports');
+    invalidateCache('/dashboard');
+    invalidateCache('/enrollments');
+  } else if (path.includes('/sections') || path.includes('/levels')) {
+    invalidateCache('/sections');
+    invalidateCache('/levels');
+    invalidateCache('/collection/years');
+  } else if (path.includes('/discounts') || path.includes('/exemptions')) {
+    invalidateCache('/enrollments');
+    invalidateCache('/students');
+    invalidateCache('/exemptions');
+  } else if (path.includes('/students')) {
+    invalidateCache('/students');
+    invalidateCache('/collection');
+    invalidateCache('/reports');
+  }
+}
+
+/** تفريغ الكاش كلياً أو بحسب نمط */
+export function clearCache(pattern?: string): void {
+  if (!pattern) {
+    cache.clear();
+    return;
+  }
+  for (const key of cache.keys()) {
+    if (key.includes(pattern)) {
+      cache.delete(key);
+    }
+  }
+}
+
+/** إبطال كاش مسار محدد أو نمط معين */
+export function invalidateCache(endpointPattern: string): void {
+  for (const key of cache.keys()) {
+    if (key.includes(endpointPattern)) {
+      cache.delete(key);
+    }
+  }
 }
 
 export function getCsrfTokenFromCookie(): string | null {

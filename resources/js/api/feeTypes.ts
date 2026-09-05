@@ -1,4 +1,4 @@
-import { API_BASE, getHeaders } from './http';
+import { apiFetch, invalidateCache } from './http';
 
 /**
  * بند المدخول في الدفتر النقدي المركزي.
@@ -44,41 +44,33 @@ export interface FeeTypePayload {
 }
 
 export async function getFeeTypes(): Promise<FeeType[]> {
-    const res = await fetch(`${API_BASE}/fee-types`, { headers: getHeaders() });
-    if (!res.ok) throw new Error('فشل جلب أنواع المعاليم');
-    return res.json();
+    return apiFetch<FeeType[]>('/fee-types', { fallbackMessage: 'فشل جلب أنواع المعاليم' });
 }
 
 export async function createFeeType(data: FeeTypePayload): Promise<FeeType> {
-    const res = await fetch(`${API_BASE}/fee-types`, {
+    const result = await apiFetch<FeeType>('/fee-types', {
         method: 'POST',
-        headers: getHeaders(),
-        body: JSON.stringify(data),
+        body: data,
+        fallbackMessage: 'فشل إنشاء نوع المعلوم',
     });
-    if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err.message || 'فشل إنشاء نوع المعلوم');
-    }
-    return res.json();
+    invalidateCache('/fee-types');
+    return result;
 }
 
 export async function updateFeeType(id: number, data: FeeTypePayload): Promise<FeeType> {
-    const res = await fetch(`${API_BASE}/fee-types/${id}`, {
+    const result = await apiFetch<FeeType>(`/fee-types/${id}`, {
         method: 'PUT',
-        headers: getHeaders(),
-        body: JSON.stringify(data),
+        body: data,
+        fallbackMessage: 'فشل تحديث نوع المعلوم',
     });
-    if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err.message || 'فشل تحديث نوع المعلوم');
-    }
-    return res.json();
+    invalidateCache('/fee-types');
+    return result;
 }
 
 export async function deleteFeeType(id: number): Promise<void> {
-    const res = await fetch(`${API_BASE}/fee-types/${id}`, {
+    await apiFetch<void>(`/fee-types/${id}`, {
         method: 'DELETE',
-        headers: getHeaders(),
+        fallbackMessage: 'فشل حذف نوع المعلوم',
     });
-    if (!res.ok) throw new Error('فشل حذف نوع المعلوم');
+    invalidateCache('/fee-types');
 }

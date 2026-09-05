@@ -60,87 +60,18 @@ class RosterController extends Controller
     {
         $data = $request->validated();
 
-        $section = Section::with('level')->findOrFail($data['section_id']);
-        $year = AcademicYear::findOrFail($data['academic_year_id']);
+        if ($request->boolean('async')) {
+            \App\Jobs\ProcessBulkEnrollment::dispatch($data, $request->user()?->id);
 
-        // الأسماء المسجّلة فعلاً في هذه السنة (لأيّ قسم) — لمنع التكرار.
-        $existing = Enrollment::query()
-            ->where('academic_year_id', $year->id)
-            ->with('student')
-            ->get()
-            ->filter(fn ($enrollment) => $enrollment->student !== null)
-            ->map(fn ($enrollment) => $this->normalize(
-                $enrollment->student->first_name . ' ' . $enrollment->student->last_name
-            ))
-            ->all();
+            return response()->json([
+                'message' => 'تم إرسال عملية التسجيل الجماعي إلى قائمة الانتظار للمُعالجة في الخلفية.',
+                'status' => 'queued',
+            ], 202);
+        }
 
-        $existing = array_flip($existing);
+        $result = (new \App\Jobs\ProcessBulkEnrollment($data, $request->user()?->id))->handle();
 
-        $capacity = (int) $section->capacity;
-        $current = Enrollment::where('academic_year_id', $year->id)
-            ->where('section_id', $section->id)
-            ->where('status', 'active')
-            ->count();
-
-        $created = 0;
-        $skipped = [];
-
-        DB::transaction(function () use ($data, $section, $year, &$created, &$skipped, &$existing, $capacity, $current) {
-            foreach ($data['students'] as $entry) {
-                $firstName = trim(preg_replace('/\s+/u', ' ', (string) $entry['first_name']));
-                $lastName = trim(preg_replace('/\s+/u', ' ', (string) $entry['last_name']));
-
-                if ($firstName === '' || $lastName === '') {
-                    continue;
-                }
-
-                $fullName = $firstName . ' ' . $lastName;
-                $key = $this->normalize($fullName);
-
-                if (isset($existing[$key])) {
-                    $skipped[] = $fullName;
-                    continue;
-                }
-
-                if ($capacity > 0 && ($current + $created) >= $capacity) {
-                    $skipped[] = $fullName;
-                    continue;
-                }
-
-                $student = Student::create([
-                    'student_code' => $this->nextStudentCode($year->name),
-                    'first_name' => $firstName,
-                    'last_name' => $lastName,
-                    'guardian_first_name' => $entry['father_name'] ?? null,
-                    'mother_name' => $entry['mother_name'] ?? null,
-                    'guardian_phone' => $entry['father_phone'] ?? null,
-                    'mother_phone' => $entry['mother_phone'] ?? null,
-                    'status' => 'active',
-                ]);
-
-                Enrollment::create([
-                    'student_id' => $student->id,
-                    'academic_year_id' => $year->id,
-                    'level_id' => $section->level_id,
-                    'section_id' => $section->id,
-                    'enrollment_date' => now()->toDateString(),
-                    'status' => 'active',
-                ]);
-
-                $existing[$key] = true;
-                $created++;
-            }
-        });
-
-        $message = $skipped === []
-            ? "تمّ تسجيل {$created} تلميذ."
-            : "تمّ تسجيل {$created} تلميذ، وتُجاهل " . count($skipped) . ' اسماً.';
-
-        return response()->json([
-            'created' => $created,
-            'skipped' => $skipped,
-            'message' => $message,
-        ], 201);
+        return response()->json($result, 201);
     }
 
     public function updateStudent(Request $request, Enrollment $roster): JsonResponse

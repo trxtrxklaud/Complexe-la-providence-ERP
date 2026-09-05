@@ -47,7 +47,7 @@ Route::middleware(['auth:sanctum', 'active', 'throttle:120,1'])->group(function 
     Route::get('/dashboard', [DashboardController::class, 'index']);
 
     // قائمة السنوات الدراسية — قراءة فقط تُستعمل في عدة شاشات، متاحة لأي مستخدِم مُفعّل.
-    Route::get('/academic-years', [AcademicYearController::class, 'index']);
+    Route::middleware('cache.api')->get('/academic-years', [AcademicYearController::class, 'index']);
 
     // الموظفون — صلاحية منفصلة
     Route::middleware('permission:manage_employees')->group(function () {
@@ -175,12 +175,12 @@ Route::middleware(['auth:sanctum', 'active', 'throttle:120,1'])->group(function 
 
     // School structure — المستويات والأقسام
     Route::middleware('permission:manage_users')->group(function () {
-        Route::get('/levels', [LevelController::class, 'index']);
+        Route::middleware('cache.api')->get('/levels', [LevelController::class, 'index']);
         Route::post('/levels', [LevelController::class, 'store']);
         Route::put('/levels/{level}', [LevelController::class, 'update']);
         Route::delete('/levels/{level}', [LevelController::class, 'destroy']);
 
-        Route::get('/sections', [SectionController::class, 'index']);
+        Route::middleware('cache.api')->get('/sections', [SectionController::class, 'index']);
         Route::post('/sections', [SectionController::class, 'store']);
         Route::put('/sections/{section}', [SectionController::class, 'update']);
         Route::delete('/sections/{section}', [SectionController::class, 'destroy']);
@@ -222,12 +222,12 @@ Route::middleware(['auth:sanctum', 'active', 'throttle:120,1'])->group(function 
         Route::apiResource('/payments', PaymentController::class)->except(['update', 'destroy']);
         Route::post('/payments/{payment}/reprint', [PaymentController::class, 'reprint']);
         Route::post('/payments/{payment}/cancel', [PaymentController::class, 'cancel']);
-        Route::get('/fee-types', [FeeTypeController::class, 'index']);
+        Route::middleware('cache.api')->get('/fee-types', [FeeTypeController::class, 'index']);
 
         Route::get('/club-sections', [ClubController::class, 'clubSections']);
 
-        Route::get('/collection/years', [CollectionController::class, 'years']);
-        Route::get('/collection/years/{year}/sections', [CollectionController::class, 'sectionsByYear']);
+        Route::middleware('cache.api')->get('/collection/years', [CollectionController::class, 'years']);
+        Route::middleware('cache.api')->get('/collection/years/{year}/sections', [CollectionController::class, 'sectionsByYear']);
         Route::get('/collection/sections/{section}/students', [CollectionController::class, 'studentsBySection']);
         Route::get('/payments/collect/preview', [CollectionController::class, 'preview']);
         Route::post('/payments/collect', [CollectionController::class, 'collect']);

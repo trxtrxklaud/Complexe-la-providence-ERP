@@ -4,6 +4,7 @@ import { motion, MotionConfig } from 'motion/react';
 import { Sidebar } from './components/Sidebar';
 import { Login } from './pages/Login';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
+import { MasterDataProvider } from './contexts/MasterDataContext';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { ToastProvider } from './components/ui/Toast';
 import { StudentsDashboard } from './pages/Students/StudentsDashboard';
@@ -149,7 +150,8 @@ function ScrollToTop() {
 export default function App() {
     return (
         <AuthProvider>
-            <MotionConfig reducedMotion="user">
+            <MasterDataProvider>
+                <MotionConfig reducedMotion="user">
                 <ToastProvider>
                     <BrowserRouter>
                         <ScrollToTop />
@@ -443,6 +445,7 @@ export default function App() {
                     </BrowserRouter>
                 </ToastProvider>
             </MotionConfig>
-        </AuthProvider>
+        </MasterDataProvider>
+    </AuthProvider>
     );
 }

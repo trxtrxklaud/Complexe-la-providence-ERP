@@ -23,6 +23,7 @@ class BulkEnrollRequest extends FormRequest
             'students.*.mother_name' => ['nullable', 'string', 'max:120'],
             'students.*.father_phone' => ['nullable', 'string', 'max:20'],
             'students.*.mother_phone' => ['nullable', 'string', 'max:20'],
+            'async' => ['nullable', 'boolean'],
         ];
     }
 
