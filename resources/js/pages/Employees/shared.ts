@@ -1,4 +1,4 @@
-import { API_BASE, getHeaders } from '../../api/http';
+import { API_BASE, getHeaders, apiFetch } from '../../api/http';
 import type { EmployeeAdvance } from '../../api/employees';
 
 /**
@@ -57,11 +57,8 @@ export function employeeName(
 }
 
 export async function fetchYears(): Promise<AcademicYearOption[]> {
-  const res = await fetch(`${API_BASE}/academic-years`, { headers: getHeaders() });
-
-  if (!res.ok) throw new Error('فشل جلب السنوات');
-
-  return res.json();
+  const data = await apiFetch<AcademicYearOption[] | { data: AcademicYearOption[] }>('/academic-years', { fallbackMessage: 'فشل جلب السنوات' });
+  return Array.isArray(data) ? data : (data && 'data' in data ? (data as { data: AcademicYearOption[] }).data : []);
 }
 
 /**

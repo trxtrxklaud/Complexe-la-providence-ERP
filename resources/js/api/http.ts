@@ -110,6 +110,9 @@ const pendingRequests = new Map<string, Promise<unknown>>();
 /** مدة بقاء الكاش الافتراضية للبيانات المرجعية (30 دقيقة). */
 const DEFAULT_MASTER_DATA_TTL = 30 * 60 * 1000;
 
+/** مدة بقاء الكاش التلقائي لطلبات القراءة أثناء التنقل بين الشاشات (30 ثانية). */
+const DEFAULT_NAVIGATION_CACHE_TTL = 30 * 1000;
+
 /** المسارات المرجعية التي تخزن تلقائياً في الذاكرة لتفادي تكرار طلبها. */
 const MASTER_DATA_ENDPOINTS = [
   '/academic-years',
@@ -117,10 +120,12 @@ const MASTER_DATA_ENDPOINTS = [
   '/sections',
   '/fee-types',
   '/collection/years',
+  '/roles',
 ];
 
 function isMasterDataEndpoint(path: string): boolean {
-  return MASTER_DATA_ENDPOINTS.some((ep) => path.startsWith(ep) || path.includes('/sections'));
+  const clean = path.startsWith('/api') ? path.slice(4) : path;
+  return MASTER_DATA_ENDPOINTS.some((ep) => clean === ep || clean.startsWith(ep + '/') || clean.startsWith(ep + '?') || clean.includes('/sections'));
 }
 
 export type RequestOptions = {
@@ -154,7 +159,7 @@ export async function apiFetch<T>(path: string, options: RequestOptions = {}): P
   // 1. التحقق من الكاش في طلبات GET
   if (USE_CACHE && method === 'GET' && !forceRefresh) {
     const cached = cache.get(cacheKey);
-    const effectiveTtl = cacheTtl ?? (isMasterDataEndpoint(path) ? DEFAULT_MASTER_DATA_TTL : 0);
+    const effectiveTtl = cacheTtl ?? (isMasterDataEndpoint(path) ? DEFAULT_MASTER_DATA_TTL : DEFAULT_NAVIGATION_CACHE_TTL);
 
     if (cached && effectiveTtl > 0 && Date.now() - cached.timestamp < effectiveTtl) {
       return cached.data as T;
@@ -212,7 +217,7 @@ export async function apiFetch<T>(path: string, options: RequestOptions = {}): P
 
     // 4. تخزين النتيجة في الكاش لطلبات GET
     if (USE_CACHE && method === 'GET') {
-      const effectiveTtl = cacheTtl ?? (isMasterDataEndpoint(path) ? DEFAULT_MASTER_DATA_TTL : 0);
+      const effectiveTtl = cacheTtl ?? (isMasterDataEndpoint(path) ? DEFAULT_MASTER_DATA_TTL : DEFAULT_NAVIGATION_CACHE_TTL);
       if (effectiveTtl > 0) {
         cache.set(cacheKey, {
           data: payload,
