@@ -8,6 +8,10 @@ $mysqlSslCaAttribute = PHP_VERSION_ID >= 80400 && class_exists(\Pdo\Mysql::class
     ? \Pdo\Mysql::ATTR_SSL_CA
     : (defined('PDO::MYSQL_ATTR_SSL_CA') ? constant('PDO::MYSQL_ATTR_SSL_CA') : null);
 
+$mysqlBufferedQueryAttribute = PHP_VERSION_ID >= 80400 && class_exists(\Pdo\Mysql::class)
+    ? \Pdo\Mysql::ATTR_USE_BUFFERED_QUERY
+    : (defined('PDO::MYSQL_ATTR_USE_BUFFERED_QUERY') ? constant('PDO::MYSQL_ATTR_USE_BUFFERED_QUERY') : null);
+
 return [
 
     'default' => env('DB_CONNECTION', 'mysql'),
@@ -45,11 +49,12 @@ return [
             'prefix_indexes' => true,
             'strict' => true,
             'engine' => null,
-            'options' => extension_loaded('pdo_mysql') && $mysqlSslCaAttribute !== null
-                ? array_filter([
-                    $mysqlSslCaAttribute => env('MYSQL_ATTR_SSL_CA'),
-                ])
-                : [],
+            'options' => extension_loaded('pdo_mysql') ? array_filter([
+                $mysqlSslCaAttribute => env('MYSQL_ATTR_SSL_CA'),
+                $mysqlBufferedQueryAttribute => true,
+                \PDO::ATTR_EMULATE_PREPARES => false,
+                ...(env('DB_PERSISTENT', false) ? [\PDO::ATTR_PERSISTENT => true] : []),
+            ], fn ($value, $key) => $key !== '' && $key !== null && $value !== null && $value !== '', ARRAY_FILTER_USE_BOTH) : [],
         ],
 
         'pgsql' => [
