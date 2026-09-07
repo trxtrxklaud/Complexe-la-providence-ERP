@@ -142,6 +142,32 @@ class QueueJobsTest extends TestCase
         ]);
     }
 
+    public function test_salary_controller_calculate_dispatches_job_to_queue(): void
+    {
+        Queue::fake([ProcessSalaryCalculation::class]);
+
+        $user = $this->makeUserWithPermission('manage_salaries');
+        Sanctum::actingAs($user);
+
+        $response = $this->postJson('/api/salaries/calculate', [
+            'period' => '2026-09',
+        ]);
+
+        $response->assertStatus(202);
+        $response->assertJson([
+            'status' => 'queued',
+            'period' => '2026-09',
+        ]);
+
+        Queue::assertPushed(ProcessSalaryCalculation::class, function ($job) {
+            return $job->data['period'] === '2026-09'
+                && $job->data['mode'] === 'batch_calculate'
+                && $job->data['year'] === 2026
+                && $job->data['month'] === 9
+                && $job->queue === 'default';
+        });
+    }
+
     public function test_process_bulk_enrollment_job_handles_bulk_enrollment(): void
     {
         $user = $this->makeUserWithPermission('manage_users');

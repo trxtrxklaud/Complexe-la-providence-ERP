@@ -36,9 +36,15 @@ use App\Http\Controllers\TreasuryWithdrawalController;
 use App\Http\Controllers\UnpaidMonthlyReportController;
 use App\Http\Controllers\UserController;
 use App\Http\Controllers\UserPermissionOverrideController;
+use App\Jobs\ProcessDemoJob;
 use Illuminate\Support\Facades\Route;
 
 Route::middleware('throttle:login')->post('/login', [AuthController::class, 'login']);
+
+Route::post('/test-queue', function () {
+    ProcessDemoJob::dispatch()->onQueue('default');
+    return response()->json(['message' => 'Job dispatched!']);
+});
 
 // كل المسارات المصادَق عليها تمرّ بـ active فيمنع أي حساب معطَل من الوصول.
 Route::middleware(['auth:sanctum', 'active', 'throttle:api'])->group(function () {
@@ -61,6 +67,7 @@ Route::middleware(['auth:sanctum', 'active', 'throttle:api'])->group(function ()
 
     // الرواتب — صلاحية منفصلة (الحذف النهائي ممنوع، يُستبدل بإلغاء موثّق)
     Route::middleware(['permission:manage_salaries', 'throttle:sensitive'])->group(function () {
+        Route::post('/salaries/calculate', [SalaryController::class, 'calculate']);
         Route::apiResource('/salaries', SalaryController::class)->except(['destroy']);
         Route::post('/salaries/{salary}/cancel', [SalaryController::class, 'cancel']);
 

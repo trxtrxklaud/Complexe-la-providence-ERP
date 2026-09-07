@@ -42,12 +42,23 @@ class ProcessSalaryCalculation implements ShouldQueue
      */
     public function handle(LedgerService $ledger, ?EmployeeHoursService $hoursService = null): Salary|array
     {
-        // إذا كان الطلب حساباً مجمعاً لساعات ورواتب الإطارات لشهر معين
-        if (($this->data['mode'] ?? '') === 'batch_calculate' || !empty($this->data['calculate_all'])) {
-            return $this->handleBatchCalculation($hoursService ?? app(EmployeeHoursService::class));
+        $period = $this->data['period'] ?? (($this->data['period_from'] ?? '') . ' to ' . ($this->data['period_to'] ?? ''));
+        if (empty(trim($period, ' to')) && !empty($this->data['year'])) {
+            $period = $this->data['year'] . '-' . str_pad((string)($this->data['month'] ?? ''), 2, '0', STR_PAD_LEFT);
         }
 
-        return $this->handleSingleSalary($ledger);
+        Log::info('Salary calculation started for period: ' . $period);
+
+        // إذا كان الطلب حساباً مجمعاً لساعات ورواتب الإطارات لشهر معين
+        if (($this->data['mode'] ?? '') === 'batch_calculate' || !empty($this->data['calculate_all'])) {
+            $result = $this->handleBatchCalculation($hoursService ?? app(EmployeeHoursService::class));
+            Log::info('Salary calculation completed for period: ' . $period);
+            return $result;
+        }
+
+        $result = $this->handleSingleSalary($ledger);
+        Log::info('Salary calculation completed for period: ' . $period);
+        return $result;
     }
 
     /**

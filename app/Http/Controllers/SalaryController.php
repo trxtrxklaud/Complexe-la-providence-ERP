@@ -94,7 +94,7 @@ class SalaryController extends Controller
         $userId = $request->user()?->id;
 
         if ($request->boolean('async')) {
-            \App\Jobs\ProcessSalaryCalculation::dispatch($data, $userId);
+            \App\Jobs\ProcessSalaryCalculation::dispatch($data, $userId)->onQueue('default');
 
             return response()->json([
                 'message' => 'تم إرسال عملية حساب وخلاص الراتب إلى قائمة الانتظار للمُعالجة في الخلفية.',
@@ -261,5 +261,32 @@ class SalaryController extends Controller
                 'cancelledBy:id,first_name,last_name',
             ])
         );
+    }
+
+    /**
+     * إرسال طلب احتساب رواتب شهر معين إلى طابور المعالجة في الخلفية.
+     */
+    public function calculate(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'period' => ['required', 'string'],
+        ]);
+
+        $data['mode'] = 'batch_calculate';
+        if (str_contains($data['period'], '-')) {
+            [$year, $month] = explode('-', $data['period']);
+            $data['year'] = (int) $year;
+            $data['month'] = (int) $month;
+        }
+
+        $userId = $request->user()?->id;
+
+        \App\Jobs\ProcessSalaryCalculation::dispatch($data, $userId)->onQueue('default');
+
+        return response()->json([
+            'message' => 'تم إرسال عملية احتساب الرواتب إلى قائمة الانتظار بنجاح.',
+            'status' => 'queued',
+            'period' => $data['period'],
+        ], 202);
     }
 }
