@@ -52,8 +52,8 @@ return [
             'options' => extension_loaded('pdo_mysql') ? array_filter([
                 $mysqlSslCaAttribute => env('MYSQL_ATTR_SSL_CA'),
                 $mysqlBufferedQueryAttribute => true,
-                \PDO::ATTR_EMULATE_PREPARES => false,
-                ...(env('DB_PERSISTENT', false) ? [\PDO::ATTR_PERSISTENT => true] : []),
+                \PDO::ATTR_PERSISTENT => true,
+                \PDO::ATTR_EMULATE_PREPARES => true,
             ], fn ($value, $key) => $key !== '' && $key !== null && $value !== null && $value !== '', ARRAY_FILTER_USE_BOTH) : [],
         ],
 
