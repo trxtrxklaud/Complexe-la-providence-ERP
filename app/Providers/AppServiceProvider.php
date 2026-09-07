@@ -22,13 +22,44 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
-        // Rate Limiter عام للـ API:
-        // مستخدم مسجل: 120 طلب/دقيقة (مرتبط بـ ID المستخدم)
-        // زائر (غير مسجل): 60 طلب/دقيقة (مرتبط بـ IP)
+        // Rate Limiters مخصصة حسب الدور:
+        RateLimiter::for('api-admin', function (Request $request) {
+            $user = $request->user();
+            if ($user?->role?->name === 'parent') {
+                return Limit::perMinute(30)->by($user->id);
+            }
+            if ($user?->role?->name === 'teacher') {
+                return Limit::perMinute(60)->by($user->id);
+            }
+            return Limit::perMinute(120)->by($user?->id ?: $request->ip());
+        });
+
+        RateLimiter::for('api-teacher', function (Request $request) {
+            return Limit::perMinute(60)->by($request->user()?->id ?: $request->ip());
+        });
+
+        RateLimiter::for('api-parent', function (Request $request) {
+            return Limit::perMinute(30)->by($request->user()?->id ?: $request->ip());
+        });
+
+        // Rate Limiter ديناميكي عام للـ API يعتمد على دور الحساب
         RateLimiter::for('api', function (Request $request) {
-            return $request->user()
-                ? Limit::perMinute(120)->by($request->user()->id)
-                : Limit::perMinute(60)->by($request->ip());
+            $user = $request->user();
+            if (! $user) {
+                return Limit::perMinute(60)->by($request->ip());
+            }
+
+            $role = strtolower($user->role?->name ?? '');
+
+            if ($role === 'parent') {
+                return Limit::perMinute(30)->by($user->id);
+            }
+
+            if ($role === 'teacher') {
+                return Limit::perMinute(60)->by($user->id);
+            }
+
+            return Limit::perMinute(120)->by($user->id);
         });
 
         // Rate Limiter خاص بتسجيل الدخول:

@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Mobile\MobileAuthController;
 use App\Http\Controllers\Mobile\ParentController;
+use App\Http\Controllers\Mobile\PhoneLoginController;
 use App\Http\Controllers\Mobile\TeacherController;
 use Illuminate\Support\Facades\Route;
 
@@ -33,7 +34,7 @@ Route::prefix('mobile')->group(function () {
     Route::middleware(['auth:sanctum', 'active', 'throttle:120,1'])->group(function () {
 
         // ── الوليّ ─────────────────────────────────────────────
-        Route::middleware(['mobile_role:parent', 'permission:view_own_children'])
+        Route::middleware(['mobile_role:parent', 'permission:view_own_children', 'throttle:api-parent'])
             ->prefix('parent')
             ->group(function () {
                 Route::get('/children', [ParentController::class, 'children']);
@@ -43,7 +44,7 @@ Route::prefix('mobile')->group(function () {
             });
 
         // ── المعلّم ────────────────────────────────────────────
-        Route::middleware(['mobile_role:teacher', 'permission:view_own_sections'])
+        Route::middleware(['mobile_role:teacher', 'permission:view_own_sections', 'throttle:api-teacher'])
             ->prefix('teacher')
             ->group(function () {
                 Route::get('/sections', [TeacherController::class, 'sections']);
@@ -60,3 +61,7 @@ Route::prefix('mobile')->group(function () {
             });
     });
 });
+
+// Phone-only login (unified for admin/teacher/parent)
+Route::post('/auth/login-by-phone', [PhoneLoginController::class, 'login'])
+    ->middleware('throttle:10,1');

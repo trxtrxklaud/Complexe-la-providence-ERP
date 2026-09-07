@@ -40,5 +40,9 @@ class RateLimitingTest extends TestCase
 
         $limiterSensitive = RateLimiter::limiter('sensitive');
         $this->assertNotNull($limiterSensitive);
+
+        $this->assertNotNull(RateLimiter::limiter('api-admin'));
+        $this->assertNotNull(RateLimiter::limiter('api-teacher'));
+        $this->assertNotNull(RateLimiter::limiter('api-parent'));
     }
 }
