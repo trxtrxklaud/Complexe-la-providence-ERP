@@ -2,6 +2,7 @@
 
 namespace App\Services\Mobile;
 
+use App\Exceptions\OtpRequiredException;
 use App\Models\Employee;
 use App\Models\Role;
 use App\Models\Student;
@@ -14,14 +15,23 @@ use Illuminate\Support\Str;
 
 class PhoneAuthService
 {
+    public function __construct(private OtpService $otp) {}
+
     /**
      * تسجيل الدخول الموحد برقم الهاتف لجميع الأدوار (إدارة، معلم، ولي أمر).
      *
-     * @param string $rawPhone
+     * الوليّ لا يدخل بالرقم وحده أبداً: رقم الهاتف شبه معلوم داخل المدرسة،
+     * فإثبات حيازة الهاتف شرط للتوكن. عند اكتشاف أن الرقم لوليّ:
+     * - مع otp_code صحيح: يُصدر التوكن (استهلاك الرمز).
+     * - بلا otp_code: يُرمى OtpRequiredException (401 + otp_required).
+     * الإدارة والمعلّم بلا تغيير — لا OTP.
+     *
+     * @param  string|null  $otpCode  رمز التحقق، إلزامي لدور الوليّ.
      * @return array{token: string, access_token: string, token_type: string, role: string, user: array, profile: array}
-     * @throws AuthenticationException
+     *
+     * @throws AuthenticationException|OtpRequiredException
      */
-    public function loginByPhone(string $rawPhone): array
+    public function loginByPhone(string $rawPhone, ?string $otpCode = null): array
     {
         $normalizedPhone = FamilyService::normalizePhone($rawPhone);
 
@@ -41,7 +51,13 @@ class PhoneAuthService
             return $teacherResult;
         }
 
-        // 3. فحص أولياء الأمور (Parent Student)
+        // 3. فحص أولياء الأمور (Parent Student) — لا دخول بلا OTP.
+        $otpCode = $otpCode !== null ? trim($otpCode) : '';
+        if ($otpCode === '' || ! $this->otp->verify($rawPhone, $otpCode)) {
+            // لا نميّز «لا أبناء» عن «رمز خاطئ» — الرسالة موحّدة.
+            throw new OtpRequiredException;
+        }
+
         $parentResult = $this->attemptParentLogin($normalizedPhone);
         if ($parentResult) {
             return $parentResult;
@@ -65,6 +81,7 @@ class PhoneAuthService
             ->first(function (User $u) use ($normalizedPhone, $superRoles) {
                 $roleName = $u->role?->name ?? '';
                 $isSuperOrAdmin = in_array($roleName, $superRoles, true) || $roleName === 'admin';
+
                 return $isSuperOrAdmin && FamilyService::normalizePhone($u->phone) === $normalizedPhone;
             });
 

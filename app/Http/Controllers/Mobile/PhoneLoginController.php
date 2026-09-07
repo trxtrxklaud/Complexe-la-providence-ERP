@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Mobile;
 
+use App\Exceptions\OtpRequiredException;
 use App\Http\Controllers\Controller;
 use App\Services\Mobile\PhoneAuthService;
 use Illuminate\Auth\AuthenticationException;
@@ -16,21 +17,21 @@ class PhoneLoginController extends Controller
 
     /**
      * تسجيل الدخول الموحد برقم الهاتف.
-     *
-     * @param Request $request
-     * @return JsonResponse
      */
     public function login(Request $request): JsonResponse
     {
         $request->validate([
             'phone' => 'required|string|min:8|max:20',
+            // رمز التحقق — إلزامي فعلياً لدور الوليّ (يُفحص في الخدمة).
+            'otp_code' => 'nullable|string|size:6',
         ], [
             'phone.required' => 'رقم الهاتف مطلوب.',
             'phone.min' => 'رقم الهاتف غير صالح.',
+            'otp_code.size' => 'رمز التحقق يجب أن يكون 6 أرقام.',
         ]);
 
         try {
-            $result = $this->authService->loginByPhone($request->phone);
+            $result = $this->authService->loginByPhone($request->phone, $request->input('otp_code'));
 
             return response()->json([
                 'success' => true,
@@ -44,6 +45,13 @@ class PhoneLoginController extends Controller
                 ],
             ], 200);
 
+        } catch (OtpRequiredException $e) {
+            return response()->json([
+                'success' => false,
+                'otp_required' => true,
+                'message' => $e->getMessage(),
+                'data' => null,
+            ], 401);
         } catch (AuthenticationException $e) {
             return response()->json([
                 'success' => false,

@@ -16,6 +16,13 @@ return [
         'key' => env('RESEND_KEY'),
     ],
 
+    // قناة إرسال رموز التحقّق (OTP): manual تُرجع الرمز في استجابة
+    // request-otp (وضع الإطلاق بلا تكلفة SMS)، وأي قيمة أخرى تُعطّل
+    // إرجاعه — عندئذٍ لا يصل الرمز إلا عبر مزوّد الرسائل القادم.
+    'otp' => [
+        'channel' => env('OTP_CHANNEL', 'manual'),
+    ],
+
     'slack' => [
         'notifications' => [
             'bot_user_oauth_token' => env('SLACK_BOT_USER_OAUTH_TOKEN'),
