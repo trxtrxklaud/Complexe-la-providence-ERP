@@ -59,9 +59,13 @@ class RosterController extends Controller
     public function bulkStore(BulkEnrollRequest $request): JsonResponse
     {
         $data = $request->validated();
+        if (empty($data['section_id'])) {
+            $defaultSection = \App\Models\Section::first();
+            $data['section_id'] = $defaultSection?->id;
+        }
 
-        if ($request->boolean('async')) {
-            \App\Jobs\ProcessBulkEnrollment::dispatch($data, $request->user()?->id);
+        if ($request->boolean('async') || $request->is('*/enrollments/bulk*')) {
+            \App\Jobs\ProcessBulkEnrollment::dispatch($data, $request->user()?->id)->onQueue('default');
 
             return response()->json([
                 'message' => 'تم إرسال عملية التسجيل الجماعي إلى قائمة الانتظار للمُعالجة في الخلفية.',

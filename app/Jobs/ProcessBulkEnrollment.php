@@ -24,6 +24,7 @@ class ProcessBulkEnrollment implements ShouldQueue
 
     public int $tries = 3;
     public int $timeout = 180;
+    public array $students = [];
 
     /**
      * @param array $data بيانات التسجيل الجماعي المعتمدة ['section_id', 'academic_year_id', 'students']
@@ -32,10 +33,14 @@ class ProcessBulkEnrollment implements ShouldQueue
     public function __construct(
         public array $data,
         public ?int $userId = null
-    ) {}
+    ) {
+        $this->students = $data['students'] ?? [];
+    }
 
     public function handle(): array
     {
+        Log::info('Bulk enrollment started for ' . count($this->students) . ' students');
+
         $section = Section::with('level')->findOrFail($this->data['section_id']);
         $year = AcademicYear::findOrFail($this->data['academic_year_id']);
 
@@ -112,6 +117,7 @@ class ProcessBulkEnrollment implements ShouldQueue
             ? "تمّ تسجيل {$created} تلميذ."
             : "تمّ تسجيل {$created} تلميذ، وتُجاهل " . count($skipped) . ' اسماً.';
 
+        Log::info('Bulk enrollment completed');
         Log::info("ProcessBulkEnrollment completed for section #{$section->id}: created {$created}, skipped " . count($skipped));
 
         return [

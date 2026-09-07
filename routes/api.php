@@ -196,6 +196,7 @@ Route::middleware(['auth:sanctum', 'active', 'throttle:api'])->group(function ()
     // قوائم الأقسام — إدخال دفعي، تعديل، حذف، طباعة
     Route::middleware('permission:manage_users')->group(function () {
         Route::get('/rosters', [RosterController::class, 'index']);
+        Route::post('/enrollments/bulk', [RosterController::class, 'bulkStore']);
         Route::post('/rosters/bulk', [RosterController::class, 'bulkStore']);
         Route::put('/rosters/{roster}', [RosterController::class, 'updateStudent']);
         Route::delete('/rosters/{roster}', [RosterController::class, 'destroy']);

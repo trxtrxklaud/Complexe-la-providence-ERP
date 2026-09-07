@@ -15,7 +15,7 @@ class BulkEnrollRequest extends FormRequest
     {
         return [
             'academic_year_id' => ['required', 'integer', 'exists:academic_years,id'],
-            'section_id' => ['required', 'integer', 'exists:sections,id'],
+            'section_id' => ['nullable', 'integer', 'exists:sections,id'],
             'students' => ['required', 'array', 'min:1', 'max:200'],
             'students.*.first_name' => ['required', 'string', 'min:2', 'max:120'],
             'students.*.last_name' => ['required', 'string', 'min:2', 'max:120'],
