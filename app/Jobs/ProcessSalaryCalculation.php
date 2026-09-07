@@ -219,7 +219,7 @@ class ProcessSalaryCalculation implements ShouldQueue
         $year = (int) ($this->data['year'] ?? now()->year);
         $month = (int) ($this->data['month'] ?? now()->month);
 
-        $employees = Employee::where('status', 'active')->get();
+        $employees = Employee::where('is_active', true)->get();
         $results = [];
 
         foreach ($employees as $emp) {
