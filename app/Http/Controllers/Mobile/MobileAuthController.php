@@ -58,9 +58,14 @@ class MobileAuthController extends Controller
         ];
 
         // وضع الإطلاق (manual): يُعاد الرمز ليمنحه القابض/الإدارة للوليّ.
-        // يُعطَّل تلقائياً متى ضُبط مزوّد SMS (channel != manual).
+        // أي قناة أخرى (twilio/...): الرمز أُرسل عبر SMS — لا يُعاد أبداً.
         if (config('services.otp.channel', 'manual') === 'manual') {
             $payload['dev_code'] = $result['code'];
+        } elseif (! empty($result['sent_via_sms'])) {
+            $payload['message'] = 'تم إرسال رمز التحقّق إلى هاتفك.';
+        } else {
+            // قناة SMS مضبوطة لكن الإرسال فشل — رسالة صادقة بلا تسريب.
+            $payload['message'] = 'تعذّر إرسال رمز التحقّق حالياً، حاول بعد قليل.';
         }
 
         return response()->json($payload);

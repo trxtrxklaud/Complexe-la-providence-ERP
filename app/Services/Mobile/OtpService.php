@@ -4,6 +4,7 @@ namespace App\Services\Mobile;
 
 use App\Models\OtpCode;
 use App\Services\FamilyService;
+use App\Services\Sms\SmsProviderInterface;
 use Illuminate\Support\Facades\Hash;
 
 /*
@@ -14,8 +15,10 @@ use Illuminate\Support\Facades\Hash;
 | ملف جديد بالكامل. الرمز يُخزَّن مُجزّأً (Hash) لا نصّاً. الهاتف يُطبَّع
 | عبر FamilyService::normalizePhone() (قراءة ثابتة، بلا تعديل).
 |
-| للإطلاق: القناة الافتراضية "manual" تُرجع الرمز للإدارة/القابض ليمنحه
-| للوليّ (بلا تكلفة SMS). لاحقاً يُضاف مزوّد SMS دون تغيير هذا العقد.
+| قناة الإرسال تحدّدها services.otp.channel:
+| - «manual» (الإطلاق): لا إرسال؛ الرمز يُعاد للإدارة/القابض ليمنحه للوليّ.
+| - أي قيمة أخرى: يُرسل الرمز عبر SmsProviderInterface (Twilio) ولا
+|   يُعاد في الاستجابة أبداً — الكود الخام يغادر الخادم عبر SMS فقط.
 |
 */
 
@@ -24,6 +27,8 @@ class OtpService
     private const TTL_MINUTES = 10;
 
     private const MAX_ATTEMPTS = 5;
+
+    public function __construct(private readonly SmsProviderInterface $sms) {}
 
     /**
      * يُصدر رمزاً جديداً للهاتف المطبَّع ويُبطل ما قبله. يُرجع الرمز الخام
@@ -55,7 +60,24 @@ class OtpService
             'phone' => $phone,
             'code' => $code,
             'expires_at' => $otp->expires_at,
+            'sent_via_sms' => $this->deliver($phone, $code),
         ];
+    }
+
+    /**
+     * يُسلّم الرمز عبر القناة المضبوطة. يُرجع true إذا أُرسل SMS فعلياً.
+     * في وضع manual لا إرسال — الرمز يُعرَض للإدارة في الاستجابة.
+     */
+    private function deliver(string $normalizedPhone, string $code): bool
+    {
+        if (config('services.otp.channel', 'manual') === 'manual') {
+            return false;
+        }
+
+        $message = 'رمز التحقّق لدخول تطبيق مدرسة لا بروفيدانس هو: '.$code."\n"
+            .'الرمز صالح لعشر دقائق ولا تشاركه مع أي شخص.';
+
+        return $this->sms->send($normalizedPhone, $message);
     }
 
     /**

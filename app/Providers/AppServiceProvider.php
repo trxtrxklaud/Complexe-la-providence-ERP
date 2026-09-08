@@ -2,6 +2,8 @@
 
 namespace App\Providers;
 
+use App\Services\Sms\SmsProviderInterface;
+use App\Services\Sms\TwilioService;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\RateLimiter;
@@ -14,7 +16,10 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        //
+        // مزوّد SMS واحد للتطبيق كله — يُبنى من الإعدادات لا من الحاوية
+        // (معامِلاته primitive strings لا تُحلّ تلقائياً). يُبدَّل هنا فقط
+        // عند تغيير المزوّد.
+        $this->app->singleton(SmsProviderInterface::class, fn () => TwilioService::fromConfig());
     }
 
     /**
@@ -31,6 +36,7 @@ class AppServiceProvider extends ServiceProvider
             if ($user?->role?->name === 'teacher') {
                 return Limit::perMinute(60)->by($user->id);
             }
+
             return Limit::perMinute(120)->by($user?->id ?: $request->ip());
         });
 
@@ -66,6 +72,7 @@ class AppServiceProvider extends ServiceProvider
         // 5 محاولات في الدقيقة (مرتبط بـ IP + البريد الإلكتروني لمنع الـ brute-force)
         RateLimiter::for('login', function (Request $request) {
             $email = (string) $request->input('email', '');
+
             return Limit::perMinute(5)->by($request->ip().'|'.$email);
         });
 
