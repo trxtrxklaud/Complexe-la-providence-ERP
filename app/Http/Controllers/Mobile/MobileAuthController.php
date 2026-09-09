@@ -151,4 +151,28 @@ class MobileAuthController extends Controller
             'is_active' => true,
         ]);
     }
+
+    public function loginByPhone(Request $request)
+    {
+        $request->validate([
+            'phone' => 'required|string',
+            'otp_code' => 'nullable|string',
+        ]);
+
+        $phoneAuth = app(\App\Services\Mobile\PhoneAuthService::class);
+        $result = $phoneAuth->loginByPhone($request->phone, $request->input('otp_code'));
+
+        return response()->json([
+            'success' => true,
+            'message' => 'تم تسجيل الدخول بنجاح.',
+            'data' => [
+                'access_token' => $result['access_token'],
+                'token_type' => $result['token_type'],
+                'role' => $result['role'],
+                'user' => $result['user'],
+                'profile' => $result['profile'],
+            ],
+        ]);
+    }
 }
+

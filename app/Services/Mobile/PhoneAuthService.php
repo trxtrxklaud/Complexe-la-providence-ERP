@@ -51,11 +51,13 @@ class PhoneAuthService
             return $teacherResult;
         }
 
-        // 3. فحص أولياء الأمور (Parent Student) — لا دخول بلا OTP.
-        $otpCode = $otpCode !== null ? trim($otpCode) : '';
-        if ($otpCode === '' || ! $this->otp->verify($rawPhone, $otpCode)) {
-            // لا نميّز «لا أبناء» عن «رمز خاطئ» — الرسالة موحّدة.
-            throw new OtpRequiredException;
+        // 3. فحص أولياء الأمور (Parent Student) — تخطي OTP إن كان معطلاً في الإعدادات
+        if (config('otp.required', true) !== false) {
+            $otpCode = $otpCode !== null ? trim($otpCode) : '';
+            if ($otpCode === '' || ! $this->otp->verify($rawPhone, $otpCode)) {
+                // لا نميّز «لا أبناء» عن «رمز خاطئ» — الرسالة موحّدة.
+                throw new OtpRequiredException;
+            }
         }
 
         $parentResult = $this->attemptParentLogin($normalizedPhone);
