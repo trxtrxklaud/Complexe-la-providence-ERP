@@ -49,7 +49,7 @@ class GmailLoginTest extends TestCase
         $response->assertStatus(401)
             ->assertJson([
                 'success' => false,
-                'message' => 'رقم الهاتف غير صحيح',
+                'message' => 'كلمة السر غير صحيحة.',
             ]);
     }
 
@@ -94,6 +94,64 @@ class GmailLoginTest extends TestCase
                     ],
                 ],
             ]);
+    }
+
+    public function test_admin_can_login_with_original_password(): void
+    {
+        $role = Role::firstOrCreate(['name' => 'admin'], ['display_name' => 'مدير']);
+
+        User::create([
+            'first_name' => 'مدير',
+            'last_name' => 'المدرسة',
+            'username' => 'school_admin',
+            'email' => 'admin@laprovidence.ma',
+            'password' => 'adminSecretPass!',
+            'phone' => '22123456',
+            'phone_password' => '22123456',
+            'role_id' => $role->id,
+            'is_active' => true,
+        ]);
+
+        // دخول بكلمة السر الأصلية
+        $response = $this->postJson('/api/auth/gmail-login', [
+            'email' => 'admin@laprovidence.ma',
+            'phone' => 'adminSecretPass!',
+        ]);
+
+        $response->assertStatus(200)
+            ->assertJson([
+                'success' => true,
+            ])
+            ->assertJsonPath('data.user.role', 'admin');
+    }
+
+    public function test_admin_can_login_with_phone_as_password(): void
+    {
+        $role = Role::firstOrCreate(['name' => 'admin'], ['display_name' => 'مدير']);
+
+        User::create([
+            'first_name' => 'مدير',
+            'last_name' => 'المدرسة',
+            'username' => 'school_admin',
+            'email' => 'admin@laprovidence.ma',
+            'password' => 'adminSecretPass!',
+            'phone' => '22123456',
+            'phone_password' => '22123456',
+            'role_id' => $role->id,
+            'is_active' => true,
+        ]);
+
+        // دخول برقم الهاتف ككلمة سر
+        $response = $this->postJson('/api/auth/gmail-login', [
+            'email' => 'school_admin', // pseudo
+            'phone' => '22123456',     // phone as password
+        ]);
+
+        $response->assertStatus(200)
+            ->assertJson([
+                'success' => true,
+            ])
+            ->assertJsonPath('data.user.role', 'admin');
     }
 
     public function test_fallback_to_regular_phone_if_phone_password_is_null(): void

@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Hash;
 
 class GmailLoginController extends Controller
 {
@@ -47,17 +48,24 @@ class GmailLoginController extends Controller
             ], 403);
         }
 
-        // التحقق من رقم الهاتف (كلمة السر)
+        // التحقق من كلمة السر: قبول مطابقة رقم الهاتف (phone_password أو phone) أو كلمة السر الأصلية المشفرة
+        $isPhoneMatch = false;
         $storedPhone = $user->phone_password ?? $user->phone;
 
-        // تطبيع الأرقام للمقارنة (استخراج الأرقام فقط)
-        $normalizedPhone = preg_replace('/[^0-9]/', '', $phone);
-        $normalizedStored = preg_replace('/[^0-9]/', '', (string) $storedPhone);
+        if ($storedPhone) {
+            $normalizedPhone = preg_replace('/[^0-9]/', '', $phone);
+            $normalizedStored = preg_replace('/[^0-9]/', '', (string) $storedPhone);
+            if ($normalizedPhone && $normalizedPhone === $normalizedStored) {
+                $isPhoneMatch = true;
+            }
+        }
 
-        if (! $normalizedPhone || $normalizedPhone !== $normalizedStored) {
+        $isPasswordMatch = ! empty($user->password) && Hash::check($phone, $user->password);
+
+        if (! $isPhoneMatch && ! $isPasswordMatch) {
             return response()->json([
                 'success' => false,
-                'message' => 'رقم الهاتف غير صحيح',
+                'message' => 'كلمة السر غير صحيحة.',
             ], 401);
         }
 
@@ -65,6 +73,7 @@ class GmailLoginController extends Controller
         $effectivePermissions = $user->getEffectivePermissionNames();
         $token = $user->createToken('gmail-login', $effectivePermissions)->plainTextToken;
 
+        $user->loadMissing('role');
         $roleName = $user->role?->name ?? 'parent';
 
         return response()->json([
