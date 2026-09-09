@@ -12,27 +12,31 @@ class GmailLoginController extends Controller
     public function login(Request $request): JsonResponse
     {
         $request->validate([
-            'email' => 'required|email',
+            'email' => 'required|string',
             'phone' => 'required|string',
         ], [
-            'email.required' => 'البريد الإلكتروني مطلوب.',
-            'email.email' => 'البريد الإلكتروني غير صالح.',
+            'email.required' => 'البريد الإلكتروني أو اسم المستخدم مطلوب.',
             'phone.required' => 'رقم الهاتف مطلوب.',
         ]);
 
-        $email = trim((string) $request->email);
+        $identifier = trim((string) ($request->email ?? $request->username ?? $request->pseudo ?? $request->identifier));
         $phone = trim((string) $request->phone);
 
-        // البحث عن مستخدم بالإيميل
+        // البحث عن مستخدم بالإيميل أو اسم المستخدم (Pseudo)
         $user = User::query()
             ->with(['role.permissions', 'permissionOverrides.permission'])
-            ->where('email', $email)
+            ->where(function ($q) use ($identifier) {
+                $q->where('email', $identifier)
+                  ->orWhere('username', $identifier);
+            })
             ->first();
 
         if (! $user) {
+            $isEmail = filter_var($identifier, FILTER_VALIDATE_EMAIL);
+            $msg = $isEmail ? 'هذا الإيميل غير مسجل في النظام' : 'اسم المستخدم (Pseudo) هذا غير مسجل في النظام';
             return response()->json([
                 'success' => false,
-                'message' => 'هذا الإيميل غير مسجل في النظام',
+                'message' => $msg,
             ], 401);
         }
 
@@ -72,6 +76,7 @@ class GmailLoginController extends Controller
                 'user' => [
                     'id' => $user->id,
                     'name' => $user->name,
+                    'username' => $user->username,
                     'first_name' => $user->first_name,
                     'last_name' => $user->last_name,
                     'email' => $user->email,

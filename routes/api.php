@@ -38,10 +38,13 @@ use App\Http\Controllers\UserController;
 use App\Http\Controllers\UserPermissionOverrideController;
 use App\Jobs\ProcessDemoJob;
 use App\Http\Controllers\Auth\GmailLoginController;
+use App\Http\Controllers\Auth\ParentRegisterController;
 use Illuminate\Support\Facades\Route;
 
 Route::middleware('throttle:login')->post('/login', [AuthController::class, 'login']);
 Route::middleware('throttle:10,1')->post('/auth/gmail-login', [GmailLoginController::class, 'login']);
+Route::middleware('throttle:10,1')->post('/auth/parent/request-code', [ParentRegisterController::class, 'requestCode']);
+Route::middleware('throttle:10,1')->post('/auth/parent/verify-code', [ParentRegisterController::class, 'verifyCode']);
 
 Route::post('/test-queue', function () {
     ProcessDemoJob::dispatch()->onQueue('default');
