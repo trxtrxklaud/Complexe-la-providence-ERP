@@ -65,3 +65,8 @@ Route::prefix('mobile')->group(function () {
 // Phone-only login (unified for admin/teacher/parent)
 Route::post('/auth/login-by-phone', [PhoneLoginController::class, 'login'])
     ->middleware('throttle:10,1');
+
+// OTP request alias (supports GET and POST)
+Route::match(['GET', 'POST'], '/auth/request-otp', [MobileAuthController::class, 'requestOtp'])
+    ->middleware('throttle:10,1');
+
