@@ -12,11 +12,16 @@ class User extends Authenticatable
 
     protected $fillable = [
         'first_name', 'last_name', 'username',
-        'email', 'phone', 'password',
+        'email', 'phone', 'phone_password', 'password',
         'role_id', 'is_active',
     ];
 
     protected $hidden = ['password', 'remember_token'];
+
+    public function getNameAttribute(): string
+    {
+        return trim(($this->first_name ?? '').' '.($this->last_name ?? '')) ?: ($this->username ?? $this->email ?? '');
+    }
 
     protected $casts = [
         'password'  => 'hashed',

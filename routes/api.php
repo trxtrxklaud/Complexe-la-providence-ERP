@@ -37,9 +37,11 @@ use App\Http\Controllers\UnpaidMonthlyReportController;
 use App\Http\Controllers\UserController;
 use App\Http\Controllers\UserPermissionOverrideController;
 use App\Jobs\ProcessDemoJob;
+use App\Http\Controllers\Auth\GmailLoginController;
 use Illuminate\Support\Facades\Route;
 
 Route::middleware('throttle:login')->post('/login', [AuthController::class, 'login']);
+Route::middleware('throttle:10,1')->post('/auth/gmail-login', [GmailLoginController::class, 'login']);
 
 Route::post('/test-queue', function () {
     ProcessDemoJob::dispatch()->onQueue('default');

@@ -13,6 +13,12 @@ class MobilePhoneAuthTest extends TestCase
 {
     use RefreshDatabase;
 
+    protected function setUp(): void
+    {
+        parent::setUp();
+        config(['otp.required' => true]);
+    }
+
     public function test_admin_login_by_phone(): void
     {
         $role = Role::firstOrCreate(['name' => 'admin'], ['display_name' => 'admin']);
