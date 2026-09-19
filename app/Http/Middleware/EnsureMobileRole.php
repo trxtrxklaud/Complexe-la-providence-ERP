@@ -30,6 +30,14 @@ class EnsureMobileRole
             return response()->json(['message' => 'حسابك معطَّل. تواصل مع المشرف.'], 403);
         }
 
+        // Super roles (config permissions.super_roles, default: admin) bypass
+        // every mobile role gate — mirrors User::hasPermissionTo() semantics.
+        $superRoles = (array) config('permissions.super_roles', []);
+
+        if ($user->role && in_array($user->role->name, $superRoles, true)) {
+            return $next($request);
+        }
+
         if ($user->role?->name !== $role) {
             return response()->json(['message' => 'عذراً، لا تملك صلاحية للوصول'], 403);
         }

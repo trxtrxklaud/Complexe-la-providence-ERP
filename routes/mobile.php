@@ -1,8 +1,12 @@
 <?php
 
+use App\Http\Controllers\Mobile\AdminController;
+use App\Http\Controllers\Mobile\AdminNotificationController;
 use App\Http\Controllers\Mobile\MobileAuthController;
+use App\Http\Controllers\Mobile\ParentContentController;
 use App\Http\Controllers\Mobile\ParentController;
 use App\Http\Controllers\Mobile\PhoneLoginController;
+use App\Http\Controllers\Mobile\TeacherContentController;
 use App\Http\Controllers\Mobile\TeacherController;
 use Illuminate\Support\Facades\Route;
 
@@ -38,9 +42,18 @@ Route::prefix('mobile')->group(function () {
             ->prefix('parent')
             ->group(function () {
                 Route::get('/children', [ParentController::class, 'children']);
+                Route::get('/children/{student}', [ParentController::class, 'show']);
                 Route::get('/children/{student}/ledger', [ParentController::class, 'ledger']);
                 Route::get('/children/{student}/receipts', [ParentController::class, 'receipts']);
+                Route::get('/children/{student}/attendance', [ParentController::class, 'attendance']);
+                Route::get('/children/{student}/grades', [ParentController::class, 'grades']);
+                Route::get('/children/{student}/timetable', [ParentController::class, 'timetable']);
+                Route::get('/children/{student}/exams', [ParentController::class, 'exams']);
+                Route::get('/children/{student}/clubs', [ParentController::class, 'clubs']);
                 Route::get('/announcements', [ParentController::class, 'announcements']);
+                Route::get('/notifications', [ParentController::class, 'notifications']);
+                Route::get('/children/{student}/homework', [ParentContentController::class, 'homework']);
+                Route::get('/children/{student}/behavior', [ParentContentController::class, 'behavior']);
             });
 
         // ── المعلّم ────────────────────────────────────────────
@@ -50,15 +63,89 @@ Route::prefix('mobile')->group(function () {
                 Route::get('/sections', [TeacherController::class, 'sections']);
                 Route::get('/sections/{section}/students', [TeacherController::class, 'students']);
 
-                Route::middleware('permission:manage_attendance')
-                    ->post('/sections/{section}/attendance', [TeacherController::class, 'storeAttendance']);
+                Route::middleware('permission:manage_attendance')->group(function () {
+                    Route::get('/sections/{section}/attendance', [TeacherController::class, 'getAttendance']);
+                    Route::post('/sections/{section}/attendance', [TeacherController::class, 'storeAttendance']);
+                });
 
-                Route::middleware('permission:manage_grades')
-                    ->post('/sections/{section}/results', [TeacherController::class, 'storeResults']);
+                Route::middleware('permission:manage_grades')->group(function () {
+                    Route::get('/sections/{section}/results', [TeacherController::class, 'getResults']);
+                    Route::post('/sections/{section}/results', [TeacherController::class, 'storeResults']);
+                    Route::get('/sections/{section}/grades', [TeacherController::class, 'getResults']);
+                    Route::post('/sections/{section}/grades', [TeacherController::class, 'storeResults']);
+                });
 
                 Route::middleware('permission:manage_announcements')
                     ->post('/sections/{section}/announcements', [TeacherController::class, 'storeAnnouncement']);
+
+                Route::middleware('permission:manage_homework')->group(function () {
+                    Route::get('/sections/{section}/homework', [TeacherContentController::class, 'indexHomework']);
+                    Route::post('/sections/{section}/homework', [TeacherContentController::class, 'storeHomework']);
+                });
+
+                Route::middleware('permission:manage_behavior')->group(function () {
+                    Route::get('/sections/{section}/behavior', [TeacherContentController::class, 'indexBehavior']);
+                    Route::post('/sections/{section}/behavior', [TeacherContentController::class, 'storeBehavior']);
+                });
             });
+
+        // ── الإدارة ────────────────────────────────────────────
+        Route::middleware('mobile_role:admin')->prefix('admin')->group(function () {
+
+            // إشعار عام (إنشاء)
+            Route::post('/notifications/send', [AdminNotificationController::class, 'store']);
+
+            // إحصاءات
+            Route::get('/stats', [AdminController::class, 'stats']);
+
+            // المستويات
+            Route::get('/levels', [AdminController::class, 'levels']);
+
+            // الأقسام (CRUD)
+            Route::get('/sections',              [AdminController::class, 'sections']);
+            Route::post('/sections',             [AdminController::class, 'createSection']);
+            Route::get('/sections/{section}',    [AdminController::class, 'section']);
+            Route::put('/sections/{section}',    [AdminController::class, 'updateSection']);
+            Route::delete('/sections/{section}', [AdminController::class, 'deleteSection']);
+
+            // جدول حصص قسم محدد
+            Route::get('/sections/{section}/timetable', [AdminController::class, 'sectionTimetable']);
+
+            // العائلات
+            Route::get('/families',       [AdminController::class, 'families']);
+            Route::get('/families/show',  [AdminController::class, 'family']); // ?phone=XXXX
+
+            // التلاميذ
+            Route::get('/students',                           [AdminController::class, 'students']);
+            Route::get('/students/{student}',                 [AdminController::class, 'student']);
+            Route::get('/students/{student}/attendance',      [AdminController::class, 'studentAttendance']);
+            Route::get('/students/{student}/grades',          [AdminController::class, 'studentGrades']);
+            Route::get('/students/{student}/ledger',          [AdminController::class, 'studentLedger']);
+
+            // المعلمون
+            Route::get('/teachers',              [AdminController::class, 'teachers']);
+            Route::get('/teachers/{employee}',   [AdminController::class, 'teacher']);
+
+            // الحضور (عرض شامل)
+            Route::get('/attendance', [AdminController::class, 'attendance']);
+
+            // الدرجات (عرض شامل)
+            Route::get('/grades', [AdminController::class, 'grades']);
+
+            // الكشف المالي (عرض شامل)
+            Route::get('/ledgers', [AdminController::class, 'ledgers']);
+
+            // النوادي
+            Route::get('/clubs',                  [AdminController::class, 'clubs']);
+            Route::get('/clubs/{club}',            [AdminController::class, 'club']);
+            Route::get('/club-subscriptions',      [AdminController::class, 'clubSubscriptions']);
+
+            // الإشعارات / الإعلانات (قراءة)
+            Route::get('/notifications', [AdminController::class, 'notifications']);
+
+            // الجدول الزمني العام
+            Route::get('/timetable', [AdminController::class, 'timetable']);
+        });
     });
 });
 
