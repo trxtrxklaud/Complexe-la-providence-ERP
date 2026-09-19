@@ -31,6 +31,8 @@ class MobileRolesSeeder extends Seeder
             ['name' => 'manage_grades',        'display_name' => 'إدارة الأعداد والنتائج',   'group' => 'Mobile'],
             ['name' => 'view_announcements',   'display_name' => 'عرض الإعلانات',            'group' => 'Mobile'],
             ['name' => 'manage_announcements', 'display_name' => 'إدارة الإعلانات',          'group' => 'Mobile'],
+            ['name' => 'manage_homework',      'display_name' => 'إدارة الواجبات',            'group' => 'Mobile'],
+            ['name' => 'manage_behavior',      'display_name' => 'إدارة السلوك',              'group' => 'Mobile'],
         ];
 
         foreach ($permissions as $p) {
@@ -46,6 +48,8 @@ class MobileRolesSeeder extends Seeder
                     'manage_grades',
                     'view_announcements',
                     'manage_announcements',
+                    'manage_homework',
+                    'manage_behavior',
                 ],
             ],
             'parent' => [
