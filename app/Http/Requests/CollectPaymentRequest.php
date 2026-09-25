@@ -25,7 +25,8 @@ class CollectPaymentRequest extends FormRequest
             'reference' => ['nullable', 'string', 'max:100'],
             'notes' => ['nullable', 'string', 'max:500'],
             'idempotency_key' => ['nullable', 'string', 'max:64'],
-            'items' => ['nullable', 'array', 'min:1', 'max:20', 'required_without:prior_allocations'],
+            'collection_mode' => ['nullable', 'string', 'in:full,first_half,remaining'],
+            'items' => ['nullable', 'array', 'max:20', 'required_without_all:prior_allocations,manual_amount,manual_amounts'],
             'items.*.fee_type_id' => ['required', 'integer', 'distinct', 'exists:fee_types,id'],
             'items.*.amount' => ['required', 'numeric', 'min:0.01', 'max:1000000'],
             'club_items' => ['nullable', 'array', 'max:50'],
@@ -39,6 +40,11 @@ class CollectPaymentRequest extends FormRequest
             'prior_allocations.*.opening_balance_id' => ['nullable', 'integer', 'distinct', 'exists:opening_balances,id', 'required_without_all:prior_allocations.*.student_fee_id,prior_allocations.*.manual_student_debt_id'],
             'prior_allocations.*.manual_student_debt_id' => ['nullable', 'integer', 'distinct', 'exists:manual_student_debts,id', 'required_without_all:prior_allocations.*.student_fee_id,prior_allocations.*.opening_balance_id'],
             'prior_allocations.*.amount' => ['required', 'numeric', 'min:0.01', 'max:1000000'],
+
+            'manual_amount' => ['nullable', 'numeric'],
+            'manual_amounts' => ['nullable', 'array'],
+            'manual_amounts.*' => ['numeric'],
+            'confirm_over_standard' => ['nullable', 'boolean'],
         ];
     }
 
@@ -57,7 +63,8 @@ class CollectPaymentRequest extends FormRequest
             }
 
             $enrollment = Enrollment::query()
-                ->select(['id', 'student_id', 'status'])
+                ->with(['level:id,code', 'section.level:id,code'])
+                ->select(['id', 'student_id', 'status', 'level_id', 'section_id'])
                 ->find($enrollmentId);
 
             if (! $enrollment) {
@@ -69,6 +76,31 @@ class CollectPaymentRequest extends FormRequest
                     'enrollment_id',
                     'التسجيل المحدَّد لا يخصّ هذا التلميذ'
                 );
+            }
+
+            $manualAmount = $this->input('manual_amount');
+            $manualAmounts = (array) $this->input('manual_amounts', []);
+
+            if ($manualAmount !== null || ! empty($manualAmounts)) {
+                $levelCode = (string) ($enrollment->level?->code ?? $enrollment->section?->level?->code ?? '');
+                $isPreschool = in_array($levelCode, \App\Services\PreschoolShortCycleService::ALLOWED_LEVELS, true);
+
+                if (! $isPreschool) {
+                    $validator->errors()->add(
+                        'manual_amount',
+                        'المبلغ اليدوي مخصص حصراً لأقسام الروضة والتمهيدي والتحضيري (PRE1, PRE2, PRE3).'
+                    );
+                }
+
+                if ($manualAmount !== null && (float) $manualAmount <= 0) {
+                    $validator->errors()->add('manual_amount', 'يجب أن يكون مبلغ الاستخلاص أكبر من صفر.');
+                }
+
+                foreach ($manualAmounts as $m => $amt) {
+                    if ((float) $amt <= 0) {
+                        $validator->errors()->add("manual_amounts.$m", 'يجب أن يكون مبلغ الاستخلاص أكبر من صفر.');
+                    }
+                }
             }
 
             foreach ((array) $this->input('prior_allocations', []) as $index => $allocation) {
@@ -83,6 +115,13 @@ class CollectPaymentRequest extends FormRequest
                         'يجب تحديد student_fee_id أو opening_balance_id أو manual_student_debt_id فقط'
                     );
                 }
+            }
+
+            if (in_array($this->input('collection_mode'), ['first_half', 'remaining'], true)) {
+                $validator->errors()->add(
+                    'collection_mode',
+                    'القبض الجزئي للشهر غير متاح حالياً.'
+                );
             }
         });
     }

@@ -13,8 +13,10 @@ use App\Models\MonthlyDiscount;
 use App\Models\OpeningBalance;
 use App\Models\Payment;
 use App\Models\PaymentAllocation;
+use App\Exceptions\OverStandardAmountException;
 use App\Models\Student;
 use App\Models\StudentFee;
+use App\Services\PreschoolShortCycleService;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 
@@ -33,6 +35,7 @@ class CollectionService
         private readonly PaymentService $paymentService,
         private readonly LedgerService $ledgerService,
         private readonly ClubService $clubService,
+        private readonly MonthCollectionCoreService $monthCoreService,
     ) {}
 
     public function collect(array $data, int $createdBy): array
@@ -45,6 +48,12 @@ class CollectionService
             if ($existing && is_array($existing->meta)) {
                 return $existing->meta;
             }
+        }
+
+        if (in_array($data['collection_mode'] ?? null, ['first_half', 'remaining'], true)) {
+            throw new \InvalidArgumentException(
+                'القبض الجزئي للشهر غير متاح حالياً.'
+            );
         }
 
         try {
@@ -74,13 +83,105 @@ class CollectionService
                 $items = $data['items'] ?? [];
                 $tuitionFeeTypeId = $items[0]['fee_type_id'] ?? null;
 
+                $isPreschool = $this->isPreschool($enrollment);
+                $preschoolMonthDetails = [];
+                $resolvedMonthAmounts = [];
+
+                // استرجاع خطة الرسوم الرسمية للمستوى
+                $monthlyFeePlan = FeePlan::query()
+                    ->where('academic_year_id', $enrollment->academic_year_id)
+                    ->where('level_id', $enrollment->level_id)
+                    ->where('frequency', 'monthly')
+                    ->first();
+                $fullRate = (float) ($monthlyFeePlan?->amount ?? 0.0);
+                if ($fullRate <= 0.0 && $tuitionFeeTypeId) {
+                    $ft = FeeType::find($tuitionFeeTypeId);
+                    $fullRate = $ft ? (float) $ft->price : 0.0;
+                }
+                $suggestedHalfRate = PreschoolShortCycleService::calculateHalfRate($fullRate);
+
+                $manualAmountsMap = (array) ($data['manual_amounts'] ?? []);
+                $singleManualAmount = isset($data['manual_amount']) ? (float) $data['manual_amount'] : null;
+
                 if (! empty($months)) {
+                    $this->assertManualAmountEligibility($enrollment, $data, $months);
+                    $this->monthCoreService->assertMonthsNotCollected($enrollment, $months);
                     $this->validateMonths($months, $enrollment);
+
+                    // استخلاص وتحقق مبالغ ما قبل المدرسية لشهر سبتمبر وجوان
+                    foreach ($months as $m) {
+                        if ($this->isPreschoolShortCycleMonth($enrollment, $m)) {
+                            $enteredAmount = null;
+                            if (isset($manualAmountsMap[$m])) {
+                                $enteredAmount = round((float) $manualAmountsMap[$m], 2);
+                            } elseif ($singleManualAmount !== null && count($months) === 1) {
+                                $enteredAmount = round($singleManualAmount, 2);
+                            } elseif (count($months) === 1 && ! empty($items)) {
+                                $tItem = collect($items)->firstWhere('fee_type_id', $tuitionFeeTypeId);
+                                if ($tItem && (float) $tItem['amount'] > 0) {
+                                    $enteredAmount = round((float) $tItem['amount'], 2);
+                                }
+                            }
+
+                            if ($enteredAmount === null) {
+                                $enteredAmount = $suggestedHalfRate;
+                            }
+
+                            if ($enteredAmount <= 0) {
+                                throw new \InvalidArgumentException('يجب أن يكون مبلغ الاستخلاص أكبر من صفر.');
+                            }
+
+                            $isOverStandard = ($fullRate > 0 && $enteredAmount > $fullRate + 0.001);
+                            if ($isOverStandard && empty($data['confirm_over_standard'])) {
+                                throw new OverStandardAmountException(
+                                    "المبلغ المدخل ({$enteredAmount} د.ت) يتجاوز المعلوم الشهري الكامل ({$fullRate} د.ت) — يتطلب تأكيداً صريحاً.",
+                                    $enteredAmount,
+                                    $fullRate,
+                                    $suggestedHalfRate
+                                );
+                            }
+
+                            $preschoolMonthDetails[$m] = [
+                                'entered_amount' => $enteredAmount,
+                                'suggested_amount' => $suggestedHalfRate,
+                                'full_rate' => $fullRate,
+                                'over_standard' => $isOverStandard,
+                            ];
+                            $resolvedMonthAmounts[$m] = $enteredAmount;
+                        }
+                    }
+
                     // إنشاء رسوم النوادي غير المدفوعة للتلميذ ضمن نفس عملية الاستخلاص.
                     // عدم إدراجها في items يعني أنها تبقى متخلدة، بينما club_items يقبضها اختيارياً.
                     $this->clubService->ensureFeesForEnrollment($enrollment, $months, $createdBy);
                     // إعادة حساب المعاينة والتخفيضات على مستوى الخادم لحماية الاستخلاص.
-                    $preview = $this->preview($enrollment->id, $months, $tuitionFeeTypeId);
+                    $preview = $this->preview($enrollment->id, $months, $tuitionFeeTypeId, 'full', $resolvedMonthAmounts);
+
+                    // مزامنة بند التمدرس في items لمطابقة المبالغ المحسوبة لما قبل المدرسية والأشهر العادية
+                    if (! empty($preschoolMonthDetails)) {
+                        $tuitionSum = (float) $preview['remaining_amount'];
+                        $foundTuition = false;
+                        foreach ($items as &$it) {
+                            if ($tuitionFeeTypeId && (int) $it['fee_type_id'] === (int) $tuitionFeeTypeId) {
+                                $it['amount'] = $tuitionSum;
+                                $foundTuition = true;
+                                break;
+                            }
+                        }
+                        unset($it);
+                        if (! $foundTuition && $tuitionSum > 0) {
+                            $defaultTuitionType = FeeType::where('code', 'TUITION_MONTHLY')->first()
+                                ?? FeeType::find($tuitionFeeTypeId)
+                                ?? FeeType::first();
+                            if ($defaultTuitionType) {
+                                array_unshift($items, [
+                                    'fee_type_id' => $defaultTuitionType->id,
+                                    'amount' => $tuitionSum,
+                                ]);
+                                $tuitionFeeTypeId = $defaultTuitionType->id;
+                            }
+                        }
+                    }
                 } else {
                     // سداد دين قديم فقط لا يحتاج إلى شهر حالي أو بند رسوم جديد.
                     $preview = ['is_fully_waived' => false, 'remaining_amount' => 0.0];
@@ -183,12 +284,16 @@ class CollectionService
                     ];
 
                     $allocationsBreakdown[] = [
+                        'allocation_type' => $priorItem['opening_balance_id'] ? 'opening_balance' : ($priorItem['manual_student_debt_id'] ? 'manual_student_debt' : 'student_fee'),
+                        'source_id' => $priorItem['opening_balance_id'] ?: ($priorItem['manual_student_debt_id'] ?: (int) $feeId),
+                        'description' => $label,
+                        'amount' => (float) $amount,
+                        'is_prior_debt' => true,
+                        // الحقول القديمة لضمان التوافق العكسي (Backward Compatibility)
                         'type' => 'prior_year',
                         'student_fee_id' => (int) $feeId,
                         'manual_student_debt_id' => $priorItem['manual_student_debt_id'],
                         'opening_balance_id' => $priorItem['opening_balance_id'],
-                        'description' => $label,
-                        'amount' => (float) $amount,
                     ];
                 }
 
@@ -225,51 +330,108 @@ class CollectionService
                         'is_prior_year' => false,
                     ];
                     $allocationsBreakdown[] = [
+                        'allocation_type' => 'club_fee',
+                        'source_id' => (int) $clubFee->id,
+                        'description' => $label,
+                        'amount' => (float) $clubItem['amount'],
+                        'is_prior_debt' => false,
                         'type' => 'club_fee',
                         'student_fee_id' => (int) $studentFee->id,
                         'club_monthly_fee_id' => (int) $clubFee->id,
-                        'description' => $label,
-                        'amount' => (float) $clubItem['amount'],
                     ];
                 }
 
                 foreach ($items as $item) {
                     $feeType = FeeType::findOrFail($item['fee_type_id']);
-                    $amount = round((float) $item['amount'], 2);
+                    $isTuition = ($tuitionFeeTypeId && (int) $feeType->id === (int) $tuitionFeeTypeId);
 
-                    $studentFee = StudentFee::create([
-                        'enrollment_id' => $enrollment->id,
-                        'fee_plan_id' => null,
-                        // الرابط البنيوي بنوع الرسم: عليه يعتمد الدفتر في تصنيف بند المداخيل
-                        // بدل استخراج النوع من نصّ الوصف.
-                        'fee_type_id' => $feeType->id,
-                        'description' => $feeType->name_ar.' — '.$monthsLabel,
-                        'amount_due' => $amount,
-                        'due_date' => $data['payment_date'],
-                        'status' => 'pending',
-                    ]);
+                    if ($isTuition && ! empty($preschoolMonthDetails)) {
+                        // إنشاء رسم طالب منفصل لكل شهر من الأشهر المطلوبة بالمبلغ المخصص (يدوي لما قبل المدرسي، وكامل للأشهر العادية)
+                        foreach ($months as $m) {
+                            if ($this->isPreschoolShortCycleMonth($enrollment, $m)) {
+                                $mAmount = (float) ($resolvedMonthAmounts[$m] ?? $preschoolMonthDetails[$m]['entered_amount'] ?? $suggestedHalfRate);
+                            } else {
+                                $pItem = collect($preview['items'] ?? [])->firstWhere('month', $m);
+                                $mAmount = (float) ($pItem['remaining_amount'] ?? $pItem['net_due'] ?? $fullRate);
+                            }
+                            $mDueDate = $this->resolveMonthDueDate($enrollment, $m, $data['payment_date']);
+                            $mLabel = (self::MONTH_NAMES_AR[substr($m, 5)] ?? $m).' '.substr($m, 0, 4);
 
-                    PaymentAllocation::create([
-                        'payment_id' => $payment->id,
-                        'student_fee_id' => $studentFee->id,
-                        'amount_allocated' => $amount,
-                    ]);
+                            $studentFee = StudentFee::create([
+                                'enrollment_id' => $enrollment->id,
+                                'fee_plan_id' => $monthlyFeePlan?->id,
+                                'fee_type_id' => $feeType->id,
+                                'description' => $feeType->name_ar.' — '.$mLabel,
+                                'amount_due' => $mAmount,
+                                'due_date' => $mDueDate,
+                                'status' => 'pending',
+                            ]);
 
-                    $feeIds[] = $studentFee->id;
+                            PaymentAllocation::create([
+                                'payment_id' => $payment->id,
+                                'student_fee_id' => $studentFee->id,
+                                'amount_allocated' => $mAmount,
+                            ]);
 
-                    $receiptItems[] = [
-                        'fee_type_id' => $feeType->id,
-                        'fee_type_name' => $feeType->name_ar,
-                        'amount' => (float) $item['amount'],
-                        'is_prior_year' => false,
-                    ];
+                            $feeIds[] = $studentFee->id;
 
-                    $allocationsBreakdown[] = [
-                        'type' => 'current_year',
-                        'student_fee_id' => (int) $studentFee->id,
-                        'description' => $feeType->name_ar.' — '.$monthsLabel,
-                        'amount' => (float) $item['amount'],
-                    ];
+                            $receiptItems[] = [
+                                'fee_type_id' => $feeType->id,
+                                'fee_type_name' => $feeType->name_ar.' — '.$mLabel,
+                                'description' => $feeType->name_ar.' — '.$mLabel,
+                                'amount' => $mAmount,
+                                'is_prior_year' => false,
+                            ];
+
+                            $allocationsBreakdown[] = [
+                                'allocation_type' => 'student_fee',
+                                'source_id' => (int) $studentFee->id,
+                                'description' => $feeType->name_ar.' — '.$mLabel,
+                                'amount' => $mAmount,
+                                'is_prior_debt' => false,
+                                'type' => 'current_year',
+                                'student_fee_id' => (int) $studentFee->id,
+                            ];
+                        }
+                    } else {
+                        $amount = round((float) $item['amount'], 2);
+
+                        $studentFee = StudentFee::create([
+                            'enrollment_id' => $enrollment->id,
+                            'fee_plan_id' => null,
+                            'fee_type_id' => $feeType->id,
+                            'description' => $feeType->name_ar.' — '.$monthsLabel,
+                            'amount_due' => $amount,
+                            'due_date' => $data['payment_date'],
+                            'status' => 'pending',
+                        ]);
+
+                        PaymentAllocation::create([
+                            'payment_id' => $payment->id,
+                            'student_fee_id' => $studentFee->id,
+                            'amount_allocated' => $amount,
+                        ]);
+
+                        $feeIds[] = $studentFee->id;
+
+                        $receiptItems[] = [
+                            'fee_type_id' => $feeType->id,
+                            'fee_type_name' => $feeType->name_ar,
+                            'description' => $feeType->name_ar.' — '.$monthsLabel,
+                            'amount' => (float) $item['amount'],
+                            'is_prior_year' => false,
+                        ];
+
+                        $allocationsBreakdown[] = [
+                            'allocation_type' => 'student_fee',
+                            'source_id' => (int) $studentFee->id,
+                            'description' => $feeType->name_ar.' — '.$monthsLabel,
+                            'amount' => (float) $item['amount'],
+                            'is_prior_debt' => false,
+                            'type' => 'current_year',
+                            'student_fee_id' => (int) $studentFee->id,
+                        ];
+                    }
                 }
 
                 // مصدر حقيقة واحد لحالة الرسم: تُحسب من التوزيعات لا تُكتب يدوياً.
@@ -304,6 +466,9 @@ class CollectionService
                     'discount' => 0.0,
                     'total' => $total,
                     'items' => $receiptItems,
+                    'preschool_manual_amounts' => $preschoolMonthDetails,
+                    'entered_amount' => ! empty($preschoolMonthDetails) ? reset($preschoolMonthDetails)['entered_amount'] : null,
+                    'suggested_amount' => ! empty($preschoolMonthDetails) ? reset($preschoolMonthDetails)['suggested_amount'] : null,
                     'student' => [
                         'id' => $enrollment->student->id,
                         'first_name' => $enrollment->student->first_name,
@@ -323,6 +488,18 @@ class CollectionService
                         'name' => trim(($actor?->first_name ?? '').' '.($actor?->last_name ?? '')),
                     ],
                 ];
+
+                if (! empty($preschoolMonthDetails)) {
+                    $noteParts = [];
+                    foreach ($preschoolMonthDetails as $pm => $det) {
+                        $noteParts[] = "{$pm}: entered={$det['entered_amount']}, suggested={$det['suggested_amount']}"
+                            . ($det['over_standard'] ? ' (over_standard confirmed)' : '');
+                    }
+                    $extraNote = 'Preschool manual: ' . implode('; ', $noteParts);
+                    $payment->notes = $payment->notes ? ($payment->notes . ' | ' . $extraNote) : $extraNote;
+                    $payment->save();
+                    $receipt['notes'] = $payment->notes;
+                }
 
                 // لقطة إيصال ثابتة تُعاد حرفياً عند إعادة إرسال نفس الطلب.
                 $payment->update(['meta' => $receipt]);
@@ -632,6 +809,68 @@ class CollectionService
         return array_keys($paid);
     }
 
+    public function getPartialMonths(int $enrollmentId): array
+    {
+        return [];
+    }
+
+    /**
+     * التحقق مما إذا كان التلميذ مسجلاً في أقسام ما قبل المدرسية (الروضة، التمهيدي، التحضيري).
+     */
+    public function isPreschool(Enrollment $enrollment): bool
+    {
+        $levelCode = (string) ($enrollment->level?->code ?? $enrollment->section?->level?->code ?? '');
+
+        return in_array($levelCode, PreschoolShortCycleService::ALLOWED_LEVELS, true);
+    }
+
+    /**
+     * التحقق مما إذا كان الشهر المعني يمثل شهر بداية أو نهاية السنة (سبتمبر أو جوان) لقسم ما قبل مدرسي.
+     */
+    public function isPreschoolShortCycleMonth(Enrollment $enrollment, string $month): bool
+    {
+        if (! $this->isPreschool($enrollment)) {
+            return false;
+        }
+
+        $academicYear = $enrollment->academicYear;
+        $startMonth = $academicYear?->start_date?->format('Y-m');
+        $endMonth = $academicYear?->end_date?->format('Y-m');
+
+        return ($startMonth && $month === $startMonth)
+            || ($endMonth && $month === $endMonth)
+            || str_ends_with($month, '-09')
+            || str_ends_with($month, '-06');
+    }
+
+    /**
+     * التحقق من أهلية استخدام المبالغ اليدوية وضوابطها المحاسبية.
+     */
+    private function assertManualAmountEligibility(Enrollment $enrollment, array $data, array $months): void
+    {
+        $hasManual = isset($data['manual_amount']) || ! empty($data['manual_amounts']);
+        $isPreschool = $this->isPreschool($enrollment);
+
+        if ($hasManual && ! $isPreschool) {
+            throw new \InvalidArgumentException('المبلغ اليدوي مخصص حصراً لأقسام الروضة والتمهيدي والتحضيري (PRE1, PRE2, PRE3).');
+        }
+
+        if (isset($data['manual_amount']) && (float) $data['manual_amount'] <= 0) {
+            throw new \InvalidArgumentException('يجب أن يكون مبلغ الاستخلاص أكبر من صفر.');
+        }
+
+        if (! empty($data['manual_amounts'])) {
+            foreach ($data['manual_amounts'] as $m => $amt) {
+                if ((float) $amt <= 0) {
+                    throw new \InvalidArgumentException('يجب أن يكون مبلغ الاستخلاص أكبر من صفر.');
+                }
+                if ($isPreschool && ! $this->isPreschoolShortCycleMonth($enrollment, (string) $m)) {
+                    throw new \InvalidArgumentException("المبلغ اليدوي مخصص لشهري سبتمبر وجوان فقط لأقسام ما قبل المدرسية ({$m}).");
+                }
+            }
+        }
+    }
+
     private function validateMonths(array $months, Enrollment $enrollment): void
     {
         $academicYear = $enrollment->academicYear;
@@ -664,9 +903,21 @@ class CollectionService
 
         $indices = array_map(fn ($m) => array_search($m, $allMonths, true), $months);
         sort($indices);
-        for ($i = 1; $i < count($indices); $i++) {
-            if ($indices[$i] !== $indices[$i - 1] + 1) {
-                throw new \InvalidArgumentException('يجب أن تكون الأشهر المختارة متتالية بدون فجوات');
+
+        $isPreschool = $this->isPreschool($enrollment);
+        $isPreschoolTerminalPair = $isPreschool && count($months) === 2 && (
+            (str_ends_with($months[0], '-09') && str_ends_with($months[1], '-06')) ||
+            (str_ends_with($months[0], '-06') && str_ends_with($months[1], '-09'))
+        );
+        $isPreschoolStandaloneShortMonth = $isPreschool && count($months) === 1 && (
+            str_ends_with($months[0], '-09') || str_ends_with($months[0], '-06')
+        );
+
+        if (! $isPreschoolTerminalPair) {
+            for ($i = 1; $i < count($indices); $i++) {
+                if ($indices[$i] !== $indices[$i - 1] + 1) {
+                    throw new \InvalidArgumentException('يجب أن تكون الأشهر المختارة متتالية بدون فجوات');
+                }
             }
         }
 
@@ -681,7 +932,7 @@ class CollectionService
             throw new \InvalidArgumentException('جميع أشهر السنة الدراسية مدفوعة');
         }
 
-        if ($months[0] !== $unpaidMonths[0]) {
+        if (! $isPreschoolTerminalPair && ! $isPreschoolStandaloneShortMonth && $months[0] !== $unpaidMonths[0]) {
             $first = self::MONTH_NAMES_AR[substr($unpaidMonths[0], 5)] ?? $unpaidMonths[0];
             throw new \InvalidArgumentException('يجب البدء بدفع شهر '.$first.' قبل الشهر المختار');
         }
@@ -690,8 +941,14 @@ class CollectionService
     /**
      * معاينة الاستخلاص وحساب التخفيضات والصافي والمتبقي آلياً على مستوى الخادم.
      */
-    public function preview(int $enrollmentId, array $months, ?int $feeTypeId = null): array
+    public function preview(int $enrollmentId, array $months, ?int $feeTypeId = null, string $mode = 'full', array $manualAmounts = []): array
     {
+        if (in_array($mode, ['first_half', 'remaining'], true)) {
+            throw new \InvalidArgumentException(
+                'القبض الجزئي للشهر غير متاح حالياً.'
+            );
+        }
+
         $enrollment = Enrollment::with(['student', 'academicYear', 'level'])->findOrFail($enrollmentId);
         $academicYear = $enrollment->academicYear;
         $this->clubService->ensureFeesForEnrollment($enrollment, $months);
@@ -721,41 +978,47 @@ class CollectionService
         $activeDiscountReason = null;
 
         foreach ($months as $m) {
+            $isPreschoolShortCycle = $this->isPreschoolShortCycleMonth($enrollment, $m);
             $monthGross = $grossPerMonth;
-
-            // 1. التخفيض الشهري المتكرر (monthly_discounts) — normal_monthly, full_waiver & humanitarian_fixed
-            $monthlyDisc = MonthlyDiscount::query()
-                ->where('enrollment_id', $enrollment->id)
-                ->where('academic_year_id', $academicYear->id)
-                ->active()
-                ->where('start_month', '<=', $m)
-                ->where('end_month', '>=', $m)
-                ->first();
-
             $discAmount = 0.0;
             $discType = null;
             $discReason = null;
 
-            if ($monthlyDisc) {
-                $discType = $monthlyDisc->discount_type;
-                $discReason = $monthlyDisc->reason;
-                if ($discType === MonthlyDiscount::TYPE_FULL_WAIVER) {
-                    $discAmount = $monthGross;
-                } elseif ($discType === MonthlyDiscount::TYPE_HUMANITARIAN_FIXED || $discType === MonthlyDiscount::TYPE_NORMAL_MONTHLY) {
-                    $discAmount = (float) $monthlyDisc->monthly_amount;
-                }
+            if ($isPreschoolShortCycle) {
+                $suggestedHalfRate = PreschoolShortCycleService::calculateHalfRate($grossPerMonth);
+                $entered = isset($manualAmounts[$m]) ? (float) $manualAmounts[$m] : null;
+                $monthGross = ($entered !== null && $entered > 0) ? $entered : $suggestedHalfRate;
+                $monthNetDue = $monthGross;
             } else {
-                // 2. التخفيض السنوي العادي (enrollment_discounts)
-                $annualDisc = $enrollment->activeDiscount($academicYear->id);
-                if ($annualDisc && (float) $annualDisc->amount > 0) {
-                    $discType = 'normal';
-                    $discReason = $annualDisc->reason;
-                    $discAmount = (float) $annualDisc->amount;
+                // 1. التخفيض الشهري المتكرر (monthly_discounts) — normal_monthly, full_waiver & humanitarian_fixed
+                $monthlyDisc = MonthlyDiscount::query()
+                    ->where('enrollment_id', $enrollment->id)
+                    ->where('academic_year_id', $academicYear->id)
+                    ->active()
+                    ->where('start_month', '<=', $m)
+                    ->where('end_month', '>=', $m)
+                    ->first();
+
+                if ($monthlyDisc) {
+                    $discType = $monthlyDisc->discount_type;
+                    $discReason = $monthlyDisc->reason;
+                    if ($discType === MonthlyDiscount::TYPE_FULL_WAIVER) {
+                        $discAmount = $monthGross;
+                    } elseif ($discType === MonthlyDiscount::TYPE_HUMANITARIAN_FIXED || $discType === MonthlyDiscount::TYPE_NORMAL_MONTHLY) {
+                        $discAmount = (float) $monthlyDisc->monthly_amount;
+                    }
+                } else {
+                    // 2. التخفيض السنوي العادي (enrollment_discounts)
+                    $annualDisc = $enrollment->activeDiscount($academicYear->id);
+                    if ($annualDisc && (float) $annualDisc->amount > 0) {
+                        $discType = 'normal';
+                        $discReason = $annualDisc->reason;
+                        $discAmount = (float) $annualDisc->amount;
+                    }
                 }
 
+                $monthNetDue = max(0.0, round($monthGross - $discAmount, 2));
             }
-
-            $monthNetDue = max(0.0, round($monthGross - $discAmount, 2));
 
             // المبالغ المدفوعة مسبقاً لهذا الشهر
             $monthPaid = (float) PaymentAllocation::query()
@@ -793,6 +1056,9 @@ class CollectionService
                 'remaining_amount' => $monthRemaining,
                 'is_fully_waived' => $discType === MonthlyDiscount::TYPE_FULL_WAIVER,
                 'discount_reason' => $discReason,
+                'is_preschool_short_cycle' => $isPreschoolShortCycle,
+                'suggested_amount' => $isPreschoolShortCycle ? PreschoolShortCycleService::calculateHalfRate($grossPerMonth) : null,
+                'full_rate' => $isPreschoolShortCycle ? $grossPerMonth : null,
             ];
         }
 
@@ -879,6 +1145,7 @@ class CollectionService
         return [
             'enrollment_id' => $enrollment->id,
             'student_id' => $enrollment->student_id,
+            'collection_mode' => $mode,
             'months' => $months,
             'gross_amount' => round($totalGross, 2),
             'discount_type' => $activeDiscountType,
@@ -896,4 +1163,14 @@ class CollectionService
             'club_remaining_amount' => round((float) array_sum(array_column($clubItems, 'remaining_amount')), 2),
         ];
     }
+
+    private function resolveMonthDueDate(Enrollment $enrollment, string $month, string $fallbackDate): string
+    {
+        if (preg_match('/^(\d{4})-(0[1-9]|1[0-2])$/', $month, $matches)) {
+            return "{$matches[1]}-{$matches[2]}-01";
+        }
+
+        return $fallbackDate;
+    }
 }
+

@@ -214,11 +214,24 @@ export type CollectionPreview = {
   club_remaining_amount: number;
 };
 
-export async function getCollectionPreview(enrollmentId: number, months: string[], feeTypeId?: number): Promise<CollectionPreview> {
+export async function getCollectionPreview(
+  enrollmentId: number,
+  months: string[],
+  feeTypeId?: number,
+  manualAmounts?: Record<string, number | string>
+): Promise<CollectionPreview> {
   const params = new URLSearchParams();
   params.append('enrollment_id', String(enrollmentId));
   months.forEach((m) => params.append('months[]', m));
   if (feeTypeId) params.append('fee_type_id', String(feeTypeId));
+  if (manualAmounts) {
+    Object.entries(manualAmounts).forEach(([m, val]) => {
+      const num = parseFloat(String(val));
+      if (!isNaN(num) && num > 0) {
+        params.append(`manual_amounts[${m}]`, String(num));
+      }
+    });
+  }
 
   const res = await fetch(API_BASE + '/payments/collect/preview?' + params.toString(), { headers: getHeaders() });
   if (!res.ok) {

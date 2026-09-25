@@ -11,6 +11,7 @@ use App\Http\Controllers\ClubSubscriptionController;
 use App\Http\Controllers\CollectionController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\DiscountController;
+use App\Http\Controllers\DiscountRosterController;
 use App\Http\Controllers\EmployeeAdvanceController;
 use App\Http\Controllers\EmployeeController;
 use App\Http\Controllers\EmployeeHoursController;
@@ -26,10 +27,12 @@ use App\Http\Controllers\ManualDebtController;
 use App\Http\Controllers\MonthlyDiscountController;
 use App\Http\Controllers\OldEmployeeDebtController;
 use App\Http\Controllers\PaymentController;
+use App\Http\Controllers\PreschoolShortCycleController;
 use App\Http\Controllers\RosterController;
 use App\Http\Controllers\SalaryController;
 use App\Http\Controllers\SectionController;
 use App\Http\Controllers\StudentController;
+use App\Http\Controllers\StudentPaymentStatusController;
 use App\Http\Controllers\TreasuryController;
 use App\Http\Controllers\TreasuryDaybookController;
 use App\Http\Controllers\TreasuryWithdrawalController;
@@ -39,6 +42,7 @@ use App\Http\Controllers\UserPermissionOverrideController;
 use App\Jobs\ProcessDemoJob;
 use App\Http\Controllers\Auth\GmailLoginController;
 use App\Http\Controllers\Auth\ParentRegisterController;
+use App\Http\Controllers\TeacherSectionController;
 use Illuminate\Support\Facades\Route;
 
 Route::middleware('throttle:login')->post('/login', [AuthController::class, 'login']);
@@ -87,6 +91,10 @@ Route::middleware(['auth:sanctum', 'active', 'throttle:api'])->group(function ()
         // دون المساس ببقية الردّيات ولا بالسلفة نفسها.
         Route::get('/employee-advances/{advance}/repayments', [EmployeeAdvanceController::class, 'repayments']);
         Route::post('/advance-repayments/{repayment}/cancel', [EmployeeAdvanceController::class, 'cancelRepayment']);
+
+        // توافق مع الروابط القديمة
+        Route::get('/employee/advances', [EmployeeAdvanceController::class, 'index']);
+        Route::post('/employee/advances', [EmployeeAdvanceController::class, 'store']);
     });
 
     // المصاريف وأصنافها — صلاحية مستقلة
@@ -148,6 +156,10 @@ Route::middleware(['auth:sanctum', 'active', 'throttle:api'])->group(function ()
         Route::get('/reports/revenue/years', [FinancialReportController::class, 'revenueByYear']);
         Route::get('/reports/unpaid-monthly/options', [UnpaidMonthlyReportController::class, 'options']);
         Route::get('/reports/unpaid-monthly', [UnpaidMonthlyReportController::class, 'index']);
+
+        // قائمة التلاميذ حسب حالة السداد (مسدد / غير مسدد / معفى) — قراءة فقط.
+        Route::get('/reports/payment-status/options', [StudentPaymentStatusController::class, 'options']);
+        Route::get('/reports/payment-status', [StudentPaymentStatusController::class, 'index']);
 
         // كشف مداخيل القسم: كل تلاميذ القسم أبجدياً مع المتخلَّد بالذمّة.
         // مسار options يُعلَن قبل مسار {section} لأن مساراً بمعامِل يبتلع أي قيمة ثابتة بعده.
@@ -245,6 +257,10 @@ Route::middleware(['auth:sanctum', 'active', 'throttle:api'])->group(function ()
         Route::get('/payments/collect/preview', [CollectionController::class, 'preview']);
         Route::post('/payments/collect', [CollectionController::class, 'collect'])->middleware('throttle:sensitive');
 
+        // @deprecated دورة سبتمبر / جوان المبسطة لأقسام التحضيري (PRE1, PRE2, PRE3) — تم دمج التحصيل في CollectionController مع manual_amount
+        Route::get('/collections/preschool-short-cycle/preview/{enrollment}', [PreschoolShortCycleController::class, 'preview']);
+        Route::post('/collections/preschool-short-cycle', [PreschoolShortCycleController::class, 'collect'])->middleware('throttle:sensitive');
+
         // رصيد افتتاحي ومعاينة توزيع الدفعة — يراهما القابض قبل تثبيت الوصل.
         Route::get('/collection/students/{student}/opening-balances', [CollectionController::class, 'openingBalances']);
         Route::get('/collection/students/{student}/allocation-preview', [CollectionController::class, 'allocationPreview']);
@@ -297,6 +313,12 @@ Route::middleware(['auth:sanctum', 'active', 'throttle:api'])->group(function ()
         Route::post('/enrollments/{enrollment}/exemptions/club/{clubSubscription}', [ExemptionController::class, 'storeClub']);
         Route::delete('/exemptions/monthly/{monthlyDiscount}', [ExemptionController::class, 'cancelMonthly']);
         Route::delete('/exemptions/club/{clubMonthlyDiscount}', [ExemptionController::class, 'cancelClub']);
+
+        // جرد التخفيضات حسب القسم والأشهر (معاينة القسم كاملاً، تعديل شهر بعينه، حفظ وتوثيق الإلغاء)
+        Route::get('/discounts/roster-options', [DiscountRosterController::class, 'options']);
+        Route::get('/discounts/sections/{section}/roster', [DiscountRosterController::class, 'roster']);
+        Route::post('/discounts/roster/apply', [DiscountRosterController::class, 'apply']);
+        Route::post('/discounts/roster/remove', [DiscountRosterController::class, 'remove']);
     });
 
     // النوادي المدرسية واشتراكاتها
@@ -315,5 +337,15 @@ Route::middleware(['auth:sanctum', 'active', 'throttle:api'])->group(function ()
         Route::post('/club-monthly-fees/{monthlyFee}/collect', [ClubReportController::class, 'collectPayment']);
         Route::post('/club-monthly-fees/{monthlyFee}/cancel', [ClubReportController::class, 'cancelPayment']);
         Route::delete('/club-monthly-fees/{monthlyFee}', [ClubReportController::class, 'destroy']);
+    });
+
+    // إسناد أقسام المعلمين (Teacher Sections Management)
+    Route::middleware('permission:manage_users')->group(function () {
+        Route::get('/teacher-sections/teachers', [TeacherSectionController::class, 'getTeachers']);
+        Route::get('/teacher-sections/sections', [TeacherSectionController::class, 'getSections']);
+        Route::get('/teacher-sections/teachers/{employeeId}', [TeacherSectionController::class, 'getTeacherSections']);
+        Route::post('/teacher-sections/assign', [TeacherSectionController::class, 'assign']);
+        Route::delete('/teacher-sections/remove', [TeacherSectionController::class, 'remove']);
+        Route::delete('/teacher-sections/teachers/{employeeId}', [TeacherSectionController::class, 'deleteTeacher']);
     });
 });

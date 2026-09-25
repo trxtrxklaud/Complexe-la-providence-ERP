@@ -112,6 +112,40 @@ export function CollectionPage() {
   // ديون قديمة مدخلة يدوياً (manual_student_debts) — تنبيه فقط، بلا أي أثر مالي هنا.
   const [manualDebtAlert, setManualDebtAlert] = useState<{ total: number; items: Array<{ id: number; description: string; outstanding: number }> } | null>(null);
 
+  const [preschoolManualAmounts, setPreschoolManualAmounts] = useState<Record<string, string>>({});
+  const [overStandardConfirm, setOverStandardConfirm] = useState<{ message: string; onConfirm: () => void } | null>(null);
+
+  const currentSection = useMemo(() => {
+    return sections.find((s) => String(s.id) === String(sectionId));
+  }, [sections, sectionId]);
+
+  const isPreschool = useMemo(() => {
+    const code = picked?.level?.code || currentSection?.level?.code || '';
+    if (['PRE1', 'PRE2', 'PRE3'].includes(code)) return true;
+    const name = picked?.level?.name || currentSection?.level?.name || currentSection?.name || '';
+    return ['روضة', 'تمهيدي', 'تحضيري'].some((n) => name.includes(n));
+  }, [picked, currentSection]);
+
+  const preschoolMonthsSelected = useMemo(() => {
+    return selectedMonths.filter((m) => isPreschool && (m.endsWith('-09') || m.endsWith('-06')));
+  }, [selectedMonths, isPreschool]);
+
+  function getPreschoolSuggestedRate(month: string) {
+    const item = previewData?.items?.find((it: any) => it.month === month);
+    if (item?.suggested_amount) return Number(item.suggested_amount);
+    const code = picked?.level?.code || currentSection?.level?.code || '';
+    if (code === 'PRE3' || (picked?.level?.name || '').includes('تحضيري')) return 60;
+    return 50;
+  }
+
+  function getPreschoolFullRate(month: string) {
+    const item = previewData?.items?.find((it: any) => it.month === month);
+    if (item?.full_rate) return Number(item.full_rate);
+    const code = picked?.level?.code || currentSection?.level?.code || '';
+    if (code === 'PRE3' || (picked?.level?.name || '').includes('تحضيري')) return 120;
+    return 100;
+  }
+
   useEffect(() => {
     if (!picked || selectedMonths.length === 0) {
       setPreviewData(null);
@@ -128,7 +162,14 @@ export function CollectionPage() {
         setClubAmounts(clubDefaults);
         setSelectedClubFees({});
         if (res.items && res.items.length > 0) {
-          setMonthlyPrice(String(res.remaining_amount));
+          const standardItems = isPreschool
+            ? res.items.filter((it: any) => !it.is_preschool_short_cycle)
+            : res.items;
+          const standardRemaining = standardItems.reduce(
+            (sum: number, it: any) => sum + Number(it.remaining_amount ?? 0),
+            0
+          );
+          setMonthlyPrice(String(standardRemaining));
         }
       })
       .catch((e) => {
@@ -177,6 +218,7 @@ export function CollectionPage() {
     setStudents([]);
     setPicked(null);
     setSelectedMonths([]);
+    setPreschoolManualAmounts({});
     if (!id) return;
     try {
       const s = await getSectionsByYear(Number(id));
@@ -191,6 +233,7 @@ export function CollectionPage() {
     setStudents([]);
     setPicked(null);
     setSelectedMonths([]);
+    setPreschoolManualAmounts({});
     if (!id || !yearId) return;
     try {
       const list = await getStudentsBySection(Number(id), Number(yearId));
@@ -202,6 +245,7 @@ export function CollectionPage() {
 
   async function onStudentChange(enrollmentId: string) {
     setSelectedMonths([]);
+    setPreschoolManualAmounts({});
     setReceipt(null);
     const row = students.find((x) => String(x.enrollment_id) === enrollmentId);
     setPicked(row || null);
@@ -279,22 +323,47 @@ export function CollectionPage() {
     setSelectedMonths((prev) => {
       const next = prev.includes(m) ? prev.filter((x) => x !== m) : [...prev, m];
       if (!next.length) return [];
-      const unpaidInYear = yearMonths.filter((x) => !paidMonths.includes(x));
-      const firstUnpaid = unpaidInYear[0];
-      const idxs = next.map((x) => yearMonths.indexOf(x)).sort((a, b) => a - b);
-      if (firstUnpaid && yearMonths.indexOf(firstUnpaid) !== idxs[0]) {
-        setError('يجب البدء من أول شهر غير خالص: ' + monthLabel(firstUnpaid));
-        return prev;
+
+      const isTerminalPair = isPreschool && next.length === 2 && (
+        (next[0].endsWith('-09') && next[1].endsWith('-06')) ||
+        (next[0].endsWith('-06') && next[1].endsWith('-09'))
+      );
+
+      if (!isTerminalPair) {
+        const unpaidInYear = yearMonths.filter((x) => !paidMonths.includes(x));
+        const firstUnpaid = unpaidInYear[0];
+        const idxs = next.map((x) => yearMonths.indexOf(x)).sort((a, b) => a - b);
+        if (firstUnpaid && yearMonths.indexOf(firstUnpaid) !== idxs[0]) {
+          setError('يجب البدء من أول شهر غير خالص: ' + monthLabel(firstUnpaid));
+          return prev;
+        }
+        const consecutive = [idxs[0]];
+        for (let i = 1; i < idxs.length; i++) {
+          if (idxs[i] === consecutive[consecutive.length - 1] + 1) consecutive.push(idxs[i]);
+          else break;
+        }
+        setError('');
+        return consecutive.map((i) => yearMonths[i]);
       }
-      const consecutive = [idxs[0]];
-      for (let i = 1; i < idxs.length; i++) {
-        if (idxs[i] === consecutive[consecutive.length - 1] + 1) consecutive.push(idxs[i]);
-        else break;
-      }
+
       setError('');
-      return consecutive.map((i) => yearMonths[i]);
+      return next;
     });
   }
+
+  useEffect(() => {
+    if (preschoolMonthsSelected.length > 0) {
+      setPreschoolManualAmounts((prev) => {
+        const updated = { ...prev };
+        preschoolMonthsSelected.forEach((m) => {
+          if (!updated[m]) {
+            updated[m] = String(getPreschoolSuggestedRate(m));
+          }
+        });
+        return updated;
+      });
+    }
+  }, [preschoolMonthsSelected, previewData, picked, currentSection]);
 
   const clubTotal = useMemo(() => {
     if (!previewData?.club_items) return 0;
@@ -319,24 +388,59 @@ export function CollectionPage() {
     }, 0);
   }, [priorSelections, priorAmounts]);
 
-  const monthsTotal = parseFloat(monthlyPrice || '0') || 0;
-  const itemsTotal = productsTotal + monthsTotal + clubTotal;
-  // التخفيض تم خصمه مسبقاً داخل المعاينة: حيث يتم احتساب الصافي المتبقي من enrollment_discounts.
-  // لذلك يتم جمع المتبقي للشهري والإضافات والمتخلدات السابقة مباشرة دون خصم إضافي.
+  const preschoolManualTotal = useMemo(() => {
+    return preschoolMonthsSelected.reduce((sum, m) => {
+      return sum + (parseFloat(preschoolManualAmounts[m] || '0') || 0);
+    }, 0);
+  }, [preschoolMonthsSelected, preschoolManualAmounts]);
+
+  const standardMonthsSelected = useMemo(() => {
+    return selectedMonths.filter((m) => !isPreschool || (!m.endsWith('-09') && !m.endsWith('-06')));
+  }, [selectedMonths, isPreschool]);
+
+  const standardTuitionTotal = useMemo(() => {
+    if (standardMonthsSelected.length === 0) return 0;
+    return parseFloat(monthlyPrice || '0') || 0;
+  }, [standardMonthsSelected, monthlyPrice]);
+
+  const totalTuition = useMemo(() => {
+    return (preschoolMonthsSelected.length > 0 ? preschoolManualTotal : 0) + standardTuitionTotal;
+  }, [preschoolMonthsSelected, preschoolManualTotal, standardTuitionTotal]);
+
+  const itemsTotal = productsTotal + totalTuition + clubTotal;
   const total = itemsTotal + priorTotal;
   const blockedByFullWaiver = (Boolean(previewData?.is_fully_waived) || Boolean(previewData?.fee_plan_missing)) && clubTotal <= 0 && priorTotal <= 0;
 
-  async function handleSave() {
+  async function handleSave(confirmOverStandard = false) {
     if (!picked) return;
     if (!selectedMonths.length) { setError('يرجى تحديد الأشهر'); return; }
+
+    // التحقق من تجاوز السقف للمبالغ اليدوية لأقسام ما قبل المدرسية
+    if (!confirmOverStandard && preschoolMonthsSelected.length > 0) {
+      for (const m of preschoolMonthsSelected) {
+        const enteredVal = parseFloat(preschoolManualAmounts[m] || '0') || 0;
+        const fullRate = getPreschoolFullRate(m);
+        if (enteredVal > fullRate) {
+          setOverStandardConfirm({
+            message: `المبلغ المدخل لشهر ${monthLabel(m)} (${enteredVal} د.ت) يتجاوز المعلوم الشهري الكامل (${fullRate} د.ت). هل أنت متأكد من الاستمرار؟`,
+            onConfirm: () => {
+              setOverStandardConfirm(null);
+              handleSave(true);
+            },
+          });
+          return;
+        }
+      }
+    }
+
     const items = Object.entries(selectedFees)
       .filter(([, on]) => on)
       .map(([id]) => ({ fee_type_id: Number(id), amount: parseFloat(feeAmounts[Number(id)] || '0') }))
       .filter((x) => x.amount > 0);
-    const mp = parseFloat(monthlyPrice || '0') || 0;
-    if (mp > 0) {
+
+    if (totalTuition > 0) {
       if (!tuitionFee) { setError('لم يتم العثور على المعلوم الشهري في قائمة أنواع المعاليم.'); return; }
-      items.unshift({ fee_type_id: Number(tuitionFee.id), amount: mp });
+      items.unshift({ fee_type_id: Number(tuitionFee.id), amount: totalTuition });
     }
     const mergedItems = Object.values(
       items.reduce((acc: Record<number, { fee_type_id: number; amount: number }>, it) => {
@@ -361,7 +465,7 @@ export function CollectionPage() {
 
     if (!mergedItems.length && priorAllocs.length === 0) { setError('يرجى تحديد معلوم واحد على الأقل للاستخلاص'); return; }
 
-    const payload = {
+    const payload: any = {
       student_id: picked.student.id,
       enrollment_id: picked.enrollment_id,
       months: selectedMonths,
@@ -373,6 +477,20 @@ export function CollectionPage() {
       club_items: clubItems,
       prior_allocations: priorAllocs,
     };
+
+    if (preschoolMonthsSelected.length > 0) {
+      const numAmounts: Record<string, number> = {};
+      preschoolMonthsSelected.forEach((m) => {
+        numAmounts[m] = parseFloat(preschoolManualAmounts[m] || '0') || 0;
+      });
+      payload.manual_amounts = numAmounts;
+      if (preschoolMonthsSelected.length === 1) {
+        payload.manual_amount = numAmounts[preschoolMonthsSelected[0]];
+      }
+      if (confirmOverStandard) {
+        payload.confirm_over_standard = true;
+      }
+    }
 
     setSaving(true);
     setError('');
@@ -422,7 +540,17 @@ export function CollectionPage() {
       setSelectedFees({});
       setSelectedClubFees({});
     } catch (e: any) {
-      setError(e.message || 'تعذر الاستخلاص');
+      if (e.data?.over_standard) {
+        setOverStandardConfirm({
+          message: e.message || 'المبلغ المدخل أعلى من المعلوم الشهري الكامل. هل تؤكد المتابعة؟',
+          onConfirm: () => {
+            setOverStandardConfirm(null);
+            handleSave(true);
+          },
+        });
+      } else {
+        setError(e.message || 'تعذر الاستخلاص');
+      }
     } finally {
       setSaving(false);
     }
@@ -597,52 +725,111 @@ export function CollectionPage() {
               </div>
             )}
 
-            <div className="bg-white rounded-2xl border p-4" style={{ borderColor: C.line }}>
-              <label className="text-sm font-semibold" style={{ color: C.ink }}>المعلوم الشهري (د.ت)</label>
-              <input
-                type="number"
-                min="0"
-                step="0.01"
-                disabled={Boolean(previewData?.is_fully_waived || previewData?.fee_plan_missing)}
-                value={monthlyPrice}
-                onChange={(e) => setMonthlyPrice(e.target.value)}
-                className="w-full mt-1 border rounded-xl px-3 py-2 text-sm disabled:bg-slate-100 disabled:text-slate-400"
-                style={{ borderColor: C.line, direction: 'ltr' }}
-                placeholder="مثال: 150"
-              />
-              <p className="text-xs mt-1" style={{ color: C.muted }}>
-                {previewData?.fee_plan_missing
-                  ? 'يرجى ضبط خطة الرسوم (Fee Plans) للسنة والمستوى الحاليين من لوحة الإعدادات'
-                  : previewData?.is_fully_waived
-                  ? 'التلميذ معفى كلياً لهذا الشهر ولا يتوجب دفع معلوم'
-                  : 'المبلغ الصافي المطلوب للشهر المحدد بعد تطبيق التخفيضات'}
-              </p>
-            </div>
+            {(!isPreschool || standardMonthsSelected.length > 0) && (
+              <div className="bg-white rounded-2xl border p-4" style={{ borderColor: C.line }}>
+                <label className="text-sm font-semibold" style={{ color: C.ink }}>
+                  {isPreschool && preschoolMonthsSelected.length > 0
+                    ? `معلوم الأشهر العادية (${standardMonthsSelected.map((m) => monthLabel(m)).join(' / ')}) (د.ت)`
+                    : 'المعلوم الشهري (د.ت)'}
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  disabled={Boolean(previewData?.is_fully_waived || previewData?.fee_plan_missing)}
+                  value={monthlyPrice}
+                  onChange={(e) => setMonthlyPrice(e.target.value)}
+                  className="w-full mt-1 border rounded-xl px-3 py-2 text-sm disabled:bg-slate-100 disabled:text-slate-400"
+                  style={{ borderColor: C.line, direction: 'ltr' }}
+                  placeholder="مثال: 100"
+                />
+                <p className="text-xs mt-1" style={{ color: C.muted }}>
+                  {previewData?.fee_plan_missing
+                    ? 'يرجى ضبط خطة الرسوم (Fee Plans) للسنة والمستوى الحاليين من لوحة الإعدادات'
+                    : previewData?.is_fully_waived
+                    ? 'التلميذ معفى كلياً لهذا الشهر ولا يتوجب دفع معلوم'
+                    : 'المبلغ الصافي المطلوب للأشهر العادية بعد تطبيق التخفيضات'}
+                </p>
+              </div>
+            )}
 
             <div className="bg-white rounded-2xl border p-4" style={{ borderColor: C.line }}>
               <div className="font-semibold mb-2" style={{ color: C.ink }}>الأشهر</div>
               {loading ? <Loader2 className="animate-spin" /> : (
                 <div className="flex flex-wrap gap-2">
                   {yearMonths.map((m) => {
+                    const isShortCyclePreschool = isPreschool && (m.endsWith('-09') || m.endsWith('-06'));
                     const paid = paidMonths.includes(m);
                     const sel = selectedMonths.includes(m);
+                    const disabled = paid;
                     return (
-                      <button key={m} type="button" disabled={paid} onClick={() => toggleMonth(m)}
+                      <button
+                        key={m}
+                        type="button"
+                        disabled={disabled}
+                        onClick={() => toggleMonth(m)}
                         className={`px-3 py-2 rounded-xl text-sm font-semibold border transition ${
-                          paid ? 'opacity-40 cursor-not-allowed' : ''
+                          disabled ? 'opacity-50 cursor-not-allowed' : ''
                         }`}
                         style={{
-                          background: sel ? C.forest : paid ? '#E7E5E4' : 'white',
-                          color: sel ? 'white' : paid ? '#78716C' : C.ink,
-                          borderColor: sel ? C.forest : C.line,
-                        }}>
-                        {monthLabel(m)} {paid && '✓ خالص'}
+                          background: sel ? C.forest : paid ? '#E7E5E4' : isShortCyclePreschool ? '#FEF3C7' : 'white',
+                          color: sel ? 'white' : paid ? '#78716C' : isShortCyclePreschool ? '#92400E' : C.ink,
+                          borderColor: sel ? C.forest : isShortCyclePreschool ? '#FCD34D' : C.line,
+                        }}
+                        title={isShortCyclePreschool ? 'شهر بمبلغ يدوي حر (المقترح: نصف المعلوم)' : undefined}
+                      >
+                        {monthLabel(m)} {paid ? '✓ خالص' : isShortCyclePreschool ? '(مبلغ يدوي)' : ''}
                       </button>
                     );
                   })}
                 </div>
               )}
             </div>
+
+            {isPreschool && preschoolMonthsSelected.length > 0 && (
+              <div className="bg-amber-50/70 border border-amber-300 rounded-2xl p-4 space-y-3">
+                <div className="flex items-center gap-2 text-amber-900 font-bold text-sm">
+                  <AlertCircle className="w-5 h-5 text-amber-600 flex-shrink-0" />
+                  <span>المعلوم اليدوي الحر لأقسام ما قبل المدرسية ({preschoolMonthsSelected.map((m) => monthLabel(m)).join(' / ')})</span>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {preschoolMonthsSelected.map((m) => {
+                    const fullRate = getPreschoolFullRate(m);
+                    const suggestedRate = getPreschoolSuggestedRate(m);
+                    const enteredVal = parseFloat(preschoolManualAmounts[m] || '0') || 0;
+                    const isOver = enteredVal > fullRate;
+                    return (
+                      <div key={m} className="bg-white border rounded-xl p-3 shadow-2xs" style={{ borderColor: isOver ? '#F59E0B' : '#E5E7EB' }}>
+                        <div className="flex justify-between items-center mb-1">
+                          <span className="font-bold text-sm text-slate-800">{monthLabel(m)}</span>
+                          <span className="text-xs text-amber-800 bg-amber-100 px-2 py-0.5 rounded-md font-medium">
+                            المقترح: {suggestedRate} د.ت | الكامل: {fullRate} د.ت
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-2 mt-2">
+                          <input
+                            type="number"
+                            min="0.01"
+                            step="0.01"
+                            value={preschoolManualAmounts[m] ?? ''}
+                            onChange={(e) => setPreschoolManualAmounts((prev) => ({ ...prev, [m]: e.target.value }))}
+                            className="w-full border rounded-lg px-3 py-1.5 text-sm font-semibold"
+                            style={{ direction: 'ltr', borderColor: isOver ? '#F59E0B' : '#D1D5DB' }}
+                            placeholder={String(suggestedRate)}
+                          />
+                          <span className="text-xs font-bold text-slate-500">د.ت</span>
+                        </div>
+                        {isOver && (
+                          <p className="text-xs text-amber-700 mt-1 font-medium flex items-center gap-1">
+                            ⚠️ يتجاوز المعلوم الشهري الكامل ({fullRate} د.ت) — سيتطلب تأكيداً عند الحفظ
+                          </p>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
 
             {manualDebtAlert && manualDebtAlert.items.length > 0 && (
               <div className="rounded-2xl border p-4 mb-4" style={{ borderColor: '#FDE68A', backgroundColor: '#FFFBEB' }}>
@@ -840,6 +1027,36 @@ export function CollectionPage() {
           onClose={() => setReceipt(null)}
           onDelete={handleDelete}
         />
+      )}
+
+      {overStandardConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="bg-white rounded-2xl p-6 max-w-md w-full shadow-2xl text-right" dir="rtl">
+            <div className="flex items-center gap-3 text-amber-600 mb-3">
+              <AlertCircle size={28} />
+              <h3 className="text-lg font-bold">تنبيه: تجاوز التعريفة الكاملة</h3>
+            </div>
+            <p className="text-sm text-gray-700 leading-relaxed mb-6">
+              {overStandardConfirm.message}
+            </p>
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                className="px-4 py-2 rounded-xl text-gray-600 hover:bg-gray-100 font-medium transition"
+                onClick={() => setOverStandardConfirm(null)}
+              >
+                إلغاء
+              </button>
+              <button
+                type="button"
+                className="px-5 py-2 rounded-xl text-white font-bold bg-amber-600 hover:bg-amber-700 transition"
+                onClick={overStandardConfirm.onConfirm}
+              >
+                تأكيد ومتابعة
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

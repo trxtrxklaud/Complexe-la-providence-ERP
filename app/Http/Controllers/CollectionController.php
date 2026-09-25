@@ -93,7 +93,7 @@ class CollectionController extends Controller
             ])
             ->get();
 
-        $result = $enrollments->map(function ($e) {
+        $result = $enrollments->map(function ($e) use ($section) {
             return [
                 'enrollment_id' => $e->id,
                 'student' => [
@@ -101,6 +101,11 @@ class CollectionController extends Controller
                     'first_name' => $e->student->first_name,
                     'last_name' => $e->student->last_name,
                     'student_code' => $e->student->student_code,
+                ],
+                'level' => [
+                    'id' => $e->level_id ?? $section->level_id,
+                    'code' => $e->level?->code ?? $section->level?->code,
+                    'name' => $e->level?->name ?? $section->level?->name,
                 ],
                 'guardian' => CollectionService::resolveGuardianPayload($e->student),
             ];
@@ -132,6 +137,14 @@ class CollectionController extends Controller
                 'message' => 'تم تسجيل الاستخلاص بنجاح',
                 'receipt' => $receipt,
             ], 201);
+        } catch (\App\Exceptions\OverStandardAmountException $e) {
+            return response()->json([
+                'message' => $e->getMessage(),
+                'over_standard' => true,
+                'entered_amount' => $e->enteredAmount,
+                'full_rate' => $e->fullRate,
+                'suggested_amount' => $e->suggestedAmount,
+            ], 422);
         } catch (\InvalidArgumentException $e) {
             return response()->json(['message' => $e->getMessage()], 422);
         } catch (\Exception $e) {
@@ -146,6 +159,7 @@ class CollectionController extends Controller
         return response()->json([
             'enrollment_id' => $enrollment->id,
             'paid_months' => $this->collectionService->getPaidMonths($enrollment->id),
+            'partial_months' => $this->collectionService->getPartialMonths($enrollment->id),
             'ledger' => $this->collectionService->monthLedger($enrollment->id),
             'year_months' => $enrollment->academicYear
                 ? $this->collectionService->getAcademicYearMonths($enrollment->academicYear)
@@ -160,15 +174,30 @@ class CollectionController extends Controller
             'months' => ['required', 'array', 'min:1'],
             'months.*' => ['required', 'string', 'regex:/^\d{4}-(0[1-9]|1[0-2])$/'],
             'fee_type_id' => ['nullable', 'integer', 'exists:fee_types,id'],
+            'collection_mode' => ['nullable', 'string', 'in:full,first_half,remaining'],
+            'manual_amount' => ['nullable', 'numeric'],
+            'manual_amounts' => ['nullable', 'array'],
         ]);
 
-        $preview = $this->collectionService->preview(
-            (int) $data['enrollment_id'],
-            $data['months'],
-            isset($data['fee_type_id']) ? (int) $data['fee_type_id'] : null
-        );
+        $mode = $data['collection_mode'] ?? 'full';
+        $manualAmounts = (array) ($data['manual_amounts'] ?? []);
+        if (isset($data['manual_amount']) && count($data['months']) === 1) {
+            $manualAmounts[$data['months'][0]] = (float) $data['manual_amount'];
+        }
 
-        return response()->json($preview);
+        try {
+            $preview = $this->collectionService->preview(
+                (int) $data['enrollment_id'],
+                $data['months'],
+                isset($data['fee_type_id']) ? (int) $data['fee_type_id'] : null,
+                $mode,
+                $manualAmounts
+            );
+
+            return response()->json($preview);
+        } catch (\InvalidArgumentException $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
     }
 
     /**
