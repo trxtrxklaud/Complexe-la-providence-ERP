@@ -179,7 +179,7 @@ final class MonthCollectionCoreService
             if ($claimsMonth) {
                 $allAllocations = $payment->paymentAllocations;
 
-                // إذا كانت جميع تخصيصات الدفعة تخص النوادي أو الديون القديمة، فالدفعة معزولة تماماً ولا تمس التمدرس
+                // إذا كانت جميع تخصيصات الدفعة تخص النوادي أو الديون القديمة أو الترسيم/المبيعات، فالدفعة معزولة تماماً ولا تمس التمدرس
                 if ($allAllocations->isNotEmpty()) {
                     $hasTuitionAlloc = $allAllocations->contains(function ($alloc) use ($hasOpeningBalances, $hasManualDebts) {
                         $fee = $alloc->studentFee;
@@ -195,17 +195,20 @@ final class MonthCollectionCoreService
                         if ($hasManualDebts && ManualStudentDebt::where('source_student_fee_id', $fee->id)->exists()) {
                             return false;
                         }
+                        if ($fee->feeType && in_array($fee->feeType->ledger_category, ['registration_fee', 'product_sale', 'other_income'], true)) {
+                            return false;
+                        }
 
                         return (float) $alloc->amount_allocated > 0;
                     });
 
                     if (! $hasTuitionAlloc) {
-                        // دفعة نوادٍ أو ديون قديمة معزولة — لا تمس الشهر الدراسي ولا تحجزه
+                        // دفعة نوادٍ أو ديون قديمة أو ترسيم معزولة — لا تمس الشهر الدراسي ولا تحجزه
                         continue;
                     }
                 }
 
-                // التحقق من وجود تخصيص مالي نشط يخص التمدرس (مع استبعاد النوادي والديون السابقة)
+                // التحقق من وجود تخصيص مالي نشط يخص التمدرس (مع استبعاد النوادي والديون السابقة والترسيم والمبيعات)
                 $validTuitionAllocations = $allAllocations->filter(function ($alloc) use ($hasOpeningBalances, $hasManualDebts) {
                     $fee = $alloc->studentFee;
                     if (! $fee) {
@@ -219,6 +222,9 @@ final class MonthCollectionCoreService
                     }
                     if ($hasManualDebts && ManualStudentDebt::where('source_student_fee_id', $fee->id)->exists()) {
                         return false; // استبعاد ديون السنوات السابقة
+                    }
+                    if ($fee->feeType && in_array($fee->feeType->ledger_category, ['registration_fee', 'product_sale', 'other_income'], true)) {
+                        return false; // استبعاد رسوم الترسيم ومبيعات المنتجات والمداخيل الأخرى
                     }
 
                     return (float) $alloc->amount_allocated > 0;
@@ -239,10 +245,13 @@ final class MonthCollectionCoreService
             }
         }
 
-        // 2. فحص رسوم التمدرس القائمة لنفس التسجيل (مع استبعاد تام للنوادي والديون السابقة)
+        // 2. فحص رسوم التمدرس القائمة لنفس التسجيل (مع استبعاد تام للنوادي والديون السابقة ورسوم الترسيم والمبيعات والمداخيل الأخرى)
         $tuitionFeesQuery = StudentFee::query()
             ->where('enrollment_id', $enrollment->id)
-            ->whereNull('club_monthly_fee_id');
+            ->whereNull('club_monthly_fee_id')
+            ->whereDoesntHave('feeType', function ($ftQuery) {
+                $ftQuery->whereIn('ledger_category', ['registration_fee', 'product_sale', 'other_income']);
+            });
 
         if ($hasOpeningBalances) {
             $tuitionFeesQuery->whereNotIn('id', function ($sub) {

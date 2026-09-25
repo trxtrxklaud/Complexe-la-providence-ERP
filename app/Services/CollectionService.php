@@ -170,7 +170,7 @@ class CollectionService
                         }
                         unset($it);
                         if (! $foundTuition && $tuitionSum > 0) {
-                            $defaultTuitionType = FeeType::where('code', 'TUITION_MONTHLY')->first()
+                            $defaultTuitionType = FamilyService::findTuitionFeeType()
                                 ?? FeeType::find($tuitionFeeTypeId)
                                 ?? FeeType::first();
                             if ($defaultTuitionType) {

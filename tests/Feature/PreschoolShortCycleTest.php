@@ -102,6 +102,7 @@ class PreschoolShortCycleTest extends TestCase
             'name_ar'         => 'معلوم التمدرس الشهري',
             'name_fr'         => 'Frais de scolarité',
             'price'           => 100.00,
+            'ledger_category' => CashTransaction::CATEGORY_MONTHLY_FEE,
             'is_active'       => true,
         ]);
 
