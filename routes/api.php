@@ -244,7 +244,10 @@ Route::middleware(['auth:sanctum', 'active', 'throttle:api'])->group(function ()
     Route::middleware('permission:manage_payments')->group(function () {
         // «ما تم استخلاصه» — ذاتيّ النطاق؛ يسبق apiResource كي لا يلتقطه GET /payments/{payment}.
         Route::get('/payments/my-collections', [PaymentController::class, 'myCollections']);
-        Route::apiResource('/payments', PaymentController::class)->except(['update', 'destroy']);
+        Route::apiResource('/payments', PaymentController::class)->except(['destroy']);
+        Route::put('/payments/{payment}', [PaymentController::class, 'update'])->middleware('throttle:sensitive');
+        Route::post('/payments/{payment}/correct', [PaymentController::class, 'correct'])->middleware('throttle:sensitive');
+        Route::post('/payments/{payment}/add-item', [PaymentController::class, 'addItem'])->middleware('throttle:sensitive');
         Route::post('/payments/{payment}/reprint', [PaymentController::class, 'reprint']);
         Route::post('/payments/{payment}/cancel', [PaymentController::class, 'cancel'])->middleware('throttle:sensitive');
         Route::middleware('cache.api')->get('/fee-types', [FeeTypeController::class, 'index']);

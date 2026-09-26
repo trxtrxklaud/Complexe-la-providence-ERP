@@ -103,6 +103,34 @@ export const paymentsApi = {
     }
     return res.json();
   },
+
+  // تصحيح مبلغ الوصل في الخزينة على تاريخ القبض الأصلي
+  async correct(id: number, data: { amount: number; reason?: string; notes?: string; allocations?: Array<{ id?: number; student_fee_id?: number; amount: number }> }): Promise<{ message: string; payment: Payment }> {
+    const res = await fetch(API_BASE + '/payments/' + id + '/correct', {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify(data),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.message || 'تعذر تصحيح الوصل');
+    }
+    return res.json();
+  },
+
+  // إضافة بند جديد على وصل أو ترسيم قائم بقيد خزينة مستقل
+  async addItem(id: number, data: { fee_type_id?: number; amount: number; addition_date?: string; description?: string }): Promise<any> {
+    const res = await fetch(API_BASE + '/payments/' + id + '/add-item', {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify(data),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.message || 'تعذر إضافة البند');
+    }
+    return res.json();
+  },
 };
 
 export const studentFeesApi = {

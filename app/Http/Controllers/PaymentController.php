@@ -272,6 +272,94 @@ class PaymentController extends Controller
         );
     }
 
+    /**
+     * تحديث/تصحيح الوصل المالي.
+     */
+    public function update(Request $request, Payment $payment): JsonResponse
+    {
+        if ($request->input('action') === 'add_item' || $request->has('addition_item')) {
+            return $this->addItem($request, $payment);
+        }
+
+        return $this->correct($request, $payment);
+    }
+
+    /**
+     * تصحيح مبلغ الوصل في الخزينة على تاريخ القبض الأصلي.
+     */
+    public function correct(Request $request, Payment $payment): JsonResponse
+    {
+        $data = $request->validate([
+            'amount' => ['required', 'numeric', 'min:0.01'],
+            'notes' => ['nullable', 'string', 'max:500'],
+            'reason' => ['nullable', 'string', 'max:500'],
+            'allocations' => ['nullable', 'array'],
+            'allocations.*.id' => ['nullable', 'integer'],
+            'allocations.*.student_fee_id' => ['nullable', 'integer'],
+            'allocations.*.amount' => ['required_with:allocations', 'numeric', 'min:0'],
+        ]);
+
+        try {
+            $updated = $this->paymentService->correctPayment($payment, $data, (int) $request->user()?->id);
+
+            AuditService::log('payment.correct', 'تصحيح وصل مالي رقم '.$payment->id.' إلى مبلغ '.$updated->amount.' د.ت', $payment, [
+                'old_amount' => $updated->old_amount,
+                'new_amount' => $updated->new_amount,
+                'user_id' => $request->user()?->id,
+            ]);
+
+            return response()->json([
+                'message' => 'تم تصحيح الوصل بنجاح مع تحديث قيد الخزينة الأصلي',
+                'payment' => $updated->load([
+                    'student:id,first_name,last_name,student_code',
+                    'createdBy:id,first_name,last_name',
+                    'editedBy:id,first_name,last_name',
+                    'paymentAllocations.studentFee',
+                ]),
+            ]);
+        } catch (\InvalidArgumentException $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        } catch (\Exception $e) {
+            report($e);
+            return response()->json(['message' => 'فشل تصحيح الوصل: ' . $e->getMessage()], 500);
+        }
+    }
+
+    /**
+     * إضافة بند جديد على وصل أو ترسيم قائم.
+     */
+    public function addItem(Request $request, Payment $payment): JsonResponse
+    {
+        $data = $request->validate([
+            'fee_type_id' => ['nullable', 'integer', 'exists:fee_types,id'],
+            'amount' => ['required', 'numeric', 'min:0.01'],
+            'addition_date' => ['nullable', 'date'],
+            'description' => ['nullable', 'string', 'max:255'],
+        ]);
+
+        try {
+            $result = $this->paymentService->addPaymentItem($payment, $data, (int) $request->user()?->id);
+
+            AuditService::log('payment.add_item', 'إضافة بند على الوصل رقم '.$payment->id.' بمبلغ '.$data['amount'].' د.ت', $payment, [
+                'parent_payment_id' => $payment->id,
+                'addition_payment_id' => $result['addition_payment']->id,
+                'amount' => $data['amount'],
+            ]);
+
+            return response()->json([
+                'message' => 'تمت إضافة البند بنجاح مع إنشاء قيد الخزينة المستقل',
+                'parent_payment' => $result['parent_payment'],
+                'addition_payment' => $result['addition_payment'],
+                'student_fee' => $result['student_fee'],
+            ], 201);
+        } catch (\InvalidArgumentException $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        } catch (\Exception $e) {
+            report($e);
+            return response()->json(['message' => 'فشل إضافة البند: ' . $e->getMessage()], 500);
+        }
+    }
+
     public function studentBalance(Student $student): JsonResponse
     {
         $balance = $this->paymentService->getStudentBalance($student->id);
