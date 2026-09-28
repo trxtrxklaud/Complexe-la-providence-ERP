@@ -600,4 +600,112 @@ class DashboardTest extends TestCase
         // النسبة: 25.0%
         $this->assertEquals(25.0, (float) $data['registration_rate']);
     }
+
+    /**
+     * اختبار تفصيل مقبوضات الـ 24 ساعة لليوم لمطابقة حساب الصندوق:
+     * - نقداً في الصندوق (cash_in_hand)
+     * - شيكات / بنك (non_cash)
+     * - ديون قديمة مقبوضة اليوم (old_debts_today)
+     * - إجمالي المقبوضات (total_collected_24h)
+     */
+    public function test_today_24h_collections_breakdown_with_cash_non_cash_and_old_debt(): void
+    {
+        Sanctum::actingAs($this->makeUserWithPermissions('admin', ['manage_treasury']));
+        $year = $this->makeAcademicYear();
+        $student = \App\Models\Student::create([
+            'first_name' => 'أحمد',
+            'last_name' => 'بن صالح',
+            'birth_date' => '2015-01-01',
+            'gender' => 'male',
+        ]);
+        $enrollment = $this->makeEnrollment($year, $student);
+
+        // 1. دفعة 300 د نقداً (معاليم شهرية)
+        $p1 = \App\Models\Payment::create([
+            'student_id' => $student->id,
+            'enrollment_id' => $enrollment->id,
+            'amount' => 300,
+            'payment_date' => now()->toDateString(),
+            'method' => 'cash',
+        ]);
+        CashTransaction::create([
+            'source_type' => \App\Models\Payment::class,
+            'source_id' => $p1->id,
+            'category' => CashTransaction::CATEGORY_MONTHLY_FEE,
+            'direction' => CashTransaction::DIRECTION_IN,
+            'amount' => 300,
+            'transaction_date' => now()->toDateString(),
+            'academic_year_id' => $year->id,
+        ]);
+
+        // 2. دفعة 200 د شيك (معاليم شهرية)
+        $p2 = \App\Models\Payment::create([
+            'student_id' => $student->id,
+            'enrollment_id' => $enrollment->id,
+            'amount' => 200,
+            'payment_date' => now()->toDateString(),
+            'method' => 'check',
+        ]);
+        CashTransaction::create([
+            'source_type' => \App\Models\Payment::class,
+            'source_id' => $p2->id,
+            'category' => CashTransaction::CATEGORY_MONTHLY_FEE,
+            'direction' => CashTransaction::DIRECTION_IN,
+            'amount' => 200,
+            'transaction_date' => now()->toDateString(),
+            'academic_year_id' => $year->id,
+        ]);
+
+        // 3. دفعة 100 د نقداً دين قديم (أُدخلت اليوم created_at ولكن بتاريخ البارحة)
+        $p3 = \App\Models\Payment::create([
+            'student_id' => $student->id,
+            'enrollment_id' => $enrollment->id,
+            'amount' => 100,
+            'payment_date' => now()->subDay()->toDateString(),
+            'method' => 'cash',
+        ]);
+        CashTransaction::create([
+            'source_type' => \App\Models\Payment::class,
+            'source_id' => $p3->id,
+            'category' => CashTransaction::CATEGORY_PRIOR_YEAR_DEBT,
+            'direction' => CashTransaction::DIRECTION_IN,
+            'amount' => 100,
+            'transaction_date' => now()->subDay()->toDateString(),
+            'academic_year_id' => $year->id,
+        ]);
+
+        // 4. دفعة ملغاة 50 د (يجب ألا تُحسب)
+        $p4 = \App\Models\Payment::create([
+            'student_id' => $student->id,
+            'enrollment_id' => $enrollment->id,
+            'amount' => 50,
+            'payment_date' => now()->toDateString(),
+            'method' => 'cash',
+            'cancelled_at' => now(),
+        ]);
+        CashTransaction::create([
+            'source_type' => \App\Models\Payment::class,
+            'source_id' => $p4->id,
+            'category' => CashTransaction::CATEGORY_MONTHLY_FEE,
+            'direction' => CashTransaction::DIRECTION_IN,
+            'amount' => 50,
+            'transaction_date' => now()->toDateString(),
+            'academic_year_id' => $year->id,
+            'cancelled_at' => now(),
+        ]);
+
+        $response = $this->getJson('/api/dashboard')->assertOk();
+        $today = $response->json('data.cash.today');
+
+        // التحقق من مجاميع الـ 24 ساعة
+        $this->assertEquals(600, (float) $today['total_collected_24h']);
+        $this->assertEquals(400, (float) $today['cash_in_hand']); // 300 نقداً + 100 دين قديم نقداً
+        $this->assertEquals(200, (float) $today['non_cash']);     // 200 شيك
+        $this->assertEquals(100, (float) $today['old_debts_today']);
+        $this->assertEquals(500, (float) $today['current_year_today']);
+
+        // التحقق من أن الكروت القديمة وحقولها الأصلية لم تتأثر
+        $this->assertEquals(500, (float) $today['income']);
+    }
 }
+

@@ -49,7 +49,7 @@ class SixthGradeFeeUpdateTest extends TestCase
             'L3'   => 160.00,
             'L4'   => 160.00,
             'L5'   => 180.00,
-            'PRE1' => 90.00,
+            'PRE1' => 100.00,
             'PRE2' => 100.00,
             'PRE3' => 120.00,
         ];

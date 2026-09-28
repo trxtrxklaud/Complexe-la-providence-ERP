@@ -1,6 +1,7 @@
 import { useState } from 'react';
-import { Printer, X, Ban, UserCheck, ShieldCheck } from 'lucide-react';
+import { Printer, X, Ban, UserCheck, ShieldCheck, Edit3 } from 'lucide-react';
 import { paymentsApi } from '../../api/payments';
+import { ReceiptEditModal } from '../../components/Payments/ReceiptEditModal';
 
 const METHOD_LABELS: Record<string, string> = {
   cash: 'نقداً',
@@ -50,6 +51,8 @@ export interface ReceiptData {
   items?: ReceiptItem[];
   siblings?: SiblingReceiptItem[];
   discount?: number | string;
+  subtotal?: number | string;
+  total_before_discount?: number | string;
   total?: number | string;
   amount?: number | string;
   prior_total?: number | string;
@@ -96,6 +99,7 @@ export type ReceiptViewMode = 'both' | 'guardian' | 'admin';
 export function ReceiptModal({ receipt, cashierName, onClose, onDelete }: Props) {
   const [viewMode, setViewMode] = useState<ReceiptViewMode>('both');
   const [reprinting, setReprinting] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
   const total = receipt.total ?? receipt.amount;
   const method = receipt.method_label || METHOD_LABELS[String(receipt.method)] || receipt.method || '—';
   const cashier = receipt.user_name || cashierName || '—';
@@ -209,6 +213,16 @@ export function ReceiptModal({ receipt, cashierName, onClose, onDelete }: Props)
             >
               <Printer size={16} /> {reprinting ? 'جارٍ...' : 'طباعة'}
             </button>
+            {receipt.payment_id && !receipt.cancelled_at && (
+              <button
+                type="button"
+                onClick={() => setShowEditModal(true)}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-xl border text-sm font-semibold hover:bg-emerald-50 transition"
+                style={{ borderColor: '#A7F3D0', color: '#047857' }}
+              >
+                <Edit3 size={16} /> تعديل الوصل
+              </button>
+            )}
             {onDelete && (
               <button
                 type="button"
@@ -287,6 +301,18 @@ export function ReceiptModal({ receipt, cashierName, onClose, onDelete }: Props)
           )}
         </div>
       </div>
+
+      {showEditModal && receipt.payment_id && (
+        <ReceiptEditModal
+          isOpen={showEditModal}
+          paymentId={receipt.payment_id}
+          onClose={() => setShowEditModal(false)}
+          onSuccess={() => {
+            setShowEditModal(false);
+            onClose();
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -301,7 +327,18 @@ interface HalfProps {
   isSingle?: boolean;
 }
 
+/** نسخة الولي لا تعرض أسماء العاملين: أول حرفين فقط (الأحرف الأولى). نسخة الإدارة تبقى كاملة. */
+function cashierInitials(name: string): string {
+  const clean = (name || '').trim();
+  if (!clean || clean === '—') return clean || '—';
+  const parts = clean.split(/\s+/).filter(Boolean);
+  if (parts.length >= 2) return `${parts[0][0]} ${parts[1][0]}`;
+  return [...clean].slice(0, 2).join('');
+}
+
 function ReceiptHalf({ receipt, copyLabel, isGuardian, method, cashier, total, isSingle }: HalfProps) {
+  // النسختان (الولي والإدارة): "مدرسة العناية" — لا أسماء عاملين في الواجهات إطلاقاً.
+  const shownCashier = 'مدرسة العناية';
   const mText = monthsText(receipt);
   const items = receipt.items || [];
   const siblings = receipt.siblings || [];
@@ -438,11 +475,29 @@ function ReceiptHalf({ receipt, copyLabel, isGuardian, method, cashier, total, i
           </table>
 
           {!isGuardian && (
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 8, borderTop: `2px solid ${NAVY}`, paddingTop: 6 }}>
-              <span style={{ fontWeight: 800, fontSize: 13, color: NAVY }}>المبلغ الإجمالي للاستخلاص العائلي:</span>
-              <span style={{ fontWeight: 900, fontSize: 16, color: TEAL }}>
-                {money(total)} د.ت
-              </span>
+            <div style={{ marginTop: 8, borderTop: `2px solid ${NAVY}`, paddingTop: 6 }}>
+              {Number(receipt.discount || 0) > 0 && (
+                <>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                    <span style={{ fontWeight: 700, fontSize: 13, color: '#64748b' }}>المجموع قبل التخفيض:</span>
+                    <span style={{ fontWeight: 700, fontSize: 13, color: '#334155' }}>
+                      {money(receipt.total_before_discount ?? receipt.subtotal ?? (Number(total || 0) + Number(receipt.discount || 0)))} د.ت
+                    </span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                    <span style={{ fontWeight: 700, fontSize: 13, color: '#dc2626' }}>التخفيض الاستثنائي:</span>
+                    <span style={{ fontWeight: 700, fontSize: 13, color: '#dc2626' }}>
+                      -{money(receipt.discount)} د.ت
+                    </span>
+                  </div>
+                </>
+              )}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ fontWeight: 800, fontSize: 13, color: NAVY }}>المبلغ النهائي للاستخلاص العائلي:</span>
+                <span style={{ fontWeight: 900, fontSize: 16, color: TEAL }}>
+                  {money(total)} د.ت
+                </span>
+              </div>
             </div>
           )}
         </div>
@@ -520,7 +575,7 @@ function ReceiptHalf({ receipt, copyLabel, isGuardian, method, cashier, total, i
           الطريقة: <b>{method}</b> | رقم العملية: <b style={{ color: '#DC2626', fontWeight: 900 }}>{receiptNumber}</b>
           {receipt.reference ? ` | المرجع: ${receipt.reference}` : ''}
           <br />
-          المسؤول / المحصل: <b style={{ color: NAVY }}>{cashier}</b>
+          المسؤول / المحصل: <b style={{ color: NAVY }}>{shownCashier}</b>
         </div>
 
         <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, fontWeight: 600, marginTop: 10, color: '#444' }}>

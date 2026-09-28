@@ -1,0 +1,326 @@
+{
+    "sections": [
+        {
+            "id": 1,
+            "level": "السنة الأولى",
+            "name": "أ",
+            "code": "L1-أ",
+            "capacity": 28
+        },
+        {
+            "id": 2,
+            "level": "السنة الأولى",
+            "name": "ب",
+            "code": "L1-ب",
+            "capacity": 28
+        },
+        {
+            "id": 3,
+            "level": "السنة الأولى",
+            "name": "ج",
+            "code": "L1-ج",
+            "capacity": 28
+        },
+        {
+            "id": 4,
+            "level": "السنة الأولى",
+            "name": "د",
+            "code": "L1-د",
+            "capacity": 28
+        },
+        {
+            "id": 5,
+            "level": "السنة الأولى",
+            "name": "ه",
+            "code": "L1-هـ",
+            "capacity": 28
+        },
+        {
+            "id": 6,
+            "level": "السنة الثانية",
+            "name": "أ",
+            "code": "L2-أ",
+            "capacity": 28
+        },
+        {
+            "id": 7,
+            "level": "السنة الثانية",
+            "name": "ب",
+            "code": "L2-ب",
+            "capacity": 28
+        },
+        {
+            "id": 8,
+            "level": "السنة الثانية",
+            "name": "ج",
+            "code": "L2-ج",
+            "capacity": 28
+        },
+        {
+            "id": 9,
+            "level": "السنة الثانية",
+            "name": "د",
+            "code": "L2-د",
+            "capacity": 28
+        },
+        {
+            "id": 10,
+            "level": "السنة الثانية",
+            "name": "ه",
+            "code": "L2-هـ",
+            "capacity": 28
+        },
+        {
+            "id": 11,
+            "level": "السنة الثالثة",
+            "name": "أ",
+            "code": "L3-أ",
+            "capacity": 28
+        },
+        {
+            "id": 12,
+            "level": "السنة الثالثة",
+            "name": "ب",
+            "code": "L3-ب",
+            "capacity": 28
+        },
+        {
+            "id": 13,
+            "level": "السنة الثالثة",
+            "name": "ج",
+            "code": "L3-ج",
+            "capacity": 28
+        },
+        {
+            "id": 14,
+            "level": "السنة الثالثة",
+            "name": "د",
+            "code": "L3-د",
+            "capacity": 28
+        },
+        {
+            "id": 15,
+            "level": "السنة الثالثة",
+            "name": "ه",
+            "code": "L3-هـ",
+            "capacity": 28
+        },
+        {
+            "id": 16,
+            "level": "السنة الرابعة",
+            "name": "أ",
+            "code": "L4-أ",
+            "capacity": 28
+        },
+        {
+            "id": 17,
+            "level": "السنة الرابعة",
+            "name": "ب",
+            "code": "L4-ب",
+            "capacity": 28
+        },
+        {
+            "id": 18,
+            "level": "السنة الرابعة",
+            "name": "ج",
+            "code": "L4-ج",
+            "capacity": 28
+        },
+        {
+            "id": 19,
+            "level": "السنة الرابعة",
+            "name": "د",
+            "code": "L4-د",
+            "capacity": 28
+        },
+        {
+            "id": 20,
+            "level": "السنة الرابعة",
+            "name": "ه",
+            "code": "L4-هـ",
+            "capacity": 28
+        },
+        {
+            "id": 21,
+            "level": "السنة الخامسة",
+            "name": "أ",
+            "code": "L5-أ",
+            "capacity": 28
+        },
+        {
+            "id": 22,
+            "level": "السنة الخامسة",
+            "name": "ب",
+            "code": "L5-ب",
+            "capacity": 28
+        },
+        {
+            "id": 23,
+            "level": "السنة الخامسة",
+            "name": "ج",
+            "code": "L5-ج",
+            "capacity": 28
+        },
+        {
+            "id": 24,
+            "level": "السنة الخامسة",
+            "name": "د",
+            "code": "L5-د",
+            "capacity": 28
+        },
+        {
+            "id": 25,
+            "level": "السنة الخامسة",
+            "name": "ه",
+            "code": "L5-هـ",
+            "capacity": 28
+        },
+        {
+            "id": 26,
+            "level": "السنة السادسة",
+            "name": "أ",
+            "code": "L6-أ",
+            "capacity": 28
+        },
+        {
+            "id": 27,
+            "level": "السنة السادسة",
+            "name": "ب",
+            "code": "L6-ب",
+            "capacity": 28
+        },
+        {
+            "id": 28,
+            "level": "السنة السادسة",
+            "name": "ج",
+            "code": "L6-ج",
+            "capacity": 28
+        },
+        {
+            "id": 29,
+            "level": "السنة السادسة",
+            "name": "د",
+            "code": "L6-د",
+            "capacity": 28
+        },
+        {
+            "id": 30,
+            "level": "السنة السادسة",
+            "name": "ه",
+            "code": "L6-هـ",
+            "capacity": 28
+        },
+        {
+            "id": 31,
+            "level": "روضة",
+            "name": "أميمة م",
+            "code": "PRE1-أميمة",
+            "capacity": 30
+        },
+        {
+            "id": 32,
+            "level": "روضة",
+            "name": "عفاف محمو",
+            "code": "PRE1-عفاف مح",
+            "capacity": 30
+        },
+        {
+            "id": 33,
+            "level": "تمهيدي",
+            "name": "عفاف بو",
+            "code": "PRE2-عفاف بو",
+            "capacity": 30
+        },
+        {
+            "id": 34,
+            "level": "تمهيدي",
+            "name": "حنان",
+            "code": "PRE2-حنان",
+            "capacity": 30
+        },
+        {
+            "id": 35,
+            "level": "تمهيدي",
+            "name": "نجاح",
+            "code": "PRE2-نجاح",
+            "capacity": 30
+        },
+        {
+            "id": 36,
+            "level": "تحضيري",
+            "name": "صفاء",
+            "code": "PRE3-صفاء",
+            "capacity": 30
+        },
+        {
+            "id": 37,
+            "level": "تحضيري",
+            "name": "أمل",
+            "code": "PRE3-أمل",
+            "capacity": 30
+        },
+        {
+            "id": 38,
+            "level": "تحضيري",
+            "name": "عفاف",
+            "code": "PRE3-عفاف",
+            "capacity": 30
+        }
+    ],
+    "levels": [
+        {
+            "id": 1,
+            "name": "السنة الأولى",
+            "code": "L1",
+            "order": 4
+        },
+        {
+            "id": 2,
+            "name": "السنة الثانية",
+            "code": "L2",
+            "order": 5
+        },
+        {
+            "id": 3,
+            "name": "السنة الثالثة",
+            "code": "L3",
+            "order": 6
+        },
+        {
+            "id": 4,
+            "name": "السنة الرابعة",
+            "code": "L4",
+            "order": 7
+        },
+        {
+            "id": 5,
+            "name": "السنة الخامسة",
+            "code": "L5",
+            "order": 8
+        },
+        {
+            "id": 6,
+            "name": "السنة السادسة",
+            "code": "L6",
+            "order": 9
+        },
+        {
+            "id": 7,
+            "name": "روضة",
+            "code": "PRE1",
+            "order": 1
+        },
+        {
+            "id": 8,
+            "name": "تمهيدي",
+            "code": "PRE2",
+            "order": 2
+        },
+        {
+            "id": 9,
+            "name": "تحضيري",
+            "code": "PRE3",
+            "order": 3
+        }
+    ]
+}

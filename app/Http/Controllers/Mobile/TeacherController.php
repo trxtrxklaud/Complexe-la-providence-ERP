@@ -65,10 +65,41 @@ class TeacherController extends Controller
         return response()->json($roster);
     }
 
+    /** جلب سجلات حضور القسم لتاريخ محدد. */
+    public function getAttendance(Request $request, Section $section): JsonResponse
+    {
+        $this->authorizeSection($request, $section);
+
+        $date = $request->query('date', now()->toDateString());
+        $records = Attendance::where('section_id', $section->id)
+            ->where('date', $date)
+            ->get(['id', 'enrollment_id', 'status', 'note']);
+
+        return response()->json([
+            'date' => $date,
+            'records' => $records,
+        ]);
+    }
+
     /** تسجيل حضور اليوم للقسم — upsert على (enrollment_id, date). */
     public function storeAttendance(Request $request, Section $section): JsonResponse
     {
         $this->authorizeSection($request, $section);
+
+        // دعم نمط الكائن { "1079": "present" } أو المصفوفة entries
+        if ($request->has('attendance') && is_array($request->attendance) && ! $request->has('entries')) {
+            $entries = [];
+            foreach ($request->attendance as $enrollmentId => $val) {
+                $status = is_array($val) ? ($val['status'] ?? 'present') : $val;
+                $note = is_array($val) ? ($val['note'] ?? null) : null;
+                $entries[] = [
+                    'enrollment_id' => (int) $enrollmentId,
+                    'status' => in_array($status, ['present', 'absent', 'late', 'excused']) ? $status : 'present',
+                    'note' => $note,
+                ];
+            }
+            $request->merge(['entries' => $entries]);
+        }
 
         $data = $request->validate([
             'date' => 'required|date',
@@ -106,10 +137,58 @@ class TeacherController extends Controller
         return response()->json(['message' => 'تم حفظ الحضور', 'saved' => $saved]);
     }
 
+    /** جلب نتائج القسم لمادة وفترة محددة. */
+    public function getResults(Request $request, Section $section): JsonResponse
+    {
+        $this->authorizeSection($request, $section);
+
+        $subject = $request->query('subject');
+        $term = $request->query('term');
+
+        $rosterIds = $this->scope->sectionRoster($section->id)->pluck('id')->all();
+
+        $query = StudentResult::whereIn('enrollment_id', $rosterIds);
+        if ($subject) {
+            $query->where('subject', $subject);
+        }
+        if ($term) {
+            $query->where('term', $term);
+        }
+
+        $results = $query->get(['id', 'enrollment_id', 'subject', 'term', 'score', 'max_score', 'published_at']);
+
+        return response()->json([
+            'subject' => $subject,
+            'term' => $term,
+            'results' => $results,
+        ]);
+    }
+
     /** إدخال النتائج/الأعداد للقسم — upsert على (enrollment_id, subject, term). */
     public function storeResults(Request $request, Section $section): JsonResponse
     {
         $this->authorizeSection($request, $section);
+
+        // دعم نمط الكائن { "1079": 17.5 } أو المصفوفة entries
+        if ($request->has('grades') && is_array($request->grades) && ! $request->has('entries')) {
+            $entries = [];
+            foreach ($request->grades as $enrollmentId => $score) {
+                $entries[] = [
+                    'enrollment_id' => (int) $enrollmentId,
+                    'score' => is_array($score) ? ($score['score'] ?? 0) : (float) $score,
+                    'max_score' => is_array($score) ? ($score['max_score'] ?? 20) : 20,
+                ];
+            }
+            $request->merge(['entries' => $entries]);
+        }
+
+        if (! $request->has('subject') || empty($request->subject)) {
+            $request->merge(['subject' => 'الرياضيات']);
+        }
+
+        if (! $request->has('publish')) {
+            $request->merge(['publish' => true]);
+        }
 
         $data = $request->validate([
             'subject' => 'required|string|max:100',

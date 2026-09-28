@@ -8,3 +8,4 @@ export const loadTreasuryDaybookPage = () => import('./pages/Treasury/TreasuryDa
 export const loadNetIncomeDailyPage = () => import('./pages/NetIncome/NetIncomeDailyPage');
 export const loadHistoriquePage = () => import('./pages/Payments/HistoriquePage');
 export const loadEmployeesPage = () => import('./pages/Employees/EmployeesPage');
+export const loadTeacherSectionsPage = () => import('./pages/Admin/TeacherSectionsPage');

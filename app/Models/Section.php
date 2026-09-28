@@ -29,4 +29,9 @@ class Section extends Model
     {
         return $this->belongsToMany(Club::class, 'club_sections');
     }
+
+    public function sectionTeachers(): HasMany
+    {
+        return $this->hasMany(SectionTeacher::class);
+    }
 }

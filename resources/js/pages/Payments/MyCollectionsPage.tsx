@@ -3,7 +3,8 @@ import { paymentsApi } from '../../api/payments';
 import { useAuth } from '../../contexts/AuthContext';
 import type { Payment, PaginatedResponse, PaymentMethod } from '../../types';
 import { TableRowsSkeleton } from '../../components/DataSkeleton';
-import { AlertCircle, Receipt, ChevronRight, ChevronLeft, RotateCcw } from 'lucide-react';
+import { AlertCircle, Receipt, ChevronRight, ChevronLeft, RotateCcw, Edit3 } from 'lucide-react';
+import { ReceiptEditModal } from '../../components/Payments/ReceiptEditModal';
 
 const C = {
     forest: '#3B4A36',
@@ -47,6 +48,7 @@ export function MyCollectionsPage() {
     const [dateFrom, setDateFrom] = useState('');
     const [dateTo, setDateTo] = useState('');
     const [page, setPage] = useState(1);
+    const [editingPaymentId, setEditingPaymentId] = useState<number | null>(null);
 
     useEffect(() => {
         if (!user) return;
@@ -142,14 +144,15 @@ export function MyCollectionsPage() {
                                 <th className="px-6 py-4 font-semibold whitespace-nowrap" style={{ color: C.muted }}>المبلغ</th>
                                 <th className="px-6 py-4 font-semibold whitespace-nowrap" style={{ color: C.muted }}>الطريقة</th>
                                 <th className="px-6 py-4 font-semibold" style={{ color: C.muted }}>ملاحظات</th>
+                                <th className="px-6 py-4 font-semibold whitespace-nowrap text-center" style={{ color: C.muted }}>العمليات</th>
                             </tr>
                         </thead>
                         <tbody>
                             {loading ? (
-                                <TableRowsSkeleton columns={5} />
+                                <TableRowsSkeleton columns={6} />
                             ) : rows.length === 0 ? (
                                 <tr>
-                                    <td colSpan={5} className="px-6 py-12 text-center" style={{ color: C.muted }}>
+                                    <td colSpan={6} className="px-6 py-12 text-center" style={{ color: C.muted }}>
                                         {hasFilters ? 'لا توجد استخلاصات مطابقة للمرشّحات' : 'لا توجد استخلاصات بعد'}
                                     </td>
                                 </tr>
@@ -177,6 +180,21 @@ export function MyCollectionsPage() {
                                         </td>
                                         <td className="px-6 py-4" style={{ color: C.deep }}>
                                             {p.notes || p.reference || '—'}
+                                        </td>
+                                        <td className="px-6 py-4 whitespace-nowrap text-center">
+                                            {!p.cancelled_at ? (
+                                                <button
+                                                    onClick={() => setEditingPaymentId(p.id)}
+                                                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 transition"
+                                                >
+                                                    <Edit3 size={13} />
+                                                    تعديل
+                                                </button>
+                                            ) : (
+                                                <span className="inline-flex px-2 py-0.5 rounded text-[11px] font-semibold bg-slate-100 text-slate-400">
+                                                    ملغى
+                                                </span>
+                                            )}
                                         </td>
                                     </tr>
                                 ))
@@ -214,6 +232,18 @@ export function MyCollectionsPage() {
                     </div>
                 )}
             </div>
+
+            {editingPaymentId && (
+                <ReceiptEditModal
+                    isOpen={Boolean(editingPaymentId)}
+                    paymentId={editingPaymentId}
+                    onClose={() => setEditingPaymentId(null)}
+                    onSuccess={() => {
+                        setEditingPaymentId(null);
+                        setPage(1);
+                    }}
+                />
+            )}
         </div>
     );
 }

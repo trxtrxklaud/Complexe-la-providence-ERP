@@ -222,7 +222,7 @@ export function StudentDetailsPage() {
                       </span>
                     )}
                   </p>
-                  <p><span className="font-semibold text-slate-800">تاريخ الولادة:</span> {student.dob || 'غير مسجّل'}</p>
+                  <p><span className="font-semibold text-slate-800">تاريخ الولادة:</span> {student.dob ? new Date(student.dob).toLocaleDateString('ar-TN') : 'غير مسجّل'}</p>
                   <p><span className="font-semibold text-slate-800">القسم:</span> {[enrollment?.level?.name, enrollment?.section?.name].filter(Boolean).join(' ') || 'غير مسجّل'}</p>
                   <p><span className="font-semibold text-slate-800">الحالة:</span> {studentStatusLabel(student.status || enrollment?.status)}</p>
                 </div>

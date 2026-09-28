@@ -758,16 +758,17 @@ class StudentController extends Controller
                 // c) حذف رسوم الترسيم (student_fees) المرتبطة بهذا الترسيم
                 $enrollment->studentFees()->delete();
 
-                // d) الترسيم نفسه: التلميذ يبقى في القسم بدون دفعات أو رسوم ترسيم (لا حذف نهائي ولا حذف لطيف)
+                // d) محو الترسيم كلياً من النظام (soft-delete) مع بقاء سجل العملية في audit_logs:
+                // الترسيم الملغى لا يبقى نشطاً فارغاً في القسم حتى لا يتكرر ولا يضيف رقماً مالياً
+                // خاطئاً (عداد "لم يدفعوا الترسيم"). الدفعات والخزينة أُلغيت أعلاه وبقيت موثقة،
+                // وإعادة الترسيم لاحقاً تمر عبر مسار استعادة المحذوف في reenroll().
                 $sectionId = $enrollment->section_id;
-                $enrollment->update([
-                    'status' => 'active',
-                ]);
+                $enrollment->delete();
 
                 // تدقيق العملية: تسجيل حدث enrollment.cancel في audit_logs
                 AuditService::log(
                     'enrollment.cancel',
-                    'إلغاء ترسيم التلميذ واسترجاع المبالغ من الخزينة مع إبقائه في القسم: '.trim($student->first_name.' '.$student->last_name).' - السبب: '.$reason,
+                    'محو ترسيم التلميذ كلياً من النظام واسترجاع المبالغ من الخزينة مع توثيق العملية: '.trim($student->first_name.' '.$student->last_name).' - السبب: '.$reason,
                     $student,
                     [
                         'user_id' => $userId,

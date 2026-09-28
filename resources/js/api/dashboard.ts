@@ -5,10 +5,21 @@ import { apiFetch } from './http';
  */
 export type CashFigures = {
   income: number;
+  current_year_income?: number;
   expenses: number;
   net_income: number;
   withdrawals: number;
   balance: number;
+  old_debt_collections?: number;
+  old_debts?: number;
+  cash_in?: number;
+  prior_year_debt?: number;
+  old_liability_payments?: number;
+  total_collected_24h?: number;
+  cash_in_hand?: number;
+  non_cash?: number;
+  old_debts_today?: number;
+  current_year_today?: number;
 };
 
 /** سطر تفصيلي لدين تلميذ قديم مُدخل يدوياً. */

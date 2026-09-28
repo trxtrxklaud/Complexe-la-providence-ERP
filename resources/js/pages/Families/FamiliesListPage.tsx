@@ -3,6 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import { Users, Search, Eye, RefreshCw, AlertCircle, Loader2 } from 'lucide-react';
 import { fetchFamilies, type FamilySummary } from '../../api/families';
 import { EmptyState } from '../../components/EmptyState';
+import { EnterpriseHeader } from '../../components/ui/EnterpriseHeader';
+import { EnterpriseBadge } from '../../components/ui/EnterpriseBadge';
 
 const C = { forest: '#3B4A36', sage: '#E3EBDB', ink: '#1F261C', muted: '#7C8677', line: '#EDF1E8' };
 
@@ -43,57 +45,76 @@ export function FamiliesListPage() {
     return () => clearTimeout(timer);
   }, [search, loadData]);
 
+  // الاستماع لتحديث العائلات من العمليات الأخرى + عند استعادة التركيز
+  useEffect(() => {
+    const handleFamiliesUpdated = () => {
+      console.log('🔄 Families updated - refreshing list...');
+      loadData(page, search);
+    };
+
+    window.addEventListener('families:updated', handleFamiliesUpdated);
+
+    // تحديث عند العودة للصفحة
+    const handleFocus = () => {
+      console.log('🔄 Page focused - refreshing list...');
+      loadData(page, search);
+    };
+
+    window.addEventListener('focus', handleFocus);
+
+    return () => {
+      window.removeEventListener('families:updated', handleFamiliesUpdated);
+      window.removeEventListener('focus', handleFocus);
+    };
+  }, [loadData, page, search]);
+
   return (
     <div dir="rtl" className="p-6 max-w-6xl mx-auto space-y-6">
       {/* Header Bar */}
-      <div className="flex items-center justify-between flex-wrap gap-4">
-        <div className="flex items-center gap-3">
-          <div className="w-12 h-12 rounded-2xl flex items-center justify-center shadow-sm" style={{ backgroundColor: C.sage }}>
-            <Users size={24} style={{ color: C.forest }} />
-          </div>
-          <div>
-            <h1 className="text-2xl font-bold" style={{ color: C.ink }}>
-              إدارة العائلات
-            </h1>
-            <p className="text-xs" style={{ color: C.muted }}>
-              تجميع الأبناء تحت ملف الولي والتحصيل الجماعي الموحد — ({total} عائلة)
-            </p>
-          </div>
-        </div>
-
-        <button
-          type="button"
-          onClick={() => loadData(page, search)}
-          className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold shadow-sm transition"
-          style={{ backgroundColor: C.sage, color: C.forest }}
-        >
-          <RefreshCw size={15} /> تحديث
-        </button>
-      </div>
+      <EnterpriseHeader
+        title="إدارة العائلات"
+        subtitle="تجميع الأبناء تحت ملف الولي وإجراء الاستخلاص والتحصيل المالي الموحد"
+        icon={Users}
+        badge={
+          <EnterpriseBadge variant="brand">
+            {total} عائلة مسجلة
+          </EnterpriseBadge>
+        }
+        actions={
+          <button
+            type="button"
+            onClick={() => loadData(page, search)}
+            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold bg-white border border-slate-200/90 text-slate-700 shadow-2xs transition hover:bg-slate-50 hover:border-slate-300"
+          >
+            <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
+            <span>تحديث البيانات</span>
+          </button>
+        }
+      />
 
       {error && (
-        <div className="p-4 rounded-xl bg-red-50 text-red-700 text-sm flex items-center gap-2 border border-red-200">
+        <div className="p-4 rounded-2xl bg-rose-50 text-rose-700 text-sm font-semibold flex items-center gap-2.5 border border-rose-200">
           <AlertCircle size={18} /> {error}
         </div>
       )}
 
       {/* Filter / Search Bar */}
-      <div className="bg-white p-4 rounded-2xl border flex items-center gap-3 shadow-sm" style={{ borderColor: C.line }}>
-        <Search size={18} className="text-slate-400" />
+      <div className="enterprise-card p-4 flex items-center gap-3">
+        <Search size={20} className="text-slate-400 shrink-0" />
         <input
           type="text"
-          placeholder="ابحث باسم الولي أو رقم الهاتف..."
+          placeholder="ابحث باسم الولي، أو رقم الهاتف، أو اسم التلميذ..."
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          className="w-full text-sm outline-none bg-transparent"
+          className="w-full text-sm font-semibold text-slate-800 outline-none bg-transparent placeholder:text-slate-400"
         />
       </div>
 
       {/* Families Table */}
-      <div className="bg-white rounded-2xl border shadow-sm overflow-hidden" style={{ borderColor: C.line }}>
+      <div className="enterprise-card overflow-hidden">
         {loading ? (
           <div className="flex items-center justify-center py-20 text-slate-400">
-            <Loader2 className="animate-spin" size={28} />
+            <Loader2 className="animate-spin text-[#2E3B2A]" size={32} />
           </div>
         ) : families.length === 0 ? (
           <EmptyState title="لا توجد عائلات مطابقة للبحث." icon={Users} />
@@ -101,13 +122,13 @@ export function FamiliesListPage() {
           <div className="overflow-x-auto">
             <table className="w-full text-sm text-right">
               <thead>
-                <tr className="border-b text-xs font-semibold" style={{ backgroundColor: C.sage, color: C.forest }}>
-                  <th className="px-4 py-3.5">الولي / العائلة</th>
-                  <th className="px-4 py-3.5">رقم الهاتف</th>
-                  <th className="px-4 py-3.5">عدد الأبناء</th>
-                  <th className="px-4 py-3.5">الأبناء المسجلين</th>
-                  <th className="px-4 py-3.5">المتبقي بالذمة</th>
-                  <th className="px-4 py-3.5 text-center">الإجراءات</th>
+                <tr className="border-b border-slate-200/80 bg-slate-50/90 text-slate-700 text-xs font-bold uppercase tracking-wider">
+                  <th className="px-5 py-4">الولي / العائلة</th>
+                  <th className="px-5 py-4">رقم الهاتف</th>
+                  <th className="px-5 py-4">عدد الأبناء</th>
+                  <th className="px-5 py-4">الأبناء المسجلين</th>
+                  <th className="px-5 py-4">المتبقي بالذمة</th>
+                  <th className="px-5 py-4 text-center">الإجراءات</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -115,36 +136,40 @@ export function FamiliesListPage() {
                   const hasDebt = f.family_remaining_debt > 0;
 
                   return (
-                    <tr key={f.id} className="hover:bg-slate-50/80 transition">
-                      <td className="px-4 py-3.5 font-bold" style={{ color: C.ink }}>
+                    <tr key={f.id} className="hover:bg-slate-50/75 transition-colors">
+                      <td className="px-5 py-4 font-bold text-slate-900 text-[15px]">
                         {f.guardian_name}
                       </td>
-                      <td className="px-4 py-3.5 font-mono text-xs text-slate-600" dir="ltr">
+                      <td className="px-5 py-4 font-mono text-xs font-bold text-slate-600" dir="ltr">
                         {f.phone || '—'}
                       </td>
-                      <td className="px-4 py-3.5">
-                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-slate-100 text-slate-800">
+                      <td className="px-5 py-4">
+                        <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold bg-slate-100 text-slate-700 border border-slate-200/60">
                           {f.students_count} أبناء
                         </span>
                       </td>
-                      <td className="px-4 py-3.5 text-xs text-slate-600 max-w-xs truncate">
+                      <td className="px-5 py-4 text-xs font-semibold text-slate-600 max-w-xs truncate">
                         {f.students.map((s) => s.name).join('، ')}
                       </td>
-                      <td className="px-4 py-3.5 font-bold font-mono">
+                      <td className="px-5 py-4 font-bold font-mono">
                         {hasDebt ? (
-                          <span className="text-red-600">{money(f.family_remaining_debt)} د.ت</span>
+                          <EnterpriseBadge variant="danger">
+                            {money(f.family_remaining_debt)} د.ت
+                          </EnterpriseBadge>
                         ) : (
-                          <span className="text-emerald-600">0.00 د.ت (مستوفى)</span>
+                          <EnterpriseBadge variant="success">
+                            0.00 د.ت (مستوفى)
+                          </EnterpriseBadge>
                         )}
                       </td>
-                      <td className="px-4 py-3.5 text-center">
+                      <td className="px-5 py-4 text-center">
                         <button
                           type="button"
                           onClick={() => navigate(`/families/${f.id}`)}
-                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition text-white shadow-sm"
-                          style={{ backgroundColor: C.forest }}
+                          className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all bg-slate-100 hover:bg-[#2E3B2A] hover:text-white text-slate-800 shadow-2xs active:scale-95"
                         >
-                          <Eye size={14} /> استعراض وتنزيل
+                          <Eye size={14} />
+                          <span>استعراض وتنزيل</span>
                         </button>
                       </td>
                     </tr>

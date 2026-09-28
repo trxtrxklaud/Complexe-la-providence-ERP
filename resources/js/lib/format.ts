@@ -12,7 +12,10 @@ export function errorMessage(err: unknown): string {
   if (err instanceof ApiError) return err.firstError;
 
   if (err && typeof err === 'object') {
-    const anyErr = err as { firstError?: string; message?: string };
+    const anyErr = err as { name?: string; firstError?: string; message?: string };
+    if (anyErr.name === 'AbortError' || String(anyErr.message ?? '').toLowerCase().includes('abort')) {
+      return '';
+    }
     if (anyErr.firstError) return anyErr.firstError;
     if (anyErr.message) return anyErr.message;
   }

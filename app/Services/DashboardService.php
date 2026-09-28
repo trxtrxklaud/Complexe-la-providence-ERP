@@ -4,10 +4,12 @@ namespace App\Services;
 
 use App\Models\AcademicYear;
 use App\Models\CashTransaction;
+use App\Models\ClubMonthlyFee;
 use App\Models\Enrollment;
 use App\Models\FeeType;
 use App\Models\ManualStudentDebt;
 use App\Models\OldEmployeeDebt;
+use App\Models\OldEmployeeDebtCollection;
 use App\Models\Payment;
 use App\Services\ClubService;
 use Carbon\Carbon;
@@ -28,7 +30,10 @@ class DashboardService
         // من يملك manage_treasury أو view_reports. القابض يستخلص المال ولا يرى
         // وضع الخزينة، فلا تُحسب الأرقام النقدية أصلاً حين لا يُسمح بعرضها.
         $cash = $includeFinancials ? [
-            'today' => $this->cashFigures($today->toDateString(), $today->toDateString()),
+            'today' => array_merge(
+                $this->cashFigures($today->toDateString(), $today->toDateString()),
+                $this->todayCollectionBreakdown($today)
+            ),
             'month' => $this->cashFigures($today->copy()->startOfMonth()->toDateString(), $today->toDateString()),
             'all_time' => $this->cashFigures(null, $today->toDateString()),
         ] : null;
@@ -96,10 +101,27 @@ class DashboardService
             ->where('enrollments.status', 'active')
             ->whereNull('enrollments.deleted_at')
             ->whereIn('student_fees.status', ['pending', 'partial', 'overdue'])
-            // القاعدة الذهبية: المتخلد = شهر حان استحقاقه ولم يُدفع؛ المستقبل ليس ديناً.
-            ->whereDate('student_fees.due_date', '<=', now())
+            // استبعاد ديون السنوات السابقة (الديون اليدوية): مكانها في ديون السنوات السابقة لا متخلد السنة النشطة.
+            ->whereNotExists(function ($q) {
+                $q->select(DB::raw(1))
+                    ->from('manual_student_debts')
+                    ->whereColumn('manual_student_debts.source_student_fee_id', 'student_fees.id');
+            })
+            // القاعدة: المتخلد = شهر انقضى وخرج ولم يُدفع؛ الشهر الجاري ليس ديناً متخلداً حتى يدخل الشهر التالي.
+            ->whereDate('student_fees.due_date', '<', $today->copy()->startOfMonth())
             ->selectRaw('COALESCE(SUM(CASE WHEN student_fees.amount_due - COALESCE(pa.total_allocated, 0) > 0 THEN student_fees.amount_due - COALESCE(pa.total_allocated, 0) ELSE 0 END), 0) AS balance')
             ->value('balance') ?? 0;
+
+        // متخلدات النوادي للأشهر المنقضية التي لم تُدفع:
+        $clubOverdue = (float) DB::table('club_monthly_fees')
+            ->whereNull('cancelled_at')
+            ->where('academic_year_id', $activeYear->id)
+            ->where('month', '<', $today->format('Y-m'))
+            ->whereIn('status', ['unpaid', 'partial', 'pending'])
+            ->selectRaw('COALESCE(SUM(CASE WHEN amount_due - amount_paid > 0 THEN amount_due - amount_paid ELSE 0 END), 0) AS remaining')
+            ->value('remaining') ?? 0;
+
+        $outstandingBalance = round($outstandingBalance + $clubOverdue, 2);
 
         $totalCollected = (float) Payment::whereNotNull('enrollment_id')
             ->whereHas('enrollment', fn ($q) => $q->where('academic_year_id', $activeYear->id))
@@ -399,6 +421,7 @@ class DashboardService
             'income' => round($income, 2),
             'current_year_income' => round($income, 2),
             'old_debt_collections' => round($oldDebtCollections, 2),
+            'old_debts' => round($oldDebtCollections, 2),
             'cash_in' => $cashIn,
             // حقل قديم للتوافق — يعادل old_debt_collections الآن
             'prior_year_debt' => round($oldDebtCollections, 2),
@@ -409,6 +432,101 @@ class DashboardService
             'balance' => $balance,
         ];
     }
+
+    /**
+     * تفصيل مقبوضات اليوم (24 ساعة) لمطابقة الصندوق عند نهاية اليوم.
+     *
+     * يشمل كل ما قُبض خلال اليوم سواء كان تاريخ المعاملة هو اليوم،
+     * أو أُدخلت العملية خلال الـ 24 ساعة لليوم (created_at).
+     *
+     * @return array<string,float>
+     */
+    public function todayCollectionBreakdown(Carbon $today): array
+    {
+        $todayDate = $today->toDateString();
+        $todayStart = $today->copy()->startOfDay();
+        $todayEnd = $today->copy()->endOfDay();
+
+        $txs = CashTransaction::query()
+            ->whereNull('cancelled_at')
+            ->where('direction', CashTransaction::DIRECTION_IN)
+            ->where(function ($q) use ($todayDate, $todayStart, $todayEnd) {
+                $q->whereDate('transaction_date', $todayDate)
+                  ->orWhereBetween('created_at', [$todayStart, $todayEnd]);
+            })
+            ->get();
+
+        $paymentIds = [];
+        $clubFeeIds = [];
+        $oldEmpDebtIds = [];
+
+        foreach ($txs as $tx) {
+            $sType = strtolower(class_basename((string) $tx->source_type));
+            if ($sType === 'payment' && $tx->source_id) {
+                $paymentIds[] = (int) $tx->source_id;
+            } elseif ($sType === 'clubmonthlyfee' && $tx->source_id) {
+                $clubFeeIds[] = (int) $tx->source_id;
+            } elseif (in_array($sType, ['oldemployeedebtcollection', 'employeeopeningdebtcollection'], true) && $tx->source_id) {
+                $oldEmpDebtIds[] = (int) $tx->source_id;
+            }
+        }
+
+        $paymentMethods = ! empty($paymentIds)
+            ? Payment::whereIn('id', array_unique($paymentIds))->pluck('method', 'id')->all()
+            : [];
+        $clubMethods = ! empty($clubFeeIds)
+            ? ClubMonthlyFee::whereIn('id', array_unique($clubFeeIds))->pluck('method', 'id')->all()
+            : [];
+        $oldEmpMethods = ! empty($oldEmpDebtIds)
+            ? OldEmployeeDebtCollection::whereIn('id', array_unique($oldEmpDebtIds))->pluck('method', 'id')->all()
+            : [];
+
+        $totalCollected = 0.0;
+        $cashInHand = 0.0;
+        $nonCash = 0.0;
+        $oldDebtsToday = 0.0;
+        $currentYearToday = 0.0;
+
+        foreach ($txs as $tx) {
+            $amount = (float) $tx->amount;
+            $totalCollected += $amount;
+
+            $isOldDebt = in_array($tx->category, CashTransaction::OLD_DEBT_COLLECTION_CATEGORIES, true);
+            if ($isOldDebt) {
+                $oldDebtsToday += $amount;
+            } else {
+                $currentYearToday += $amount;
+            }
+
+            $sType = strtolower(class_basename((string) $tx->source_type));
+            $method = 'cash';
+            if ($sType === 'payment' && isset($paymentMethods[$tx->source_id])) {
+                $method = (string) $paymentMethods[$tx->source_id];
+            } elseif ($sType === 'clubmonthlyfee' && isset($clubMethods[$tx->source_id])) {
+                $method = (string) $clubMethods[$tx->source_id];
+            } elseif (in_array($sType, ['oldemployeedebtcollection', 'employeeopeningdebtcollection'], true) && isset($oldEmpMethods[$tx->source_id])) {
+                $method = (string) $oldEmpMethods[$tx->source_id];
+            }
+
+            $methodLower = strtolower(trim($method));
+            $isNonCash = in_array($methodLower, ['check', 'cheque', 'شيك', 'bank_transfer', 'virement', 'تحويل', 'card', 'carte', 'بطاقة'], true);
+
+            if ($isNonCash) {
+                $nonCash += $amount;
+            } else {
+                $cashInHand += $amount;
+            }
+        }
+
+        return [
+            'total_collected_24h' => round($totalCollected, 2),
+            'cash_in_hand' => round($cashInHand, 2),
+            'non_cash' => round($nonCash, 2),
+            'old_debts_today' => round($oldDebtsToday, 2),
+            'current_year_today' => round($currentYearToday, 2),
+        ];
+    }
+
 
     /**
      * @param  array<string,array<string,float>>|null  $cash

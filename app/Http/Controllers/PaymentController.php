@@ -145,8 +145,9 @@ class PaymentController extends Controller
                 'enrollment.academicYear:id,name',
                 'enrollment.level:id,name',
                 'createdBy:id,first_name,last_name',
+                'editedBy:id,first_name,last_name',
                 'cancelledBy:id,first_name,last_name',
-                'paymentAllocations.studentFee',
+                'paymentAllocations.studentFee.feeType',
             ])
         );
     }
@@ -297,6 +298,8 @@ class PaymentController extends Controller
             'allocations.*.id' => ['nullable', 'integer'],
             'allocations.*.student_fee_id' => ['nullable', 'integer'],
             'allocations.*.amount' => ['required_with:allocations', 'numeric', 'min:0'],
+            'allocations.*.category' => ['nullable', 'string'],
+            'leave_difference_as_debt' => ['nullable', 'boolean'],
         ]);
 
         try {

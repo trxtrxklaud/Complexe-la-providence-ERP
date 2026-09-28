@@ -193,6 +193,7 @@ class FamilyController extends Controller
             'method' => ['required', 'string', 'in:cash,bank_transfer,check,card'],
             'reference' => ['nullable', 'string', 'max:255'],
             'notes' => ['nullable', 'string', 'max:1000'],
+            'exceptional_discount' => ['nullable', 'numeric', 'min:0'],
             'students_allocations' => ['nullable', 'array'],
             'students_allocations.*.student_id' => ['required_with:students_allocations', 'integer'],
             'students_allocations.*.enrollment_id' => ['required_with:students_allocations', 'integer'],

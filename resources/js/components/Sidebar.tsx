@@ -4,7 +4,7 @@ import { NavLink, useNavigate, useLocation } from 'react-router-dom';
 import {
     LayoutDashboard, Users, LogOut, GraduationCap, Tags, Layers,
     ClipboardList, History, Wallet, Receipt, Landmark, TrendingUp, BadgePercent, Award, HeartHandshake,
-    Users2, UserPlus, PanelLeftClose, PanelLeftOpen, CreditCard, ShieldCheck,
+    Users2, UserPlus, PanelLeftClose, PanelLeftOpen, CreditCard, ShieldCheck, BookOpen, DollarSign,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import {
@@ -18,6 +18,7 @@ import {
     loadRosterPage,
     loadTreasuryDaybookPage,
     loadUsersList,
+    loadTeacherSectionsPage,
 } from '../routeLoaders';
 
 interface SectionHeaderProps {
@@ -312,6 +313,16 @@ export function Sidebar() {
                             />
 
                             <NavItem
+                                to="/admin/teacher-sections"
+                                onMouseEnter={prefetch(loadTeacherSectionsPage)}
+                                onFocus={prefetch(loadTeacherSectionsPage)}
+                                isActive={startsWith('/admin/teacher-sections') || startsWith('/teacher-sections')}
+                                label="أقسام المعلمين"
+                                icon={<BookOpen size={20} />}
+                                collapsed={collapsed}
+                            />
+
+                            <NavItem
                                 to="/users"
                                 onMouseEnter={prefetch(loadUsersList)}
                                 onFocus={prefetch(loadUsersList)}
@@ -546,11 +557,21 @@ export function Sidebar() {
                                 to="/employees"
                                 onMouseEnter={prefetch(loadEmployeesPage)}
                                 onFocus={prefetch(loadEmployeesPage)}
-                                isActive={startsWith('/employees')}
+                                isActive={location.pathname === '/employees'}
                                 label="الإطارات"
                                 icon={<Users size={20} />}
                                 collapsed={collapsed}
                             />
+
+                            {hasPermission('manage_salaries') && (
+                                <NavItem
+                                    to="/employees/advances"
+                                    isActive={startsWith('/employees/advances') || startsWith('/employee/advance')}
+                                    label="سلفات وتسبقات الموظفين"
+                                    icon={<DollarSign size={20} />}
+                                    collapsed={collapsed}
+                                />
+                            )}
                         </>
                     )}
                 </nav>

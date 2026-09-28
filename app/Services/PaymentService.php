@@ -199,24 +199,64 @@ class PaymentService
         }
 
         $oldAmount = round((float) $payment->amount, 2);
+        $leaveAsDebt = (bool) ($data['leave_difference_as_debt'] ?? false);
 
-        // التعديل المكرر بنفس المبلغ لا يغيّر شيئاً
-        if (abs($oldAmount - $newAmount) < 0.001 && empty($data['allocations']) && empty($data['items'])) {
+        // التعديل المكرر بنفس المبلغ والخيارات لا يغيّر شيئاً
+        if (abs($oldAmount - $newAmount) < 0.001 && empty($data['allocations']) && !$leaveAsDebt) {
             return $payment;
         }
 
-        return DB::transaction(function () use ($payment, $oldAmount, $newAmount, $data, $userId) {
-            $payment->loadMissing(['paymentAllocations.studentFee']);
+        return DB::transaction(function () use ($payment, $oldAmount, $newAmount, $leaveAsDebt, $data, $userId) {
+            $payment->loadMissing(['paymentAllocations.studentFee.feeType']);
+            $allocations = $payment->paymentAllocations;
 
-            // 1. تسجيل التدقيق (Audit)
+            // 1. التحقق من الوصل متعدد البنود والتصنيفات
+            if ($allocations->count() > 1) {
+                if (empty($data['allocations']) || ! is_array($data['allocations'])) {
+                    throw new \InvalidArgumentException('الوصل يحتوي على بنود متعددة، يجب إرسال مبالغ كل البنود.');
+                }
+
+                $sumAlloc = 0.0;
+                foreach ($data['allocations'] as $item) {
+                    $allocId = $item['id'] ?? null;
+                    $itemAmount = round((float) ($item['amount'] ?? 0), 2);
+                    if ($itemAmount < 0) {
+                        throw new \InvalidArgumentException('مبلغ أي بند لا يمكن أن يكون سالباً.');
+                    }
+                    $sumAlloc += $itemAmount;
+
+                    // التحقق من تبعية التخصيص ومنع تغيير التصنيف
+                    if ($allocId) {
+                        $existingAlloc = $allocations->firstWhere('id', $allocId);
+                        if (! $existingAlloc) {
+                            throw new \InvalidArgumentException('التخصيص رقم '.$allocId.' لا يتبع هذا الوصل.');
+                        }
+                        if (isset($item['category']) && $existingAlloc->studentFee?->feeType?->ledger_category !== $item['category']) {
+                            throw new \InvalidArgumentException('لا يمكن تغيير تصنيف البند أثناء التصحيح.');
+                        }
+                    }
+                }
+
+                if (abs(round($sumAlloc, 2) - $newAmount) > 0.001) {
+                    throw new \InvalidArgumentException('مجموع البنود لا يساوي المبلغ الجديد');
+                }
+            } elseif ($allocations->count() === 1 && ! empty($data['allocations'])) {
+                $singleItemAmount = round((float) ($data['allocations'][0]['amount'] ?? 0), 2);
+                if (abs($singleItemAmount - $newAmount) > 0.001) {
+                    throw new \InvalidArgumentException('مجموع البنود لا يساوي المبلغ الجديد');
+                }
+            }
+
+            // 2. تسجيل التدقيق (Audit)
             $meta = $payment->meta ?? [];
             $edits = $meta['edits'] ?? [];
             $edits[] = [
-                'old_amount' => $oldAmount,
-                'new_amount' => $newAmount,
-                'edited_by'  => $userId,
-                'edited_at'  => now()->toIso8601String(),
-                'notes'      => $data['notes'] ?? $data['reason'] ?? null,
+                'old_amount'                => $oldAmount,
+                'new_amount'                => $newAmount,
+                'leave_difference_as_debt'  => $leaveAsDebt,
+                'edited_by'                 => $userId,
+                'edited_at'                 => now()->toIso8601String(),
+                'notes'                     => $data['notes'] ?? $data['reason'] ?? null,
             ];
             $meta['edits'] = $edits;
             $meta['old_amount'] = $oldAmount;
@@ -234,9 +274,7 @@ class PaymentService
                 'meta'       => $meta,
             ]);
 
-            // 2. تحديث التوزيعات المالية (Allocations)
-            $allocations = $payment->paymentAllocations;
-
+            // 3. تحديث التوزيعات المالية ورسوم الطالب
             if (! empty($data['allocations']) && is_array($data['allocations'])) {
                 foreach ($data['allocations'] as $allocData) {
                     $allocId = $allocData['id'] ?? null;
@@ -246,11 +284,17 @@ class PaymentService
                         if ($alloc) {
                             $alloc->update(['amount_allocated' => $itemAmount]);
                             $fee = $alloc->studentFee;
-                            if ($fee && $fee->paymentAllocations()->count() === 1) {
-                                $fee->update(['amount_due' => $itemAmount]);
-                            }
                             if ($fee) {
-                                $this->updateStudentFeeStatus($fee->id);
+                                if (! $leaveAsDebt) {
+                                    // تصحيح خطأ الصندوق لا يخلق ديناً: يبقى البند خالصاً بالمبلغ الجديد
+                                    $fee->update([
+                                        'amount_due' => $itemAmount,
+                                        'status'     => 'paid',
+                                    ]);
+                                } else {
+                                    // إذا طلب القابض صراحة ترك الفرق كدين
+                                    $this->updateStudentFeeStatus($fee->id);
+                                }
                             }
                         }
                     }
@@ -260,25 +304,18 @@ class PaymentService
                 $singleAlloc->update(['amount_allocated' => $newAmount]);
                 $fee = $singleAlloc->studentFee;
                 if ($fee) {
-                    if ($fee->paymentAllocations()->count() === 1) {
-                        $fee->update(['amount_due' => $newAmount]);
-                    }
-                    $this->updateStudentFeeStatus($fee->id);
-                }
-            } elseif ($allocations->isNotEmpty()) {
-                $currentAllocSum = (float) $allocations->sum('amount_allocated');
-                if ($currentAllocSum > 0 && abs($currentAllocSum - $newAmount) > 0.001) {
-                    $diff = $newAmount - $currentAllocSum;
-                    $lastAlloc = $allocations->last();
-                    $newLastAmount = max(0.01, round((float) $lastAlloc->amount_allocated + $diff, 2));
-                    $lastAlloc->update(['amount_allocated' => $newLastAmount]);
-                    if ($lastAlloc->studentFee) {
-                        $this->updateStudentFeeStatus($lastAlloc->studentFee->id);
+                    if (! $leaveAsDebt) {
+                        $fee->update([
+                            'amount_due' => $newAmount,
+                            'status'     => 'paid',
+                        ]);
+                    } else {
+                        $this->updateStudentFeeStatus($fee->id);
                     }
                 }
             }
 
-            // 3. إعادة إسقاط الأثر المالي في الخزينة المركزية بنفس تاريخ القبض الأصلي
+            // 4. إعادة إسقاط الأثر المالي في الخزينة المركزية بنفس تاريخ القبض الأصلي
             $this->ledger->recordPayment($payment);
 
             return $payment->fresh(['paymentAllocations.studentFee', 'createdBy', 'editedBy']);

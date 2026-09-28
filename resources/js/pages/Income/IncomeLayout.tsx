@@ -18,6 +18,7 @@ export function IncomeLayout() {
       { to: 'by-classroom/roster', label: 'كشف مداخيل القسم', icon: FileText },
       { to: 'by-year', label: 'المداخيل حسب السنة', icon: CalendarRange },
       { to: 'unpaid-monthly', label: 'المتخلفون شهريًا', icon: ClipboardList },
+      { to: 'payment-status', label: 'حالة السداد', icon: CreditCard },
     ] : []),
   ];
 

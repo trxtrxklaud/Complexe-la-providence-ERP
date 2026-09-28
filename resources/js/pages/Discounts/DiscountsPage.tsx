@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { BadgePercent, Pencil, Trash2, XCircle } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { BadgePercent, Pencil, Trash2, XCircle, Layers } from 'lucide-react';
 import { apiFetch, ApiError } from '../../api/http';
 import {
   fetchEnrollmentDiscount,
@@ -222,14 +223,33 @@ export function DiscountsPage() {
 
   return (
     <div className="p-6 md:p-8" dir="rtl">
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold" style={{ color: C.ink }}>
-          التخفيضات
-        </h1>
-        <p className="mt-1 text-sm" style={{ color: C.muted }}>
-          تخفيض شهري بمبلغ ثابت لا يتجاوز 20 ديناراً لكل تلميذ، يُخصم من معلوم الدفع الشهري ويبقى
-          سارياً إلى آخر السنة. لا يرى هذه الصفحة إلا صاحب النظام، ويظهر للقابض في الوصل كجزء إداري.
-        </p>
+      <div className="mb-6 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold" style={{ color: C.ink }}>
+            التخفيضات
+          </h1>
+          <p className="mt-1 text-sm" style={{ color: C.muted }}>
+            تخفيض شهري بمبلغ ثابت لا يتجاوز 20 ديناراً لكل تلميذ، يُخصم من معلوم الدفع الشهري ويبقى
+            سارياً إلى آخر السنة. لا يرى هذه الصفحة إلا صاحب النظام، ويظهر للقابض في الوصل كجزء إداري.
+          </p>
+        </div>
+
+        <div className="flex items-center gap-3">
+          <Link
+            to="/discounts/roster"
+            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-sm text-white shadow-sm hover:opacity-90 transition"
+            style={{ backgroundColor: C.forest }}
+          >
+            <Layers size={18} />
+            <span>جرد التخفيضات (حسب القسم)</span>
+          </Link>
+          <Link
+            to="/discounts/monthly"
+            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl font-semibold text-sm border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 shadow-sm transition"
+          >
+            <span>التخفيضات الشهرية</span>
+          </Link>
+        </div>
       </div>
 
       {error && (

@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\AcademicYear;
 use App\Models\EmployeeAdvance;
 use App\Models\EmployeeAdvanceRepayment;
 use App\Services\LedgerService;
@@ -50,12 +51,29 @@ class EmployeeAdvanceController extends Controller
             'academic_year_id' => ['nullable', 'integer', 'exists:academic_years,id'],
             'type' => ['nullable', 'string', 'in:advance,loan'],
             'amount' => ['required', 'numeric', 'min:0.01'],
-            'advance_date' => ['required', 'date'],
+            'advance_date' => ['nullable', 'date'],
+            'due_date' => ['nullable', 'date'],
+            'installment_count' => ['nullable', 'integer', 'min:1', 'max:60'],
+            'repayment_method' => ['nullable', 'string', 'in:salary_deduction,cash'],
+            'purpose' => ['nullable', 'string', 'max:500'],
             'method' => ['nullable', 'string', 'max:50'],
             'reason' => ['nullable', 'string', 'max:200'],
             'notes' => ['nullable', 'string'],
             'is_opening' => ['nullable', 'boolean'],
         ]);
+
+        if (empty($data['advance_date'])) {
+            $data['advance_date'] = now()->toDateString();
+        }
+        if (empty($data['academic_year_id'])) {
+            $data['academic_year_id'] = AcademicYear::where('is_active', true)->value('id');
+        }
+        if (empty($data['reason']) && ! empty($data['purpose'])) {
+            $data['reason'] = mb_substr($data['purpose'], 0, 200);
+        }
+        if (empty($data['purpose']) && ! empty($data['reason'])) {
+            $data['purpose'] = $data['reason'];
+        }
 
         $data['created_by'] = $request->user()?->id;
         $data['status'] = EmployeeAdvance::STATUS_PENDING;

@@ -2,6 +2,7 @@ import React, { lazy, Suspense, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { motion, MotionConfig } from 'motion/react';
 import { Sidebar } from './components/Sidebar';
+import { Topbar } from './components/Topbar';
 import { Login } from './pages/Login';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { MasterDataProvider } from './contexts/MasterDataContext';
@@ -29,6 +30,7 @@ import {
 
 const UsersList = lazy(() => loadUsersList().then((module) => ({ default: module.UsersList })));
 const DiscountsPage = lazy(() => import('./pages/Discounts/DiscountsPage').then((module) => ({ default: module.DiscountsPage })));
+const DiscountRosterPage = lazy(() => import('./pages/Discounts/DiscountRosterPage').then((module) => ({ default: module.DiscountRosterPage })));
 const MonthlyDiscountsPage = lazy(() => import('./pages/Discounts/MonthlyDiscountsPage').then((module) => ({ default: module.MonthlyDiscountsPage })));
 const ExemptionsPage = lazy(() => import('./pages/Exemptions/ExemptionsPage').then((module) => ({ default: module.ExemptionsPage })));
 
@@ -53,6 +55,7 @@ const HistoriquePage = lazy(() => loadHistoriquePage().then((module) => ({ defau
 const MyCollectionsPage = lazy(() => import('./pages/Payments/MyCollectionsPage').then((module) => ({ default: module.MyCollectionsPage })));
 const ClassroomsPage = lazy(() => loadClassroomsPage().then((module) => ({ default: module.ClassroomsPage })));
 const RosterPage = lazy(() => loadRosterPage().then((module) => ({ default: module.RosterPage })));
+const TeacherSectionsPage = lazy(() => import('./pages/Admin/TeacherSectionsPage').then((module) => ({ default: module.TeacherSectionsPage })));
 const IncomeByDatePage = lazy(() => import('./pages/Income/IncomeByDatePage').then((module) => ({ default: module.IncomeByDatePage })));
 const StudentRevenuePage = lazy(() => import('./pages/Income/StudentRevenuePage').then((module) => ({ default: module.StudentRevenuePage })));
 const StudentDetailPage = lazy(() => import('./pages/Income/StudentDetailPage').then((module) => ({ default: module.StudentDetailPage })));
@@ -61,6 +64,7 @@ const ClassroomDetailPage = lazy(() => import('./pages/Income/ClassroomDetailPag
 const ClassroomRosterPage = lazy(() => import('./pages/Income/ClassroomRosterPage').then((module) => ({ default: module.ClassroomRosterPage })));
 const RevenueByYearPage = lazy(() => import('./pages/Income/RevenueByYearPage').then((module) => ({ default: module.RevenueByYearPage })));
 const UnpaidMonthlyReportPage = lazy(() => import('./pages/Income/UnpaidMonthlyReportPage').then((module) => ({ default: module.UnpaidMonthlyReportPage })));
+const StudentPaymentStatusPage = lazy(() => import('./pages/Income/StudentPaymentStatusPage').then((module) => ({ default: module.StudentPaymentStatusPage })));
 const ExpenseCreatePage = lazy(() => loadExpenseCreatePage().then((module) => ({ default: module.ExpenseCreatePage })));
 const ExpenseDailyReportPage = lazy(() => import('./pages/Expenses/ExpenseDailyReportPage').then((module) => ({ default: module.ExpenseDailyReportPage })));
 const ExpenseMonthlyReportPage = lazy(() => import('./pages/Expenses/ExpenseMonthlyReportPage').then((module) => ({ default: module.ExpenseMonthlyReportPage })));
@@ -74,6 +78,7 @@ const NetRevenueYearlyPage = lazy(() => import('./pages/NetIncome/NetRevenueYear
 const OpeningBalancesPage = lazy(() => import('./pages/Finance/OpeningBalancesPage').then((module) => ({ default: module.OpeningBalancesPage })));
 const OldDebtCollectPage = lazy(() => import('./pages/Finance/OldDebtCollectPage').then((module) => ({ default: module.OldDebtCollectPage })));
 const OldDebtReportPage = lazy(() => import('./pages/Finance/OldDebtReportPage').then((module) => ({ default: module.OldDebtReportPage })));
+const EmployeeAdvancePage = lazy(() => import('./pages/Employees/EmployeeAdvancePage').then((module) => ({ default: module.EmployeeAdvancePage })));
 
 function RouteContentSkeleton() {
     return (
@@ -103,20 +108,23 @@ function Layout({ children }: { children: React.ReactNode }) {
     // دون إعادة تركيب التخطيطات المتداخلة (المداخيل/الخزينة…) عند تبديل تبويباتها.
     const segment = location.pathname.split('/')[1] || 'root';
     return (
-        <div className="flex min-h-screen" style={{ backgroundColor: '#F7F5EF' }}>
+        <div className="flex min-h-screen bg-[#F8FAF9] text-slate-800 antialiased selection:bg-[#C2A24E]/25 selection:text-slate-900">
             <Sidebar />
-            <main className="flex-1 overflow-x-hidden">
-                <Suspense fallback={<RouteContentSkeleton />}>
-                    <motion.div
-                        key={segment}
-                        initial={{ opacity: 0, y: 8 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
-                    >
-                        {children}
-                    </motion.div>
-                </Suspense>
-            </main>
+            <div className="flex-1 flex flex-col min-w-0 overflow-x-hidden">
+                <Topbar />
+                <main className="flex-1 p-0">
+                    <Suspense fallback={<RouteContentSkeleton />}>
+                        <motion.div
+                            key={segment}
+                            initial={{ opacity: 0, y: 6 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
+                        >
+                            {children}
+                        </motion.div>
+                    </Suspense>
+                </main>
+            </div>
         </div>
     );
 }
@@ -241,6 +249,12 @@ export default function App() {
                             <Layout><RosterPage /></Layout>
                         </ProtectedRoute>
                     } />
+                    <Route path="/admin/teacher-sections" element={
+                        <ProtectedRoute permission="manage_users">
+                            <Layout><TeacherSectionsPage /></Layout>
+                        </ProtectedRoute>
+                    } />
+                    <Route path="/teacher-sections" element={<Navigate to="/admin/teacher-sections" replace />} />
 
                     {/* Users */}
                     <Route path="/users" element={
@@ -302,6 +316,7 @@ export default function App() {
                         <Route path="by-classroom/:sectionId" element={<ClassroomDetailPage />} />
                         <Route path="by-year" element={<RevenueByYearPage />} />
                         <Route path="unpaid-monthly" element={<ProtectedRoute permission="view_reports"><UnpaidMonthlyReportPage /></ProtectedRoute>} />
+                        <Route path="payment-status" element={<ProtectedRoute permission="view_reports"><StudentPaymentStatusPage /></ProtectedRoute>} />
                         {/* توافق خلفي: أي رابط يطلب /income/billing يذهب مباشرة إلى /collection */}
                         <Route path="billing" element={<Navigate to="/collection" replace />} />
                     </Route>
@@ -379,6 +394,11 @@ export default function App() {
                             <Layout><DiscountsPage /></Layout>
                         </ProtectedRoute>
                     } />
+                    <Route path='/discounts/roster' element={
+                        <ProtectedRoute permission='waive_fees'>
+                            <Layout><DiscountRosterPage /></Layout>
+                        </ProtectedRoute>
+                    } />
                     <Route path='/discounts/monthly' element={
                         <ProtectedRoute permission='waive_fees'>
                             <Layout><MonthlyDiscountsPage /></Layout>
@@ -439,6 +459,12 @@ export default function App() {
                             <Layout><EmployeesPage /></Layout>
                         </ProtectedRoute>
                     } />
+                    <Route path="/employees/advances" element={
+                        <ProtectedRoute permission="manage_salaries">
+                            <Layout><EmployeeAdvancePage /></Layout>
+                        </ProtectedRoute>
+                    } />
+                    <Route path="/employee/advance" element={<Navigate to="/employees/advances" replace />} />
 
                     <Route path="*" element={<Navigate to="/" replace />} />
                         </Routes>

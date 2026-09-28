@@ -1,4 +1,5 @@
 import { type ReactNode, useEffect, useRef, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { motion, useReducedMotion, type Variants } from 'motion/react';
 import { useAuth } from '../../contexts/AuthContext';
 import {
@@ -16,6 +17,7 @@ import {
   UserRound,
   Users,
   X,
+  Zap,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { fetchDashboard, type DashboardData, type PriorDebtSummary } from '../../api/dashboard';
@@ -68,7 +70,7 @@ function dinar(value: number | null | undefined): string {
 function Money({ value }: { value: number | null | undefined }) {
   const negative = Number(value ?? 0) < 0;
   return (
-    <bdi dir='ltr' className={negative ? 'text-[#A03434]' : undefined} style={NUM}>
+    <bdi dir='ltr' className={negative ? 'text-red-300' : undefined} style={NUM}>
       {dinar(value)}
     </bdi>
   );
@@ -115,7 +117,7 @@ function AnimatedMoney({ value }: { value: number | null | undefined }) {
   const v = useCountUp(target);
   const negative = target < 0;
   return (
-    <bdi dir='ltr' className={negative ? 'text-[#A03434]' : undefined} style={NUM}>
+    <bdi dir='ltr' className={negative ? 'text-red-300' : undefined} style={NUM}>
       {dinar(v)}
     </bdi>
   );
@@ -133,6 +135,7 @@ function RatioDonut({
   progress,
   track,
   color,
+  colorEnd,
   label,
   children,
   delay = 0,
@@ -142,6 +145,7 @@ function RatioDonut({
   progress: number; // 0..1
   track: string;
   color: string;
+  colorEnd?: string;
   label: string;
   children?: ReactNode;
   delay?: number;
@@ -153,6 +157,8 @@ function RatioDonut({
   const cx = size / 2;
   const cy = size / 2;
   const target = c * (1 - p);
+  const gradId = useRef(`donut-grad-${Math.random().toString(36).substring(2, 9)}`).current;
+  const endColor = colorEnd || color;
 
   return (
     <div
@@ -162,13 +168,23 @@ function RatioDonut({
       style={{ width: size, maxWidth: '100%', aspectRatio: '1 / 1' }}
     >
       <svg viewBox={`0 0 ${size} ${size}`} width='100%' height='100%' className='block' aria-hidden='true' focusable='false'>
+        <defs>
+          <linearGradient id={gradId} x1='0%' y1='0%' x2='100%' y2='100%'>
+            <stop offset='0%' stopColor={color} />
+            <stop offset='100%' stopColor={endColor} />
+          </linearGradient>
+        </defs>
+        {/* مضمار الخلفية الدائري */}
         <circle cx={cx} cy={cy} r={r} fill='none' stroke={track} strokeWidth={stroke} opacity={0.85} />
+        {/* حلقة توجيهية داخلية رقيقة تعطي عمق المقياس الاحترافي */}
+        <circle cx={cx} cy={cy} r={Math.max(1, r - stroke / 2 - 3)} fill='none' stroke={track} strokeWidth={1} strokeDasharray='3 4' opacity={0.4} />
+        {/* قوس التقدم المتحرك */}
         <motion.circle
           cx={cx}
           cy={cy}
           r={r}
           fill='none'
-          stroke={color}
+          stroke={`url(#${gradId})`}
           strokeWidth={stroke}
           strokeLinecap='round'
           strokeDasharray={c}
@@ -176,7 +192,7 @@ function RatioDonut({
           initial={{ strokeDashoffset: reduce ? target : c }}
           animate={{ strokeDashoffset: target }}
           transition={{ duration: reduce ? 0 : 1.1, ease: [0.16, 1, 0.3, 1], delay: reduce ? 0 : delay }}
-          style={{ filter: 'drop-shadow(0 2px 5px rgba(0,0,0,0.10))' }}
+          style={{ filter: 'drop-shadow(0 2px 6px rgba(0,0,0,0.18))' }}
         />
       </svg>
       <div className='absolute inset-0 flex flex-col items-center justify-center px-3 text-center pointer-events-none'>{children}</div>
@@ -189,43 +205,30 @@ function LegendDot({ color }: { color: string }) {
   return <span className='inline-block h-2.5 w-2.5 rounded-full' style={{ backgroundColor: color }} aria-hidden='true' />;
 }
 
-/** عنوان قسم مؤطر وأنيق: شريط بارز مع وسم مؤطر وتلميح مميز بخط أكبر وأوضح. */
-function SectionLabel({ title, hint, icon: Icon }: { title: string; hint?: string; icon?: LucideIcon }) {
+/** عنوان قسم فخم: أيقونة في كبسولة أنيقة + عنوان واضح + شارة تلميح مميزة. */
+function SectionLabel({ title, hint, icon: Icon, extra }: { title: string; hint?: string; icon?: LucideIcon; extra?: ReactNode }) {
   return (
-    <div className='mb-5 flex flex-wrap items-center justify-between gap-3'>
-      {/* العنوان الرئيسي المؤطر */}
-      <div
-        className='inline-flex items-center gap-3 px-4 py-2 rounded-2xl border shadow-xs transition-transform duration-300 hover:scale-[1.01]'
-        style={{
-          background: 'linear-gradient(135deg, #FAFBF8 0%, #EFF4EC 100%)',
-          borderColor: '#D8E2D2',
-        }}
-      >
+    <div className='mb-6 flex flex-wrap items-center justify-between gap-3 border-b border-slate-200/80 pb-4'>
+      <div className='flex items-center gap-3'>
         <span
-          className='inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-xl text-white shadow-sm'
-          style={{ background: 'linear-gradient(135deg, #1B4332 0%, #2D6A4F 100%)' }}
+          className='inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-[#1B4332] to-[#2D6A4F] text-white shadow-xs'
         >
-          {Icon ? <Icon size={16} /> : <span className='h-2 w-2 rounded-full bg-emerald-400' />}
+          {Icon ? <Icon size={18} /> : <span className='h-2 w-2 rounded-full bg-[#C2A24E]' />}
         </span>
-        <h2 className='text-[16px] md:text-[18px] font-extrabold tracking-tight' style={{ color: '#1B2E1B', fontFamily: 'var(--font-display)' }}>
+        <h2 className='text-lg md:text-xl font-black tracking-tight text-slate-900' style={{ fontFamily: 'var(--font-display)' }}>
           {title}
         </h2>
       </div>
 
-      {/* التلميح المؤطر بخط أكبر وأوضح */}
-      {hint && (
-        <span
-          className='inline-flex items-center gap-2 px-4 py-2 rounded-2xl border text-[13px] md:text-[14px] font-bold shadow-xs'
-          style={{
-            background: 'linear-gradient(135deg, #FFFFFF 0%, #F5F7F2 100%)',
-            borderColor: '#DCE4D6',
-            color: '#2E472E',
-          }}
-        >
-          <span className='h-2 w-2 rounded-full bg-emerald-600' />
-          {hint}
-        </span>
-      )}
+      <div className='flex items-center gap-3 flex-wrap'>
+        {extra}
+        {hint && (
+          <span className='inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3.5 py-1.5 text-xs font-bold text-slate-600 shadow-2xs'>
+            <span className='h-1.5 w-1.5 rounded-full bg-emerald-500' />
+            {hint}
+          </span>
+        )}
+      </div>
     </div>
   );
 }
@@ -246,7 +249,7 @@ function PriorDebtDetailModal({
       animate={{ opacity: 1 }}
       transition={{ duration: 0.18 }}
       className='fixed inset-0 z-50 flex items-center justify-center p-4 backdrop-blur-sm'
-      style={{ backgroundColor: 'rgba(31,38,28,0.45)' }}
+      style={{ backgroundColor: 'rgba(15,23,42,0.45)' }}
       dir='rtl'
     >
       <motion.div
@@ -256,47 +259,47 @@ function PriorDebtDetailModal({
         role='dialog'
         aria-modal='true'
         aria-labelledby='prior-debt-detail-title'
-        className='max-h-[85vh] w-full max-w-3xl overflow-y-auto rounded-3xl bg-white p-6 md:p-8'
+        className='max-h-[85vh] w-full max-w-3xl overflow-y-auto rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl md:p-8'
       >
-        <div className='mb-6 flex items-center justify-between gap-3'>
-          <h3 id='prior-debt-detail-title' className='text-lg font-bold' style={{ color: C.ink }}>
+        <div className='mb-6 flex items-center justify-between gap-3 border-b border-slate-100 pb-4'>
+          <h3 id='prior-debt-detail-title' className='text-lg font-black text-slate-900'>
             تحصيل الديون السابقة — التفصيل
           </h3>
           <button
             type='button'
             onClick={onClose}
             aria-label='إغلاق نافذة التفصيل'
-            className={`inline-flex h-9 w-9 items-center justify-center rounded-xl transition-colors hover:bg-[#F7F9F4] ${FOCUS}`}
+            className={`inline-flex h-9 w-9 items-center justify-center rounded-xl text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700 ${FOCUS}`}
           >
-            <X size={18} color={C.muted} />
+            <X size={18} />
           </button>
         </div>
 
         {/* ديون التلاميذ */}
-        <div className='overflow-x-auto rounded-2xl' style={{ border: `1px solid ${C.hair}` }}>
+        <div className='overflow-x-auto rounded-xl border border-slate-200'>
           <table className='w-full text-sm'>
             <thead>
-              <tr style={{ backgroundColor: C.sage, color: C.deep }}>
-                <th className='px-3 py-2.5 text-right font-medium'>الاسم</th>
-                <th className='px-3 py-2.5 text-right font-medium'>المبلغ الأصلي</th>
-                <th className='px-3 py-2.5 text-right font-medium'>المحصّل</th>
-                <th className='px-3 py-2.5 text-right font-medium'>المتبقي</th>
+              <tr className='bg-slate-50 text-slate-700 border-b border-slate-200'>
+                <th className='px-3.5 py-3 text-right font-black'>الاسم</th>
+                <th className='px-3.5 py-3 text-right font-black'>المبلغ الأصلي</th>
+                <th className='px-3.5 py-3 text-right font-black'>المحصّل</th>
+                <th className='px-3.5 py-3 text-right font-black'>المتبقي</th>
               </tr>
             </thead>
-            <tbody>
+            <tbody className='divide-y divide-slate-100'>
               {students.length === 0 ? (
                 <tr>
-                  <td colSpan={4} className='px-3 py-6 text-center' style={{ color: C.muted }}>
+                  <td colSpan={4} className='px-3 py-6 text-center text-slate-400'>
                     لا توجد سجلات
                   </td>
                 </tr>
               ) : (
                 students.map((row) => (
-                  <tr key={row.id} style={{ borderTop: `1px solid ${C.hair}` }}>
-                    <td className='px-3 py-2.5' style={{ color: C.ink }}>{row.student_name}</td>
-                    <td className='px-3 py-2.5' style={{ color: C.ink }}><bdi dir='ltr' style={NUM}>{dinar(row.original_amount)}</bdi></td>
-                    <td className='px-3 py-2.5' style={{ color: C.collected }}><bdi dir='ltr' style={NUM}>{dinar(row.paid_amount)}</bdi></td>
-                    <td className='px-3 py-2.5 font-medium' style={{ color: C.remaining }}><bdi dir='ltr' style={NUM}>{dinar(row.outstanding_amount)}</bdi></td>
+                  <tr key={row.id} className='hover:bg-slate-50/80 transition-colors'>
+                    <td className='px-3.5 py-3 font-semibold text-slate-800'>{row.student_name}</td>
+                    <td className='px-3.5 py-3 font-mono text-slate-600'><bdi dir='ltr' style={NUM}>{dinar(row.original_amount)}</bdi></td>
+                    <td className='px-3.5 py-3 font-mono font-bold text-emerald-700'><bdi dir='ltr' style={NUM}>{dinar(row.paid_amount)}</bdi></td>
+                    <td className='px-3.5 py-3 font-mono font-bold text-amber-700'><bdi dir='ltr' style={NUM}>{dinar(row.outstanding_amount)}</bdi></td>
                   </tr>
                 ))
               )}
@@ -308,8 +311,8 @@ function PriorDebtDetailModal({
   );
 }
 
-/** ساعة المؤسسة — زخرفة مخفيّة عن قارئ الشاشة (الوقت متاح للنظام أصلاً). */
-function AnalogClock({ size = 150 }: { size?: number }) {
+/** ساعة المؤسسة — زخرفة بطابع مدرسي كلاسيكي (أخضر وذهب وأرقام واضحة). */
+function AnalogClock({ size = 135 }: { size?: number }) {
   const [now, setNow] = useState(new Date());
 
   useEffect(() => {
@@ -328,34 +331,125 @@ function AnalogClock({ size = 150 }: { size?: number }) {
   const cx = 100;
   const cy = 100;
 
+  // أرقام الساعة المدرسية الكلاسيكية 1 إلى 12
+  const numerals = [
+    { num: '12', x: 100, y: 35 },
+    { num: '1', x: 133, y: 44 },
+    { num: '2', x: 157, y: 68 },
+    { num: '3', x: 166, y: 100 },
+    { num: '4', x: 157, y: 132 },
+    { num: '5', x: 133, y: 156 },
+    { num: '6', x: 100, y: 165 },
+    { num: '7', x: 67, y: 156 },
+    { num: '8', x: 43, y: 132 },
+    { num: '9', x: 34, y: 100 },
+    { num: '10', x: 43, y: 68 },
+    { num: '11', x: 67, y: 44 },
+  ];
+
   return (
-    <svg width={size} height={size} viewBox='0 0 200 200' aria-hidden='true' focusable='false'>
-      <circle cx={cx} cy={cy} r={98} fill={C.deep} />
-      <circle cx={cx} cy={cy} r={92} fill='#FDFDFB' />
+    <svg width={size} height={size} viewBox='0 0 200 200' aria-hidden='true' focusable='false' className='drop-shadow-md select-none'>
+      <defs>
+        {/* تدرج إطار المدرسة الأخضر الملكي */}
+        <linearGradient id='clockBezel' x1='0%' y1='0%' x2='100%' y2='100%'>
+          <stop offset='0%' stopColor='#1B4332' />
+          <stop offset='50%' stopColor='#2D6A4F' />
+          <stop offset='100%' stopColor='#0F281E' />
+        </linearGradient>
+        {/* تدرج الطوق الذهبي الأكاديمي المصقول */}
+        <linearGradient id='clockGold' x1='0%' y1='0%' x2='100%' y2='100%'>
+          <stop offset='0%' stopColor='#E6CA65' />
+          <stop offset='50%' stopColor='#C89B3C' />
+          <stop offset='100%' stopColor='#8A6A1E' />
+        </linearGradient>
+      </defs>
+
+      {/* الهيكل الخارجي المدرسي */}
+      <circle cx={cx} cy={cy} r={98} fill='url(#clockBezel)' stroke='url(#clockGold)' strokeWidth={3} />
+      {/* الطوق الداخلي الذهبي */}
+      <circle cx={cx} cy={cy} r={88} fill='none' stroke='url(#clockGold)' strokeWidth={2} opacity={0.8} />
+      {/* القرص العاجي الدافئ للساعة المدرسية */}
+      <circle cx={cx} cy={cy} r={85} fill='#FFFDF8' />
+
+      {/* علامات الدقائق الكلاسيكية */}
       {Array.from({ length: 60 }).map((_, i) => {
         const major = i % 5 === 0;
         return (
           <line
             key={i}
             x1={cx}
-            y1={major ? 16 : 12}
+            y1={major ? 17 : 17}
             x2={cx}
-            y2={major ? 28 : 18}
-            stroke={major ? C.deep : '#B9BFB2'}
-            strokeWidth={major ? 4 : 1.6}
+            y2={major ? 23 : 20}
+            stroke={major ? '#1B4332' : '#CBD5E1'}
+            strokeWidth={major ? 2.5 : 1}
             strokeLinecap='round'
             transform={`rotate(${i * 6} ${cx} ${cy})`}
           />
         );
       })}
-      <line x1={cx} y1={cy + 14} x2={cx} y2={cy - 46} stroke={C.deep} strokeWidth={7} strokeLinecap='round' transform={`rotate(${hrDeg} ${cx} ${cy})`} />
-      <line x1={cx} y1={cy + 18} x2={cx} y2={cy - 70} stroke={C.deep} strokeWidth={4.5} strokeLinecap='round' transform={`rotate(${minDeg} ${cx} ${cy})`} />
+
+      {/* الأرقام المدرسية الواضحة 1 إلى 12 */}
+      {numerals.map(({ num, x, y }) => (
+        <text
+          key={num}
+          x={x}
+          y={y}
+          textAnchor='middle'
+          dominantBaseline='central'
+          fill={['12', '3', '6', '9'].includes(num) ? '#1B4332' : '#334155'}
+          fontSize={['12', '3', '6', '9'].includes(num) ? '15' : '12'}
+          fontWeight='900'
+          fontFamily='var(--font-display), sans-serif'
+        >
+          {num}
+        </text>
+      ))}
+
+      {/* اسم المدرسة في قرص الساعة */}
+      <text
+        x={cx}
+        y={cy - 22}
+        textAnchor='middle'
+        dominantBaseline='central'
+        fill='#8A6A1E'
+        fontSize='7.5'
+        fontWeight='800'
+        letterSpacing='0.12em'
+      >
+        LA PROVIDENCE
+      </text>
+
+      {/* عقرب الساعات الكلاسيكي */}
+      <line
+        x1={cx}
+        y1={cy + 10}
+        x2={cx}
+        y2={cy - 44}
+        stroke='#1B4332'
+        strokeWidth={5.5}
+        strokeLinecap='round'
+        transform={`rotate(${hrDeg} ${cx} ${cy})`}
+      />
+      {/* عقرب الدقائق */}
+      <line
+        x1={cx}
+        y1={cy + 14}
+        x2={cx}
+        y2={cy - 64}
+        stroke='#1B4332'
+        strokeWidth={3.5}
+        strokeLinecap='round'
+        transform={`rotate(${minDeg} ${cx} ${cy})`}
+      />
+      {/* عقرب الثواني — أحمر مدرسي أنيق */}
       <g transform={`rotate(${secDeg} ${cx} ${cy})`}>
-        <line x1={cx} y1={cy + 24} x2={cx} y2={cy - 78} stroke='#B5493F' strokeWidth={1.8} strokeLinecap='round' />
-        <circle cx={cx} cy={cy + 24} r={4} fill='#B5493F' />
+        <line x1={cx} y1={cy + 18} x2={cx} y2={cy - 72} stroke='#DC2626' strokeWidth={1.6} strokeLinecap='round' />
+        <circle cx={cx} cy={cy + 18} r={3.5} fill='#DC2626' />
       </g>
-      <circle cx={cx} cy={cy} r={6.5} fill={C.deep} />
-      <circle cx={cx} cy={cy} r={2.4} fill='#FDFDFB' />
+      {/* سرّة المركز الذهبية */}
+      <circle cx={cx} cy={cy} r={5} fill='url(#clockGold)' />
+      <circle cx={cx} cy={cy} r={2} fill='#1B4332' />
     </svg>
   );
 }
@@ -374,7 +468,7 @@ const cardRise: Variants = {
 };
 
 /**
- * بطاقة مؤشّر بخلفية متدرجة غنية — سطح ملوّن بدل الأبيض، كلّ بطاقة بلونها الدلاليّ.
+ * بطاقة مؤشّر بخلفية متدرجة غنية — ألوان متدرجة حية وخط كبير مقروء بوضوح.
  */
 function StatCard({
   label,
@@ -382,63 +476,74 @@ function StatCard({
   icon: Icon,
   chipBg,
   chipColor,
+  valueColor,
   hint,
   gradFrom,
   gradTo,
+  children,
 }: {
   label: string;
   value: ReactNode;
   icon: LucideIcon;
-  chipBg: string;
-  chipColor: string;
+  chipBg?: string;
+  chipColor?: string;
   valueColor?: string;
   hint?: string;
   gradFrom?: string;
   gradTo?: string;
+  children?: ReactNode;
 }) {
-  const from = gradFrom ?? chipColor;
-  const to   = gradTo   ?? chipBg;
+  const from = gradFrom || chipColor || '#1B4332';
+  const to = gradTo || chipBg || '#2D6A4F';
+
   return (
     <motion.div
       variants={cardRise}
-      className='card-interactive group relative flex flex-col justify-between rounded-3xl p-6 transition-all duration-300 hover:-translate-y-1 hover:shadow-2xl overflow-hidden'
+      className='card-interactive group relative flex flex-col justify-between overflow-hidden rounded-3xl p-6 shadow-lg transition-all duration-300 hover:-translate-y-1 hover:shadow-2xl'
       style={{
         background: `linear-gradient(135deg, ${from} 0%, ${to} 100%)`,
-        boxShadow: `0 8px 32px -8px ${from}66`,
+        boxShadow: `0 10px 30px -6px ${from}66`,
       }}
     >
-      {/* طبقة زجاجية علوية */}
+      {/* طبقة زجاجية ناعمة علوية */}
       <div
         className='pointer-events-none absolute inset-0'
-        style={{ background: 'linear-gradient(180deg,rgba(255,255,255,0.14) 0%,rgba(255,255,255,0.02) 60%)' }}
+        style={{ background: 'linear-gradient(180deg, rgba(255,255,255,0.16) 0%, rgba(255,255,255,0.02) 60%)' }}
       />
-      {/* وهج دائري خلفي */}
+      {/* وهج دائري خلفي خفيف */}
       <div
         className='pointer-events-none absolute -top-10 -right-10 h-36 w-36 rounded-full'
         style={{ background: 'rgba(255,255,255,0.12)', filter: 'blur(28px)' }}
       />
+
       <div className='relative'>
         <div className='flex items-center justify-between gap-3'>
-          <p className='text-[13px] font-bold tracking-tight text-white/85'>
+          <p className='text-[14px] font-black tracking-tight text-white/95'>
             {label}
           </p>
           <span
-            className='inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl shadow-md transition-transform duration-300 group-hover:scale-110'
-            style={{ backgroundColor: 'rgba(255,255,255,0.22)', color: '#fff' }}
+            className='inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl shadow-md transition-transform duration-300 group-hover:scale-110'
+            style={{ backgroundColor: 'rgba(255,255,255,0.22)', color: '#ffffff' }}
             aria-hidden='true'
           >
-            <Icon size={19} />
+            <Icon size={20} />
           </span>
         </div>
-        <p
-          className='mt-4 text-[32px] md:text-[34px] leading-none font-extrabold tracking-tight text-white'
-          style={{ fontFamily: 'var(--font-display)', ...NUM }}
+
+        {/* خط الأرقام: كبير جداً، أسود عريض، وواضح ومقروء بامتياز */}
+        <div
+          className='mt-4 text-[32px] sm:text-[36px] xl:text-[40px] leading-none font-black tracking-tight text-white'
+          style={{ ...NUM, fontFamily: 'var(--font-display)', color: valueColor || '#ffffff' }}
         >
           {value}
-        </p>
+        </div>
+
+        {children}
       </div>
+
       {hint && (
-        <p className='relative mt-4 text-xs font-medium leading-relaxed text-white/60'>
+        <p className='relative mt-4 text-xs font-medium leading-relaxed text-white/80 flex items-center gap-1.5 pt-3 border-t border-white/15'>
+          <span className='h-1.5 w-1.5 rounded-full bg-white/60' />
           {hint}
         </p>
       )}
@@ -446,8 +551,7 @@ function StatCard({
   );
 }
 
-
-/** بطاقة ثانوية: سطح رماديّ ناعم مسطّح — أقلّ وزناً بصريّاً من البطاقات الأساسية. */
+/** بطاقة ثانوية: تصميم كارت ناعم وواضح. */
 function MiniStat({
   label,
   value,
@@ -460,20 +564,21 @@ function MiniStat({
   hint?: string;
 }) {
   return (
-    <motion.div variants={cardRise} className='rounded-3xl border p-6' style={{ backgroundColor: C.soft, borderColor: C.hair }}>
-      <div className='flex items-center gap-2'>
-        <Icon size={16} style={{ color: C.muted }} aria-hidden='true' />
-        <p className='text-[13px] font-bold' style={{ color: C.muted }}>
-          {label}
-        </p>
+    <motion.div
+      variants={cardRise}
+      className='rounded-2xl border border-slate-200/90 bg-white p-5 shadow-[0_2px_12px_rgba(0,0,0,0.03)] transition-all duration-300 hover:border-slate-300 hover:shadow-md'
+    >
+      <div className='flex items-center justify-between gap-2'>
+        <p className='text-xs font-bold text-slate-600'>{label}</p>
+        <span className='inline-flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-50 text-emerald-800'>
+          <Icon size={16} aria-hidden='true' />
+        </span>
       </div>
-      <p className='mt-2.5 text-[24px] leading-none font-extrabold' style={{ color: C.ink, fontFamily: 'var(--font-display)', ...NUM }}>
+      <div className='mt-2.5 text-[22px] leading-none font-black tracking-tight tabular-nums text-slate-900' style={{ ...NUM }}>
         {value}
-      </p>
+      </div>
       {hint && (
-        <p className='mt-2 text-xs' style={{ color: C.muted }}>
-          {hint}
-        </p>
+        <p className='mt-2 text-[11px] font-medium text-slate-500'>{hint}</p>
       )}
     </motion.div>
   );
@@ -504,18 +609,22 @@ function EnrollmentDonutCard({
   return (
     <motion.div
       variants={cardRise}
-      className='card-interactive relative flex h-full flex-col justify-between rounded-3xl p-6 md:p-8 transition-all duration-300 hover:shadow-2xl overflow-hidden'
+      className='card-interactive relative flex h-full flex-col justify-between overflow-hidden rounded-3xl p-6 md:p-8 transition-all duration-300 hover:shadow-2xl'
       style={{
-        background: 'linear-gradient(135deg, #1B4332 0%, #065F46 60%, #047857 100%)',
-        boxShadow: '0 12px 40px -8px rgba(27,67,50,0.55)',
+        background: 'linear-gradient(135deg, #064E3B 0%, #0F3826 40%, #1B4D36 100%)',
+        boxShadow: '0 14px 40px -8px rgba(6, 78, 59, 0.55)',
       }}
     >
       {/* طبقة زجاجية علوية */}
-      <div className='pointer-events-none absolute inset-0'
-        style={{ background: 'linear-gradient(180deg,rgba(255,255,255,0.12) 0%,rgba(255,255,255,0.01) 50%)' }} />
-      {/* وهج دائري خلفي */}
-      <div className='pointer-events-none absolute -top-12 -left-12 h-48 w-48 rounded-full'
-        style={{ background: 'rgba(253,230,138,0.1)', filter: 'blur(40px)' }} />
+      <div
+        className='pointer-events-none absolute inset-0'
+        style={{ background: 'linear-gradient(180deg, rgba(255,255,255,0.14) 0%, rgba(255,255,255,0.01) 50%)' }}
+      />
+      {/* وهج ذهبي خلفي */}
+      <div
+        className='pointer-events-none absolute -top-12 -left-12 h-48 w-48 rounded-full'
+        style={{ background: 'rgba(253, 230, 138, 0.12)', filter: 'blur(40px)' }}
+      />
 
       <div className='relative flex items-center justify-between gap-3'>
         <div className='flex items-center gap-3'>
@@ -524,64 +633,78 @@ function EnrollmentDonutCard({
             style={{ backgroundColor: 'rgba(253,230,138,0.25)', color: '#FDE68A' }}
             aria-hidden='true'
           >
-            <GraduationCap size={20} />
+            <GraduationCap size={22} />
           </span>
           <div>
-            <h2 className='text-[16px] font-bold tracking-tight text-white'>
+            <h2 className='text-[16px] font-black tracking-tight text-white'>
               نسبة الترسيم
             </h2>
-            <p className='mt-0.5 text-xs font-semibold text-white/60'>
+            <p className='mt-0.5 text-xs font-bold text-white/70'>
               السنة النشطة: {yearName}
             </p>
           </div>
         </div>
-        <span className='inline-flex items-center px-3 py-1 rounded-full text-xs font-bold'
-          style={{ backgroundColor: 'rgba(253,230,138,0.22)', color: '#FDE68A' }}>
+        <span
+          className='inline-flex items-center px-3.5 py-1 rounded-full text-xs font-black shadow-xs'
+          style={{ backgroundColor: 'rgba(253,230,138,0.25)', color: '#FDE68A', border: '1px solid rgba(253,230,138,0.35)' }}
+        >
           {pct.toFixed(1)}٪
         </span>
       </div>
 
       <div className='relative my-6 flex flex-1 items-center justify-center'>
         <RatioDonut
-          size={210}
-          stroke={18}
+          size={215}
+          stroke={17}
           progress={progress}
           track='rgba(255,255,255,0.12)'
           color='#F59E0B'
+          colorEnd='#FDE68A'
           label={`نسبة التلاميذ الذين دفعوا الترسيم ${pct.toFixed(1)} بالمئة من إجمالي ${total} تلميذاً`}
         >
           <span
-            className='text-[38px] leading-none font-extrabold tracking-tight text-white'
+            className='text-[42px] leading-none font-black tracking-tight text-white'
             style={{ fontFamily: 'var(--font-display)', ...NUM }}
           >
             <AnimatedInt value={total} />
           </span>
-          <span className='mt-2 text-xs font-semibold text-white/60'>
+          <span className='mt-2 text-xs font-bold text-white/75'>
             إجمالي التلاميذ
           </span>
-          <span className='mt-2 text-xs font-extrabold px-2.5 py-0.5 rounded-full'
-            style={{ backgroundColor: 'rgba(253,230,138,0.22)', color: '#FDE68A', ...NUM }}>
+          <span
+            className='mt-2.5 text-xs font-black px-3 py-1 rounded-full shadow-xs'
+            style={{
+              backgroundColor: 'rgba(253,230,138,0.25)',
+              color: '#FDE68A',
+              border: '1px solid rgba(253,230,138,0.4)',
+              ...NUM,
+            }}
+          >
             {pct.toFixed(1)}٪ تم الترسيم
           </span>
         </RatioDonut>
       </div>
 
       <div className='relative grid grid-cols-2 gap-3.5'>
-        <div className='rounded-2xl p-4 transition-transform hover:scale-[1.02]'
-          style={{ backgroundColor: 'rgba(253,230,138,0.15)', border: '1px solid rgba(253,230,138,0.25)' }}>
-          <p className='flex items-center gap-2 text-xs font-bold' style={{ color: '#FDE68A' }}>
+        <div
+          className='rounded-2xl p-4 transition-transform hover:scale-[1.02]'
+          style={{ backgroundColor: 'rgba(253,230,138,0.18)', border: '1px solid rgba(253,230,138,0.3)' }}
+        >
+          <p className='flex items-center gap-2 text-xs font-black' style={{ color: '#FDE68A' }}>
             <LegendDot color='#F59E0B' /> دَفعوا الترسيم
           </p>
-          <p className='mt-2 text-[22px] leading-none font-extrabold text-white' style={{ ...NUM }}>
+          <p className='mt-2 text-[26px] leading-none font-black text-white' style={{ ...NUM }}>
             {safePaid}
           </p>
         </div>
-        <div className='rounded-2xl p-4 transition-transform hover:scale-[1.02]'
-          style={{ backgroundColor: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.15)' }}>
-          <p className='flex items-center gap-2 text-xs font-bold text-white/70'>
-            <LegendDot color='rgba(255,255,255,0.5)' /> لم يدفعوا بعد
+        <div
+          className='rounded-2xl p-4 transition-transform hover:scale-[1.02]'
+          style={{ backgroundColor: 'rgba(255,255,255,0.10)', border: '1px solid rgba(255,255,255,0.18)' }}
+        >
+          <p className='flex items-center gap-2 text-xs font-black text-white/80'>
+            <LegendDot color='rgba(255,255,255,0.6)' /> لم يدفعوا بعد
           </p>
-          <p className='mt-2 text-[22px] leading-none font-extrabold text-white/85' style={{ ...NUM }}>
+          <p className='mt-2 text-[26px] leading-none font-black text-white/95' style={{ ...NUM }}>
             {safeUnpaid}
           </p>
         </div>
@@ -614,48 +737,61 @@ function PriorDebtPanel({
       style={{
         background: 'linear-gradient(135deg, #FAF8F5 0%, #F5EFE4 50%, #ECE4D0 100%)',
         borderColor: '#E6DCB8',
-        boxShadow: '0 8px 32px -8px rgba(138, 106, 30, 0.12)',
+        boxShadow: '0 10px 32px -8px rgba(138, 106, 30, 0.15)',
       }}
       aria-labelledby='prior-debt-title'
     >
       <div
         className='pointer-events-none absolute -top-10 -right-10 h-40 w-40 rounded-full'
-        style={{ background: 'rgba(200, 155, 60, 0.12)', filter: 'blur(30px)' }}
+        style={{ background: 'rgba(200, 155, 60, 0.15)', filter: 'blur(30px)' }}
       />
-      <div className='relative mb-6 flex items-center gap-3'>
-        <span
-          className='inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl shadow-sm'
-          style={{ backgroundColor: '#E3EFE4', color: '#15803D' }}
-          aria-hidden='true'
-        >
-          <History size={19} />
-        </span>
-        <div>
-          <h2 id='prior-debt-title' className='text-[16px] font-bold tracking-tight' style={{ color: C.ink }}>
-            تحصيل الديون السابقة
-          </h2>
-          <p className='text-xs font-semibold' style={{ color: C.muted }}>
-            سجل متابعة المستحقات القديمة
-          </p>
+      <div className='relative mb-6 flex items-center justify-between gap-3'>
+        <div className='flex items-center gap-3'>
+          <span
+            className='inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl shadow-sm'
+            style={{ backgroundColor: '#E3EFE4', color: '#15803D' }}
+            aria-hidden='true'
+          >
+            <History size={20} />
+          </span>
+          <div>
+            <h3 id='prior-debt-title' className='text-[18px] font-black tracking-tight text-slate-900'>
+              تحصيل الديون السابقة
+            </h3>
+            <p className='text-xs font-bold text-slate-500'>
+              سجل متابعة المستحقات القديمة وسدادها
+            </p>
+          </div>
         </div>
+
+        <button
+          type='button'
+          onClick={onOpenDetail}
+          aria-label='عرض تفصيل تحصيل الديون السابقة'
+          className={`rounded-2xl px-5 py-2.5 text-xs font-black text-white shadow-sm transition-all hover:brightness-110 active:scale-[0.98] ${FOCUS}`}
+          style={{ background: 'linear-gradient(135deg, #1B4332 0%, #2D6A4F 100%)' }}
+        >
+          عرض التفصيل
+        </button>
       </div>
 
       <div className='relative grid grid-cols-1 items-center gap-6 md:grid-cols-[auto_1fr] md:gap-8'>
-        {/* حلقة النسبة */}
+        {/* حلقة النسبة الاحترافية */}
         <div className='flex justify-center'>
           <RatioDonut
-            size={140}
+            size={145}
             stroke={13}
             progress={progress}
             track='rgba(21, 128, 61, 0.15)'
             color='#15803D'
+            colorEnd='#34D399'
             delay={0.1}
             label={`نسبة تحصيل الديون السابقة ${pct.toFixed(1)} بالمئة`}
           >
-            <span className='text-[26px] leading-none font-extrabold text-[#15803D]' style={{ fontFamily: 'var(--font-display)', ...NUM }}>
+            <span className='text-[28px] leading-none font-black text-[#15803D]' style={{ fontFamily: 'var(--font-display)', ...NUM }}>
               {pct.toFixed(1)}٪
             </span>
-            <span className='mt-1.5 text-xs font-bold text-[#15803D]/80'>
+            <span className='mt-1.5 text-xs font-black text-[#15803D]/85'>
               نسبة التحصيل
             </span>
           </RatioDonut>
@@ -663,43 +799,39 @@ function PriorDebtPanel({
 
         {/* المجموع والمبلغان والتفصيل */}
         <div>
-          <p className='text-[13px] font-medium' style={{ color: C.muted }}>
+          <p className='text-sm font-extrabold text-slate-600'>
             مجموع الديون السابقة
           </p>
-          <p className='mt-2 text-[28px] leading-none font-extrabold' style={{ color: C.ink, fontFamily: 'var(--font-display)', ...NUM }}>
+          <p className='mt-1 text-[32px] sm:text-[36px] leading-none font-black text-slate-900' style={{ fontFamily: 'var(--font-display)', ...NUM }}>
             <bdi dir='ltr'>{dinar(total)}</bdi>
           </p>
 
-          <div className='mt-6 grid grid-cols-1 gap-3 sm:grid-cols-2'>
-            <div className='rounded-2xl p-4 border transition-transform hover:scale-[1.02]' style={{ background: 'linear-gradient(135deg, #EFFBF2 0%, #DCFCE7 100%)', borderColor: '#BBF7D0' }}>
-              <p className='text-xs font-bold' style={{ color: '#166534' }}>
+          <div className='mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2'>
+            <div
+              className='rounded-2xl p-4 border transition-transform hover:scale-[1.02]'
+              style={{ background: 'linear-gradient(135deg, #EFFBF2 0%, #DCFCE7 100%)', borderColor: '#BBF7D0' }}
+            >
+              <p className='text-xs font-black text-[#166534]'>
                 المحصّل
               </p>
-              <p className='mt-1.5 text-xl font-extrabold' style={{ color: '#15803D' }}>
+              <p className='mt-1.5 text-[24px] font-black text-[#15803D] leading-none'>
                 <bdi dir='ltr' style={NUM}>{dinar(collected)}</bdi>
               </p>
             </div>
-            <div className='rounded-2xl p-4 border transition-transform hover:scale-[1.02]' style={{ background: 'linear-gradient(135deg, #FFFBEB 0%, #FEF3C7 100%)', borderColor: '#FDE68A' }}>
-              <p className='text-xs font-bold' style={{ color: '#92400E' }}>
+            <div
+              className='rounded-2xl p-4 border transition-transform hover:scale-[1.02]'
+              style={{ background: 'linear-gradient(135deg, #FFFBEB 0%, #FEF3C7 100%)', borderColor: '#FDE68A' }}
+            >
+              <p className='text-xs font-black text-[#92400E]'>
                 المتبقّي
               </p>
-              <p className='mt-1.5 text-xl font-extrabold' style={{ color: '#B45309' }}>
+              <p className='mt-1.5 text-[24px] font-black text-[#B45309] leading-none'>
                 <bdi dir='ltr' style={NUM}>{dinar(remaining)}</bdi>
               </p>
             </div>
           </div>
 
-          <button
-            type='button'
-            onClick={onOpenDetail}
-            aria-label='عرض تفصيل تحصيل الديون السابقة'
-            className={`mt-6 rounded-2xl px-5 py-2.5 text-sm font-bold text-white shadow-md transition-all hover:shadow-lg hover:brightness-105 active:scale-95 ${FOCUS}`}
-            style={{ background: 'linear-gradient(135deg, #1B4332 0%, #2D6A4F 100%)' }}
-          >
-            عرض التفصيل
-          </button>
-
-          <p className='mt-4 text-xs leading-relaxed' style={{ color: C.muted }}>
+          <p className='mt-4 text-xs font-medium leading-relaxed text-slate-500'>
             التفصيل مفصول في جدولين: ديون التلاميذ وديون الإطارات، كلٌّ في جدوله.
           </p>
         </div>
@@ -724,18 +856,13 @@ function InteractiveGreetingBadge({ isMorning }: { isMorning: boolean }) {
     return () => clearInterval(interval);
   }, [isMorning]);
 
+  // original state preserved: view toggle + isMorning interval (unchanged logic)
   if (!isMorning) {
     return (
       <div
-        className='relative flex h-20 w-20 md:h-22 md:w-22 shrink-0 items-center justify-center rounded-3xl p-1 shadow-lg border'
-        style={{
-          background: 'linear-gradient(135deg, #1E1B4B 0%, #312E81 50%, #4338CA 100%)',
-          borderColor: '#6366F1',
-          boxShadow: '0 8px 24px -4px rgba(79, 70, 229, 0.4)',
-        }}
+        className='relative flex h-20 w-20 shrink-0 items-center justify-center rounded-2xl border border-slate-200/90 bg-white shadow-xs md:h-22 md:w-22'
       >
-        <Moon size={34} className='text-amber-300 drop-shadow-md animate-pulse' />
-        <span className='absolute -top-1 -right-1 h-3 w-3 rounded-full bg-amber-400 animate-ping' />
+        <Moon size={32} className='text-amber-500' />
       </div>
     );
   }
@@ -744,24 +871,11 @@ function InteractiveGreetingBadge({ isMorning }: { isMorning: boolean }) {
     <button
       type='button'
       onClick={() => setView((prev) => (prev === 'coffee' ? 'rose' : 'coffee'))}
-      className='group relative flex h-20 w-20 md:h-22 md:w-22 shrink-0 cursor-pointer items-center justify-center rounded-3xl p-1 shadow-xl border transition-all duration-500 hover:scale-105 active:scale-95'
-      style={{
-        background: 'linear-gradient(135deg, #1B4332 0%, #2D6A4F 50%, #065F46 100%)',
-        borderColor: '#E6DCB8',
-        boxShadow: '0 10px 30px -6px rgba(27, 67, 50, 0.45), 0 0 16px 2px rgba(245, 158, 11, 0.25)',
-      }}
+      className='group relative flex h-20 w-20 shrink-0 cursor-pointer items-center justify-center rounded-2xl border border-slate-200/90 bg-white p-1 shadow-xs transition-all duration-300 hover:scale-[1.03] hover:border-emerald-500/40 hover:shadow-md active:scale-[0.98] md:h-22 md:w-22'
       title={view === 'coffee' ? 'اضغط للتبديل إلى الوردة الصباحية' : 'اضغط للتبديل إلى فنجان القهوة'}
     >
-      {/* وهج ذهبي خلفي متحرك */}
-      <div
-        className='pointer-events-none absolute inset-0 rounded-3xl opacity-75 transition-opacity duration-700 group-hover:opacity-100'
-        style={{
-          background: 'radial-gradient(circle at 50% 50%, rgba(253, 230, 138, 0.35), transparent 70%)',
-        }}
-      />
-
       {/* المحتوى المتحرك: قهوة ساخنة أو وردة متفتحة */}
-      <div className='relative h-full w-full overflow-hidden rounded-[22px]'>
+      <div className='relative h-full w-full overflow-hidden rounded-xl'>
         {view === 'coffee' ? (
           <motion.div
             key='coffee'
@@ -774,13 +888,13 @@ function InteractiveGreetingBadge({ isMorning }: { isMorning: boolean }) {
             <img
               src={morningCoffeeImg}
               alt='فنجان قهوة ساخنة وبخار صاعد'
-              className='h-full w-full object-cover rounded-[22px]'
+              className='h-full w-full object-cover rounded-xl'
             />
             {/* بخار متصاعد ناعم */}
-            <div className='pointer-events-none absolute inset-x-0 top-1 flex justify-center gap-1 opacity-85'>
-              <span className='h-4 w-1 rounded-full bg-amber-200/80 blur-[1px] animate-bounce' style={{ animationDuration: '1.8s' }} />
-              <span className='h-5 w-1 rounded-full bg-amber-100/95 blur-[1px] animate-bounce' style={{ animationDuration: '2.2s', animationDelay: '0.4s' }} />
-              <span className='h-3.5 w-1 rounded-full bg-amber-200/80 blur-[1px] animate-bounce' style={{ animationDuration: '1.6s', animationDelay: '0.8s' }} />
+            <div className='pointer-events-none absolute inset-x-0 top-1 flex justify-center gap-1 opacity-60'>
+              <span className='h-4 w-1 rounded-full bg-white/80 blur-[1px] animate-bounce' style={{ animationDuration: '1.8s' }} />
+              <span className='h-5 w-1 rounded-full bg-white/90 blur-[1px] animate-bounce' style={{ animationDuration: '2.2s', animationDelay: '0.4s' }} />
+              <span className='h-3.5 w-1 rounded-full bg-white/80 blur-[1px] animate-bounce' style={{ animationDuration: '1.6s', animationDelay: '0.8s' }} />
             </div>
           </motion.div>
         ) : (
@@ -792,11 +906,11 @@ function InteractiveGreetingBadge({ isMorning }: { isMorning: boolean }) {
             transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
             className='relative flex h-full w-full items-center justify-center'
             style={{
-              background: 'radial-gradient(circle, #FFE4E6 0%, #FDA4AF 60%, #E11D48 100%)',
+              background: 'radial-gradient(circle, #FDF2F4 0%, #FEE2E2 70%)',
             }}
           >
             {/* وردة متفتحة بتصميم فيكتور فاخر */}
-            <svg viewBox='0 0 100 100' className='h-16 w-16 drop-shadow-md' aria-hidden='true'>
+            <svg viewBox='0 0 100 100' className='h-16 w-16 drop-shadow-sm' aria-hidden='true'>
               <circle cx='50' cy='50' r='42' fill='#FFF1F2' opacity='0.4' />
               {/* أوراق خضراء خلفية */}
               <path d='M25 65 C15 50 35 35 45 48 Z' fill='#059669' opacity='0.85' />
@@ -817,11 +931,7 @@ function InteractiveGreetingBadge({ isMorning }: { isMorning: boolean }) {
 
       {/* مؤشر النقطة الصغيرة المتغيرة أسفل الشارة */}
       <span
-        className='absolute -bottom-1.5 px-2 py-0.5 rounded-full text-[9px] font-black tracking-widest text-white shadow-xs'
-        style={{
-          background: view === 'coffee' ? '#1B4332' : '#BE123C',
-          border: '1px solid rgba(255,255,255,0.5)',
-        }}
+        className='absolute -bottom-1.5 rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[9px] font-black tracking-widest text-slate-700 shadow-2xs'
       >
         {view === 'coffee' ? '☕' : '🌹'}
       </span>
@@ -845,29 +955,51 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [priorDebtDetailOpen, setPriorDebtDetailOpen] = useState(false);
+  const [financialPeriod, setFinancialPeriod] = useState<'today' | 'month'>('today');
 
   useEffect(() => {
+    let mounted = true;
     const controller = new AbortController();
     setLoading(true);
     setError('');
 
     fetchDashboard(controller.signal)
       .then((result) => {
-        if (!controller.signal.aborted) setData(result);
+        if (mounted) setData(result);
       })
       .catch((e) => {
-        if (!controller.signal.aborted) setError(errorMessage(e));
+        if (!mounted) return;
+        const msg = String(e?.message ?? '').toLowerCase();
+        if (e?.name === 'AbortError' || msg.includes('abort')) {
+          return;
+        }
+        const err = errorMessage(e);
+        if (err) setError(err);
       })
       .finally(() => {
-        if (!controller.signal.aborted) setLoading(false);
+        if (mounted) setLoading(false);
       });
 
-    return () => controller.abort();
+    return () => {
+      mounted = false;
+      controller.abort();
+    };
   }, []);
 
   const today = data?.cash?.today;
   const month = data?.cash?.month;
   const yearName = data?.academic_year?.name ?? '—';
+
+  // الحسابات المالية للكروت حسب الفترة المختارة (اليوم أو الشهر):
+  const currentFigures = financialPeriod === 'today' ? today : month;
+  const periodLabel = financialPeriod === 'today' ? 'اليوم' : 'الشهر';
+  const periodHint = financialPeriod === 'today' ? 'اليوم' : 'هذا الشهر';
+
+  const periodIncome = Number(currentFigures?.income ?? 0);
+  const periodOldDebts = Number(currentFigures?.old_debt_collections ?? currentFigures?.old_debts ?? 0);
+  const periodCashIn = Number(currentFigures?.cash_in ?? (periodIncome + periodOldDebts));
+  const periodNetIncome = Number(currentFigures?.net_income ?? (periodIncome - Number(currentFigures?.expenses ?? 0)));
+  const periodExpenses = Number(currentFigures?.expenses ?? 0);
 
   const totalActive = data ? (data.total_active_students ?? data.total_students ?? 0) : 0;
   const paidReg = data ? (Number((data as any).paid_registration_count) || 0) : 0;
@@ -904,65 +1036,45 @@ export default function Dashboard() {
   const greetName = user?.first_name && !['مدير', 'النظام', 'Admin', 'admin'].includes(user.first_name) ? `، ${user.first_name}` : '';
 
   return (
-    <div className='p-6 md:p-8' dir='rtl'>
-      {/* الرأس: تحية واضحة ومؤطرة + شارة القهوة/الوردة التفاعلية + ساعة المؤسسة */}
-      <header className='mb-8 flex flex-wrap items-center justify-between gap-6'>
-        <div className='flex items-center gap-5'>
-          <InteractiveGreetingBadge isMorning={isMorning} />
-          <div className='min-w-0'>
-            {/* وسم مؤطر للتحية */}
-            <div
-              className='inline-flex items-center gap-2.5 px-4 py-1.5 rounded-2xl border shadow-xs'
-              style={{
-                background: 'linear-gradient(135deg, #FAFBF8 0%, #EFF4EC 100%)',
-                borderColor: '#D4DECE',
-              }}
-            >
-              <h1 className='truncate text-2xl md:text-3xl leading-tight font-extrabold tracking-tight text-[#1B2E1B]' style={{ fontFamily: 'var(--font-display)' }}>
+    <div className='relative min-h-full overflow-hidden text-slate-800' dir='rtl'>
+      {/* خلفية جمالية ناعمة مع تدرجات رقيقة */}
+      <div className='pointer-events-none absolute inset-0' aria-hidden='true'>
+        <div className='absolute inset-0 bg-gradient-to-b from-white via-[#F8FAF9] to-[#F1F5F2]' />
+        <div className='absolute -top-32 -left-32 h-96 w-96 rounded-full bg-emerald-100/40 blur-3xl' />
+        <div className='absolute bottom-0 right-0 h-[28rem] w-[28rem] rounded-full bg-amber-100/30 blur-3xl' />
+      </div>
+
+      <div className='relative mx-auto w-full max-w-[1400px] px-6 py-8 md:px-10 md:py-10'>
+        {/* الصاري التحريري: تحية ثنائية اللغة + شارة الصباح + ساعة المؤسّسة */}
+        <header className='mb-10 grid grid-cols-1 items-center gap-6 lg:grid-cols-[1fr_auto] xl:grid-cols-[1.4fr_auto_auto]'>
+          <div className='flex items-center gap-5'>
+            <InteractiveGreetingBadge isMorning={isMorning} />
+            <div className='min-w-0'>
+              <p className='text-xs font-bold uppercase tracking-wider text-emerald-800'>
+                Complexe La Providence — {isMorning ? 'Good morning · Bonjour' : 'Good evening · Bonsoir'}
+              </p>
+              <h1 className='mt-1 truncate text-2xl md:text-[32px] leading-tight font-black tracking-tight text-slate-900' style={{ fontFamily: 'var(--font-display)' }}>
                 {isMorning ? 'صباح الخير' : 'مساء الخير'}
                 {greetName}
               </h1>
-            </div>
 
-            {/* جملة جرد اليوم مؤطرة وواضحة جداً */}
-            <div className='mt-2'>
-              <div
-                className='inline-flex items-center gap-2.5 px-4 py-1.5 rounded-2xl border shadow-xs'
-                style={{
-                  background: 'linear-gradient(135deg, #FFFFFF 0%, #F5F7F2 100%)',
-                  borderColor: '#D8E2D2',
-                }}
-              >
-                <span className='inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-emerald-100 text-emerald-800 border border-emerald-200'>
-                  <Calendar size={13} />
+              {/* جرد اليوم: مؤشّر حالة نظيف */}
+              <div className='mt-3'>
+                <span className='inline-flex items-center gap-2 rounded-xl border border-slate-200/80 bg-white/90 px-3.5 py-1.5 text-xs font-bold text-slate-700 shadow-2xs'>
+                  <Calendar size={14} className='text-[#C2A24E]' />
+                  جرد اليوم: <span className='font-mono font-black tabular-nums text-slate-900'>{data?.current_date ?? ''}</span>
                 </span>
-                <p className='text-[13px] md:text-[14px] font-extrabold text-[#2D452B]'>
-                  جرد اليوم: <span className='font-black text-[#1B4332]'>{data?.current_date ?? ''}</span>
-                </p>
               </div>
             </div>
           </div>
-        </div>
 
-        {/* شارة اسم المؤسسة الملكية الفاخرة — مجمّع العناية | COMPLEXE LA PROVIDENCE */}
-        <div
-          className='hidden lg:flex items-center gap-4 px-6 py-3 rounded-3xl border shadow-sm transition-all duration-500 hover:shadow-lg hover:scale-[1.01]'
-          style={{
-            background: 'linear-gradient(135deg, #FAFBF8 0%, #F2F6EE 50%, #E8EFE2 100%)',
-            borderColor: '#D0DCC8',
-            boxShadow: '0 6px 24px -6px rgba(27, 67, 50, 0.1)',
-          }}
-        >
-          {/* لوغو المدرسة مؤطر بحواف فخمة مثل شارة القهوة */}
+          {/* شارة اسم المؤسسة */}
           <div
-            className='relative flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl p-0.5 shadow-md border transition-all duration-300'
-            style={{
-              background: 'linear-gradient(135deg, #1B4332 0%, #2D6A4F 50%, #065F46 100%)',
-              borderColor: '#E6DCB8',
-              boxShadow: '0 4px 14px -2px rgba(27, 67, 50, 0.35)',
-            }}
+            className='hidden lg:flex items-center gap-4 rounded-2xl border border-slate-200/80 bg-white/90 px-5 py-3.5 shadow-xs backdrop-blur-md transition-all duration-300 hover:border-slate-300 lg:col-span-1'
           >
-            <div className='w-full h-full rounded-[14px] overflow-hidden bg-white/95 p-1 flex items-center justify-center'>
+            <div
+              className='relative flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border border-slate-200/80 bg-white p-1 shadow-2xs'
+            >
               <img
                 src='/image/logo.jpg'
                 alt='شعار مدرسة العناية'
@@ -973,137 +1085,238 @@ export default function Dashboard() {
                 }}
               />
             </div>
-          </div>
 
-          <div className='flex flex-col items-start justify-center'>
-            <div className='flex items-center gap-2'>
+            <div className='flex flex-col items-start justify-center'>
               <h2
-                className='text-[19px] xl:text-[22px] font-black tracking-widest uppercase'
-                style={{
-                  background: 'linear-gradient(135deg, #1B4332 0%, #2D6A4F 60%, #065F46 100%)',
-                  WebkitBackgroundClip: 'text',
-                  WebkitTextFillColor: 'transparent',
-                  letterSpacing: '0.07em',
-                  fontFamily: 'var(--font-display)',
-                }}
+                className='text-[16px] xl:text-[18px] font-black tracking-wider uppercase text-slate-900'
+                style={{ fontFamily: 'var(--font-display)' }}
               >
                 COMPLEXE LA PROVIDENCE
               </h2>
-            </div>
 
-            <div className='mt-0.5 flex items-center gap-2.5'>
-              <span className='text-[10.5px] font-extrabold tracking-widest text-[#6B7D67] uppercase'>
-                Établissement Privé d’Enseignement
-              </span>
-              <span className='h-1 w-1 rounded-full bg-[#1B4332]/40' />
-              <span className='text-[11.5px] font-black text-[#2D6A4F]'>
-                مجمّع العناية التربوي
-              </span>
-            </div>
-          </div>
-        </div>
-
-        {/* ساعة المؤسسة — أعلى اليسار بالقياس الكامل الأصلي */}
-        <div
-          className='flex items-center gap-5 px-6 py-3.5 rounded-3xl border shadow-sm transition-all duration-300 hover:shadow-md'
-          style={{
-            background: 'linear-gradient(135deg, #FAFBF8 0%, #EFF4EC 100%)',
-            borderColor: '#D4DECE',
-          }}
-        >
-          <div className='flex flex-col items-end gap-2 text-right'>
-            {/* وسم مؤطر لتوقيت المؤسسة */}
-            <div
-              className='inline-flex items-center gap-2 px-3.5 py-1 rounded-xl shadow-xs'
-              style={{
-                background: 'linear-gradient(135deg, #1B4332 0%, #2D6A4F 100%)',
-                color: '#FFFFFF',
-              }}
-            >
-              <span className='h-2 w-2 rounded-full bg-emerald-400 animate-pulse' />
-              <p className='text-[13px] md:text-[14px] font-extrabold tracking-tight'>
-                توقيت المؤسسة
-              </p>
-            </div>
-            {/* وسم مؤطر لمدرسة العناية */}
-            <div
-              className='inline-flex items-center gap-1.5 px-3.5 py-1 rounded-xl border shadow-2xs'
-              style={{
-                background: '#FFFFFF',
-                borderColor: '#D4DECE',
-                color: '#2D6A4F',
-              }}
-            >
-              <p className='text-[12px] md:text-[13px] font-extrabold'>
-                مدرسة العناية
-              </p>
+              <div className='mt-0.5 flex items-center gap-2'>
+                <span className='text-[10.5px] font-bold tracking-widest text-slate-400 uppercase'>
+                  Établissement Privé
+                </span>
+                <span className='h-1 w-1 rounded-full bg-emerald-500' />
+                <span className='text-[11.5px] font-bold text-emerald-800'>
+                  مجمّع العناية التربوي
+                </span>
+              </div>
             </div>
           </div>
-          <AnalogClock size={132} />
-        </div>
-      </header>
 
-      {error && (
-        <div
-          role='alert'
-          className='mb-6 flex items-start gap-2 rounded-2xl p-4 text-sm'
-          style={{ backgroundColor: C.errorBg, color: C.error }}
-        >
-          <AlertCircle size={18} className='mt-0.5 shrink-0' aria-hidden='true' />
-          <span>{error}</span>
-        </div>
-      )}
-
-      {loading && <PageDataSkeleton cards={4} rows={4} />}
-
-      {!loading && data && (
-        <div className='space-y-8'>
-          {/* صف البطل: دائرة نسبة الترسيم (بيانات التلاميذ ليست محجوبة، فتظهر للجميع)
-              + الكروت المالية. الكتلة المالية تُعرض فقط حين يُرجع الخادم مفتاح cash
-              (manage_treasury/view_reports)؛ القابض لا يستلمه فتُخفى بلا أصفار مضلّلة. */}
-          <motion.section
-            variants={gridStagger}
-            initial='hidden'
-            animate='show'
-            className={`grid grid-cols-1 gap-6 ${data.cash ? 'lg:grid-cols-3' : ''}`}
+          {/* ساعة المؤسسة */}
+          <div
+            className='flex items-center gap-5 rounded-2xl border border-slate-200/80 bg-white/90 px-5 py-3 shadow-xs backdrop-blur-md transition-all duration-300 hover:border-slate-300'
           >
-            <div className={data.cash ? '' : 'max-w-md'}>
-              <EnrollmentDonutCard total={totalActive} paid={paidReg} unpaid={unpaidReg} yearName={yearName} />
+            <div className='flex flex-col items-end gap-1.5 text-right'>
+              <span className='inline-flex items-center gap-1.5 rounded-full bg-emerald-100 px-3 py-1 text-xs font-black text-emerald-900'>
+                <span className='h-1.5 w-1.5 rounded-full bg-emerald-700 animate-pulse' />
+                توقيت المؤسسة
+              </span>
+              <span className='inline-flex items-center gap-1.5 text-xs font-bold text-slate-500'>
+                مدرسة العناية
+              </span>
+            </div>
+            <AnalogClock size={110} />
+          </div>
+        </header>
+
+        {error && (
+          <div
+            role='alert'
+            className='mb-6 flex items-start gap-2 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm font-semibold text-red-800 shadow-2xs'
+          >
+            <AlertCircle size={18} className='mt-0.5 shrink-0 text-red-600' aria-hidden='true' />
+            <span>{error}</span>
+          </div>
+        )}
+
+        {loading && <PageDataSkeleton cards={4} rows={4} />}
+
+        {!loading && data && (
+          <div className='space-y-8'>
+            {/* ── شريط الإجراءات السريعة الفاخر (Quick Actions Bar) ── */}
+            <div className='grid grid-cols-2 sm:grid-cols-4 gap-3.5'>
+              <Link
+                to='/collection'
+                className='group relative flex items-center gap-3.5 rounded-2xl border border-slate-200/90 bg-white p-4 shadow-2xs transition-all duration-300 hover:-translate-y-0.5 hover:border-emerald-500/40 hover:shadow-md'
+              >
+                <span className='flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-emerald-50 text-emerald-800 transition-all duration-300 group-hover:scale-105 group-hover:bg-emerald-100'>
+                  <Zap size={20} />
+                </span>
+                <div>
+                  <p className='text-[10px] font-bold uppercase tracking-wider text-slate-400'>استخلاص فردي</p>
+                  <p className='text-sm font-black text-slate-900 group-hover:text-[#1B4332]'>قبض قسط شهري</p>
+                </div>
+              </Link>
+
+              <Link
+                to='/families'
+                className='group relative flex items-center gap-3.5 rounded-2xl border border-slate-200/90 bg-white p-4 shadow-2xs transition-all duration-300 hover:-translate-y-0.5 hover:border-amber-500/40 hover:shadow-md'
+              >
+                <span className='flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-amber-50 text-amber-800 transition-all duration-300 group-hover:scale-105 group-hover:bg-amber-100'>
+                  <Users size={20} />
+                </span>
+                <div>
+                  <p className='text-[10px] font-bold uppercase tracking-wider text-slate-400'>استخلاص عائلي</p>
+                  <p className='text-sm font-black text-slate-900 group-hover:text-amber-900'>سداد العائلات</p>
+                </div>
+              </Link>
+
+              <Link
+                to='/students/enroll'
+                className='group relative flex items-center gap-3.5 rounded-2xl border border-slate-200/90 bg-white p-4 shadow-2xs transition-all duration-300 hover:-translate-y-0.5 hover:border-emerald-500/40 hover:shadow-md'
+              >
+                <span className='flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-emerald-50 text-emerald-800 transition-all duration-300 group-hover:scale-105 group-hover:bg-emerald-100'>
+                  <GraduationCap size={20} />
+                </span>
+                <div>
+                  <p className='text-[10px] font-bold uppercase tracking-wider text-slate-400'>تسجيل جديد</p>
+                  <p className='text-sm font-black text-slate-900 group-hover:text-[#1B4332]'>معالج الترسيم</p>
+                </div>
+              </Link>
+
+              <Link
+                to='/expenses/create'
+                className='group relative flex items-center gap-3.5 rounded-2xl border border-slate-200/90 bg-white p-4 shadow-2xs transition-all duration-300 hover:-translate-y-0.5 hover:border-rose-500/40 hover:shadow-md'
+              >
+                <span className='flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-rose-50 text-rose-800 transition-all duration-300 group-hover:scale-105 group-hover:bg-rose-100'>
+                  <TrendingDown size={20} />
+                </span>
+                <div>
+                  <p className='text-[10px] font-bold uppercase tracking-wider text-slate-400'>صرف من الخزينة</p>
+                  <p className='text-sm font-black text-slate-900 group-hover:text-rose-900'>تسجيل مصروف</p>
+                </div>
+              </Link>
             </div>
 
-            {data.cash && (
-              <div className='lg:col-span-2'>
-                <SectionLabel title='المؤشّرات المالية' hint='أرقام الدفتر النقدي المركزي' icon={TrendingUp} />
-                <div className='grid grid-cols-1 gap-4 sm:grid-cols-2'>
+            {/* صف البطل */}
+            <motion.section
+              variants={gridStagger}
+              initial='hidden'
+              animate='show'
+              className={`grid grid-cols-1 gap-6 ${data.cash ? 'lg:grid-cols-3' : ''}`}
+            >
+              <div className={data.cash ? '' : 'max-w-md'}>
+                <EnrollmentDonutCard total={totalActive} paid={paidReg} unpaid={unpaidReg} yearName={yearName} />
+              </div>
+
+              {data.cash && (
+                <div className='lg:col-span-2'>
+                  <SectionLabel
+                    title='المؤشّرات المالية'
+                    hint='أرقام الدفتر النقدي المركزي'
+                    icon={TrendingUp}
+                    extra={
+                      <div
+                        className='inline-flex rounded-xl border border-slate-200/80 bg-slate-100/80 p-1'
+                      >
+                        <button
+                          type='button'
+                          onClick={() => setFinancialPeriod('today')}
+                          className={`px-3.5 py-1.5 rounded-lg text-xs font-black transition-all ${
+                            financialPeriod === 'today'
+                              ? 'bg-white text-emerald-950 shadow-xs'
+                              : 'text-slate-600 hover:text-slate-900'
+                          }`}
+                        >
+                          جرد اليوم
+                        </button>
+                        <button
+                          type='button'
+                          onClick={() => setFinancialPeriod('month')}
+                          className={`px-3.5 py-1.5 rounded-lg text-xs font-black transition-all ${
+                            financialPeriod === 'month'
+                              ? 'bg-white text-emerald-950 shadow-xs'
+                              : 'text-slate-600 hover:text-slate-900'
+                          }`}
+                        >
+                          الشهر الجاري
+                        </button>
+                      </div>
+                    }
+                  />
+                <div className='grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3'>
                   <StatCard
-                    label='مداخيل اليوم'
-                    value={<AnimatedMoney value={today?.income} />}
+                    label={financialPeriod === 'today' ? 'مقبوضات اليوم (24 ساعة)' : `مداخيل ${periodLabel}`}
+                    value={
+                      <AnimatedMoney
+                        value={
+                          financialPeriod === 'today'
+                            ? (today?.total_collected_24h ?? periodCashIn)
+                            : periodIncome
+                        }
+                      />
+                    }
                     icon={TrendingUp}
                     chipBg={C.sage}
                     chipColor={C.forest}
                     gradFrom='#064E3B'
                     gradTo='#059669'
-                    hint='ما قُبض فعليّاً اليوم'
+                    hint={
+                      financialPeriod === 'today'
+                        ? 'كل ما قُبض خلال 24 ساعة لمطابقة حساب الصندوق'
+                        : 'أقساط السنة الدراسية الحالية'
+                    }
+                  >
+                    {financialPeriod === 'today' && (
+                      <div className='mt-3.5 flex flex-wrap items-center gap-2 pt-3 border-t border-white/20'>
+                        <span className='inline-flex items-center gap-1.5 rounded-xl bg-white/20 px-3 py-1.5 text-xs font-bold text-white border border-white/25'>
+                          <span className='text-white/80 font-semibold'>💵 نقداً:</span>
+                          <span className='font-black'><Money value={today?.cash_in_hand ?? 0} /></span>
+                        </span>
+                        <span className='inline-flex items-center gap-1.5 rounded-xl bg-white/20 px-3 py-1.5 text-xs font-bold text-white border border-white/25'>
+                          <span className='text-white/80 font-semibold'>🏦 شيكات/بنك:</span>
+                          <span className='font-black'><Money value={today?.non_cash ?? 0} /></span>
+                        </span>
+                        <span className='inline-flex items-center gap-1.5 rounded-xl bg-white/20 px-3 py-1.5 text-xs font-bold text-white border border-white/25'>
+                          <span className='text-white/80 font-semibold'>📜 ديون قديمة:</span>
+                          <span className='font-black'><Money value={today?.old_debts_today ?? 0} /></span>
+                        </span>
+                      </div>
+                    )}
+                  </StatCard>
+                  <StatCard
+                    label={financialPeriod === 'today' ? 'سداد الديون القديمة اليوم' : 'سداد الديون القديمة (الشهر)'}
+                    value={<AnimatedMoney value={periodOldDebts} />}
+                    icon={History}
+                    chipBg={C.goldSoft}
+                    chipColor={C.goldDeep}
+                    gradFrom='#92400E'
+                    gradTo='#D97706'
+                    hint='نقود دخلت الخزينة — لا تدخل في الدخل الصافي'
                   />
                   <StatCard
-                    label='مصاريف اليوم'
-                    value={<AnimatedMoney value={today?.expenses} />}
-                    icon={TrendingDown}
-                    chipBg={C.rose}
-                    chipColor={C.expense}
-                    gradFrom='#7F1D1D'
-                    gradTo='#DC2626'
-                    hint='ما خرج من الصندوق اليوم'
+                    label={`المجموع المقبوض ${periodLabel}`}
+                    value={<AnimatedMoney value={periodCashIn} />}
+                    icon={Landmark}
+                    chipBg={C.soft}
+                    chipColor={C.forest}
+                    gradFrom='#1E3A8A'
+                    gradTo='#2563EB'
+                    hint='المداخيل + سداد الديون القديمة'
                   />
                   <StatCard
-                    label='الدخل الصافي اليوم'
-                    value={<AnimatedMoney value={today?.net_income} />}
+                    label={`الدخل الصافي ${periodLabel}`}
+                    value={<AnimatedMoney value={periodNetIncome} />}
                     icon={ArrowDownCircle}
                     chipBg={C.soft}
                     chipColor={C.forest}
                     gradFrom='#1E1B4B'
                     gradTo='#4F46E5'
-                    hint='المداخيل ناقص المصاريف'
+                    hint='المداخيل ناقص المصاريف (مستبعد منها الديون القديمة)'
+                  />
+                  <StatCard
+                    label={`مصاريف ${periodLabel}`}
+                    value={<AnimatedMoney value={periodExpenses} />}
+                    icon={TrendingDown}
+                    chipBg={C.rose}
+                    chipColor={C.expense}
+                    gradFrom='#7F1D1D'
+                    gradTo='#DC2626'
+                    hint={`ما خرج من الصندوق ${periodHint}`}
                   />
                   <StatCard
                     label='رصيد الخزينة'
@@ -1113,7 +1326,7 @@ export default function Dashboard() {
                     chipColor={C.goldDeep}
                     gradFrom='#78350F'
                     gradTo='#D97706'
-                    hint='من بداية السجلّ بعد السحوبات'
+                    hint='يشمل كل المقبوضات (الأقساط + الديون القديمة) بعد السحوبات'
                   />
                 </div>
               </div>
@@ -1165,29 +1378,25 @@ export default function Dashboard() {
               )}
             </motion.div>
 
-            {/* بطاقة التوزيع الديمغرافي للجنس — تصميم متدرج فاخر */}
+            {/* بطاقة التوزيع الديمغرافي للجنس — حاوية زجاجية */}
+            {/* بطاقة التوزيع الديمغرافي للجنس */}
             <motion.div
               variants={cardRise}
-              className='mt-6 rounded-3xl border p-6 md:p-8 shadow-card overflow-hidden'
-              style={{
-                background: 'linear-gradient(135deg, #FAFBF8 0%, #F3F6EF 100%)',
-                borderColor: '#DEE6D8',
-              }}
+              className='mt-6 overflow-hidden rounded-2xl border border-slate-200/90 bg-white p-6 shadow-xs md:p-8'
             >
-              <div className='flex flex-wrap items-center justify-between gap-4 mb-6 pb-3 border-b' style={{ borderColor: '#E2EADF' }}>
+              <div className='flex flex-wrap items-center justify-between gap-4 mb-6 pb-4 border-b border-slate-100'>
                 <div className='flex items-center gap-3'>
                   <span
-                    className='inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl shadow-sm'
-                    style={{ backgroundColor: C.sage, color: C.forest }}
+                    className='inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-50 text-emerald-800'
                     aria-hidden='true'
                   >
-                    <Users size={19} />
+                    <Users size={18} />
                   </span>
                   <div>
-                    <h3 className='text-sm font-bold' style={{ color: C.ink }}>
-                      توزيع التلاميذ حسب الجنس
-                    </h3>
-                    <p className='text-xs font-semibold' style={{ color: C.muted }}>
+                    <p className='text-xs font-bold uppercase tracking-wider text-slate-500'>
+                      توزيع التلاميذ حسب الجنس · Gender
+                    </p>
+                    <p className='mt-0.5 font-mono text-xs font-semibold tabular-nums text-slate-700'>
                       إجمالي {totalActive} تلميذاً مسجلاً
                     </p>
                   </div>
@@ -1195,15 +1404,15 @@ export default function Dashboard() {
 
                 {/* شريط المقارنة التناسبي المصغر */}
                 <div className='flex items-center gap-3 min-w-[200px] flex-1 max-w-xs'>
-                  <div className='w-full h-3 rounded-full bg-white flex overflow-hidden p-0.5 border border-slate-200 shadow-inner'>
+                  <div className='w-full h-2.5 rounded-full bg-slate-100 border border-slate-200/60 flex overflow-hidden'>
                     <div
                       className='h-full rounded-full transition-all duration-700'
-                      style={{ width: `${femalePctNum}%`, backgroundColor: '#E11D48' }}
+                      style={{ width: `${femalePctNum}%`, backgroundColor: '#C2A24E' }}
                       title={`إناث: ${femalePctNum.toFixed(1)}%`}
                     />
                     <div
-                      className='h-full rounded-full transition-all duration-700 ml-0.5'
-                      style={{ width: `${malePctNum}%`, backgroundColor: '#2563EB' }}
+                      className='h-full rounded-full transition-all duration-700'
+                      style={{ width: `${malePctNum}%`, backgroundColor: '#10B981' }}
                       title={`ذكور: ${malePctNum.toFixed(1)}%`}
                     />
                   </div>
@@ -1211,13 +1420,13 @@ export default function Dashboard() {
               </div>
 
               <div className={`grid grid-cols-1 gap-6 ${unspecified > 0 ? 'md:grid-cols-3' : 'md:grid-cols-2'}`}>
-                {/* بطاقة الإناث — مع صورة التلميذة بالميدعة المدرسية */}
+                {/* بطاقة الإناث */}
                 <div
                   className='flex flex-col sm:flex-row items-center justify-between gap-6 p-6 rounded-3xl border transition-all duration-300 hover:shadow-lg hover:-translate-y-0.5'
                   style={{
                     background: 'linear-gradient(135deg, #FFF1F2 0%, #FFE4E6 50%, #FECDD3 100%)',
                     borderColor: '#FDA4AF',
-                    boxShadow: '0 4px 20px -4px rgba(225,29,72,0.12)',
+                    boxShadow: '0 8px 24px -4px rgba(225, 29, 72, 0.14)',
                   }}
                 >
                   <div className='flex items-center gap-4'>
@@ -1225,43 +1434,44 @@ export default function Dashboard() {
                       <img
                         src={schoolgirlAvatar}
                         alt='تلميذة بميدعة مدرسية'
-                        className='w-20 h-20 rounded-2xl object-cover shadow-md border-2 border-white ring-2 ring-[#E11D48]/30'
+                        className='w-20 h-20 rounded-2xl object-cover border-2 border-white shadow-md'
                       />
-                      <span className='absolute -bottom-1.5 -right-1.5 w-6 h-6 rounded-full bg-[#E11D48] text-white flex items-center justify-center text-xs font-black shadow-sm'>
+                      <span className='absolute -bottom-1.5 -right-1.5 w-6 h-6 rounded-full text-white flex items-center justify-center text-xs font-black shadow-sm bg-[#E11D48]'>
                         ♀
                       </span>
                     </div>
                     <div>
-                      <p className='text-xs font-bold' style={{ color: '#9F1239' }}>
+                      <p className='text-xs font-black uppercase tracking-wide text-[#9F1239]'>
                         عدد الإناث
                       </p>
-                      <p className='mt-1 text-3xl font-extrabold tracking-tight' style={{ color: '#E11D48', ...NUM }}>
-                        <AnimatedInt value={females} /> <span className='text-xs font-semibold'>تلميذة</span>
+                      <p className='mt-1 text-[32px] sm:text-[36px] font-black tracking-tight text-[#E11D48] leading-none' style={{ ...NUM }}>
+                        <AnimatedInt value={females} /> <span className='text-xs font-bold text-[#9F1239]'>تلميذة</span>
                       </p>
                     </div>
                   </div>
 
                   <RatioDonut
-                    size={100}
-                    stroke={10}
+                    size={110}
+                    stroke={11}
                     progress={femaleProgress}
                     track='rgba(225,29,72,0.15)'
                     color='#E11D48'
+                    colorEnd='#FB7185'
                     label={`نسبة الإناث ${femalePctNum.toFixed(1)}%`}
                   >
-                    <span className='text-lg font-black' style={{ color: '#E11D48', ...NUM }}>
+                    <span className='text-xl font-black text-[#E11D48]' style={{ ...NUM }}>
                       {femalePctNum.toFixed(1)}٪
                     </span>
                   </RatioDonut>
                 </div>
 
-                {/* بطاقة الذكور — مع صورة التلميذ بالميدعة المدرسية */}
+                {/* بطاقة الذكور */}
                 <div
                   className='flex flex-col sm:flex-row items-center justify-between gap-6 p-6 rounded-3xl border transition-all duration-300 hover:shadow-lg hover:-translate-y-0.5'
                   style={{
                     background: 'linear-gradient(135deg, #EFF6FF 0%, #DBEAFE 50%, #BFDBFE 100%)',
                     borderColor: '#93C5FD',
-                    boxShadow: '0 4px 20px -4px rgba(37,99,235,0.12)',
+                    boxShadow: '0 8px 24px -4px rgba(37, 99, 235, 0.14)',
                   }}
                 >
                   <div className='flex items-center gap-4'>
@@ -1269,55 +1479,53 @@ export default function Dashboard() {
                       <img
                         src={schoolboyAvatar}
                         alt='تلميذ بميدعة مدرسية'
-                        className='w-20 h-20 rounded-2xl object-cover shadow-md border-2 border-white ring-2 ring-[#2563EB]/30'
+                        className='w-20 h-20 rounded-2xl object-cover border-2 border-white shadow-md'
                       />
-                      <span className='absolute -bottom-1.5 -right-1.5 w-6 h-6 rounded-full bg-[#2563EB] text-white flex items-center justify-center text-xs font-black shadow-sm'>
+                      <span className='absolute -bottom-1.5 -right-1.5 w-6 h-6 rounded-full text-white flex items-center justify-center text-xs font-black shadow-sm bg-[#2563EB]'>
                         ♂
                       </span>
                     </div>
                     <div>
-                      <p className='text-xs font-bold' style={{ color: '#1E40AF' }}>
+                      <p className='text-xs font-black uppercase tracking-wide text-[#1E40AF]'>
                         عدد الذكور
                       </p>
-                      <p className='mt-1 text-3xl font-extrabold tracking-tight' style={{ color: '#2563EB', ...NUM }}>
-                        <AnimatedInt value={males} /> <span className='text-xs font-semibold'>تلميذ</span>
+                      <p className='mt-1 text-[32px] sm:text-[36px] font-black tracking-tight text-[#2563EB] leading-none' style={{ ...NUM }}>
+                        <AnimatedInt value={males} /> <span className='text-xs font-bold text-[#1E40AF]'>تلميذ</span>
                       </p>
                     </div>
                   </div>
 
                   <RatioDonut
-                    size={100}
-                    stroke={10}
+                    size={110}
+                    stroke={11}
                     progress={maleProgress}
                     track='rgba(37,99,235,0.15)'
                     color='#2563EB'
+                    colorEnd='#60A5FA'
                     label={`نسبة الذكور ${malePctNum.toFixed(1)}%`}
                   >
-                    <span className='text-lg font-black' style={{ color: '#2563EB', ...NUM }}>
+                    <span className='text-xl font-black text-[#2563EB]' style={{ ...NUM }}>
                       {malePctNum.toFixed(1)}٪
                     </span>
                   </RatioDonut>
                 </div>
 
-                {/* غير محدد (إذا وُجد) */}
+                {/* غير محدد */}
                 {unspecified > 0 && (
                   <div
-                    className='flex flex-col items-center justify-center p-6 rounded-2xl border'
-                    style={{
-                      background: 'linear-gradient(135deg, #FFFBEB 0%, #FEF3C7 100%)',
-                      borderColor: '#FDE68A',
-                    }}
+                    className='flex flex-col items-center justify-center p-6 rounded-3xl border border-amber-200/90'
+                    style={{ background: 'linear-gradient(135deg, #FFFBEB 0%, #FEF3C7 100%)' }}
                   >
-                    <span className='inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-amber-100 text-amber-800 border border-amber-300'>
+                    <span className='inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-amber-100 text-amber-900 border border-amber-300 shadow-2xs'>
                       <UserRound size={22} />
                     </span>
-                    <p className='mt-4 text-xs font-bold' style={{ color: C.ink }}>
+                    <p className='mt-4 text-xs font-black uppercase tracking-wide text-amber-900'>
                       غير محدّد الجنس
                     </p>
-                    <p className='mt-1 text-2xl font-extrabold' style={{ color: C.remaining, ...NUM }}>
-                      <AnimatedInt value={unspecified} /> <span className='text-xs font-semibold'>تلميذ</span>
+                    <p className='mt-1 text-3xl font-black text-[#B45309]' style={{ ...NUM }}>
+                      <AnimatedInt value={unspecified} /> <span className='text-xs font-bold'>تلميذ</span>
                     </p>
-                    <p className='mt-2 text-xs font-medium text-center' style={{ color: C.muted }}>
+                    <p className='mt-2 text-xs font-medium text-center text-amber-800'>
                       {unspecifiedPct} لم يُسجَّل جنسهم بعد
                     </p>
                   </div>
@@ -1334,134 +1542,161 @@ export default function Dashboard() {
             />
           )}
 
-          {/* متابعة الشهر الجاري — مقارنة دائرية بين المداخيل (بالأزرق) والمصاريف (بالأحمر) مع الأرقام تحتهما */}
+          {/* متابعة الشهر الجاري */}
           {data.cash && (
             <section>
               <SectionLabel title='متابعة الشهر' hint='مقارنة المداخيل والمصاريف للشهر الجاري' icon={History} />
               <div
-                className='rounded-3xl border p-6 md:p-8 shadow-card'
-                style={{
-                  background: 'linear-gradient(135deg, #FAFBF8 0%, #F4F7F0 100%)',
-                  borderColor: '#DEE6D8',
-                }}
+                className='rounded-3xl border border-slate-200/90 bg-white p-6 shadow-sm md:p-8'
+                style={{ background: 'linear-gradient(135deg, #FAFBF8 0%, #F4F7F0 100%)' }}
               >
                 <div className='grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 items-center'>
-                  {/* دائرة المداخيل — أزرق */}
+                  {/* دائرة المداخيل */}
                   <div
-                    className='flex flex-col items-center justify-center p-5 rounded-2xl border transition-all duration-300 hover:shadow-md hover:-translate-y-0.5'
+                    className='flex flex-col items-center justify-center p-6 rounded-3xl border transition-all duration-300 hover:shadow-md hover:-translate-y-0.5'
                     style={{
                       background: 'linear-gradient(135deg, #EFF6FF 0%, #DBEAFE 100%)',
                       borderColor: '#BFDBFE',
-                      boxShadow: '0 4px 16px -4px rgba(37,99,235,0.12)',
+                      boxShadow: '0 4px 16px -4px rgba(37, 99, 235, 0.12)',
                     }}
                   >
                     <RatioDonut
-                      size={120}
-                      stroke={11}
+                      size={125}
+                      stroke={12}
                       progress={totalFlow > 0 ? monthIncome / totalFlow : 0}
                       track='rgba(37,99,235,0.15)'
                       color='#2563EB'
+                      colorEnd='#60A5FA'
                       label={`نسبة المداخيل ${incomePct.toFixed(1)}%`}
                     >
-                      <span className='text-lg font-black' style={{ color: '#2563EB', ...NUM }}>
+                      <span className='text-xl font-black text-[#2563EB]' style={{ ...NUM }}>
                         {incomePct.toFixed(1)}٪
                       </span>
                     </RatioDonut>
-                    <p className='mt-3 text-xs font-bold' style={{ color: '#1E40AF' }}>
+                    <p className='mt-3 text-xs font-black uppercase tracking-wide text-[#1E40AF]'>
                       مجموع المداخيل
                     </p>
-                    <p className='mt-1 text-xl font-extrabold' style={{ color: '#2563EB', ...NUM }}>
+                    <p className='mt-1 text-[24px] font-black text-[#2563EB]' style={{ ...NUM }}>
                       <AnimatedMoney value={month?.income} />
                     </p>
                   </div>
 
-                  {/* دائرة المصاريف — أحمر */}
+                  {/* دائرة المصاريف */}
                   <div
-                    className='flex flex-col items-center justify-center p-5 rounded-2xl border transition-all duration-300 hover:shadow-md hover:-translate-y-0.5'
+                    className='flex flex-col items-center justify-center p-6 rounded-3xl border transition-all duration-300 hover:shadow-md hover:-translate-y-0.5'
                     style={{
                       background: 'linear-gradient(135deg, #FEF2F2 0%, #FEE2E2 100%)',
                       borderColor: '#FECACA',
-                      boxShadow: '0 4px 16px -4px rgba(220,38,38,0.12)',
+                      boxShadow: '0 4px 16px -4px rgba(220, 38, 38, 0.12)',
                     }}
                   >
                     <RatioDonut
-                      size={120}
-                      stroke={11}
+                      size={125}
+                      stroke={12}
                       progress={totalFlow > 0 ? monthExpenses / totalFlow : 0}
                       track='rgba(220,38,38,0.15)'
                       color='#DC2626'
+                      colorEnd='#F87171'
                       label={`نسبة المصاريف ${expensePct.toFixed(1)}%`}
                     >
-                      <span className='text-lg font-black' style={{ color: '#DC2626', ...NUM }}>
+                      <span className='text-xl font-black text-[#DC2626]' style={{ ...NUM }}>
                         {expensePct.toFixed(1)}٪
                       </span>
                     </RatioDonut>
-                    <p className='mt-3 text-xs font-bold' style={{ color: '#991B1B' }}>
+                    <p className='mt-3 text-xs font-black uppercase tracking-wide text-[#991B1B]'>
                       مجموع المصاريف
                     </p>
-                    <p className='mt-1 text-xl font-extrabold' style={{ color: '#DC2626', ...NUM }}>
+                    <p className='mt-1 text-[24px] font-black text-[#DC2626]' style={{ ...NUM }}>
                       <AnimatedMoney value={month?.expenses} />
                     </p>
                   </div>
 
                   {/* الدخل الصافي */}
                   <div
-                    className='flex flex-col items-center justify-center p-5 rounded-2xl border h-full transition-all duration-300 hover:shadow-md hover:-translate-y-0.5'
+                    className='flex flex-col items-center justify-center p-6 rounded-3xl border h-full transition-all duration-300 hover:shadow-md hover:-translate-y-0.5'
                     style={{
                       background: netMonth >= 0
                         ? 'linear-gradient(135deg, #F0FDF4 0%, #DCFCE7 100%)'
                         : 'linear-gradient(135deg, #FEF2F2 0%, #FEE2E2 100%)',
                       borderColor: netMonth >= 0 ? '#BBF7D0' : '#FECACA',
                       boxShadow: netMonth >= 0
-                        ? '0 4px 16px -4px rgba(22,101,52,0.12)'
-                        : '0 4px 16px -4px rgba(220,38,38,0.12)',
+                        ? '0 4px 16px -4px rgba(22, 101, 52, 0.12)'
+                        : '0 4px 16px -4px rgba(220, 38, 38, 0.12)',
                     }}
                   >
                     <span
-                      className='inline-flex h-11 w-11 items-center justify-center rounded-2xl shadow-sm'
-                      style={{ backgroundColor: 'rgba(255,255,255,0.7)', color: netMonthColor }}
+                      className='inline-flex h-12 w-12 items-center justify-center rounded-2xl shadow-xs'
+                      style={{
+                        backgroundColor: netMonth >= 0 ? '#DCFCE7' : '#FEE2E2',
+                        color: netMonth >= 0 ? '#15803D' : '#DC2626',
+                      }}
                     >
-                      <TrendingUp size={22} />
+                      <TrendingUp size={24} />
                     </span>
-                    <p className='mt-3 text-xs font-bold' style={{ color: netMonth >= 0 ? '#166534' : '#991B1B' }}>
+                    <p className='mt-3 text-xs font-black uppercase tracking-wide' style={{ color: netMonth >= 0 ? '#166534' : '#991B1B' }}>
                       الدخل الصافي
                     </p>
-                    <p className='mt-1 text-xl font-extrabold' style={{ color: netMonthColor, ...NUM }}>
+                    <p className='mt-1 text-[24px] font-black' style={{ color: netMonth < 0 ? '#DC2626' : '#15803D', ...NUM }}>
                       <AnimatedMoney value={month?.net_income} />
                     </p>
-                    <span className='mt-2 text-[11px] font-semibold' style={{ color: netMonth >= 0 ? '#166534' : '#991B1B' }}>
+                    <span className='mt-2 text-xs font-bold' style={{ color: netMonth >= 0 ? '#166534' : '#991B1B' }}>
                       المداخيل − المصاريف
                     </span>
                   </div>
 
                   {/* السحوبات */}
                   <div
-                    className='flex flex-col items-center justify-center p-5 rounded-2xl border h-full transition-all duration-300 hover:shadow-md hover:-translate-y-0.5'
+                    className='flex flex-col items-center justify-center p-6 rounded-3xl border h-full transition-all duration-300 hover:shadow-md hover:-translate-y-0.5'
                     style={{
                       background: 'linear-gradient(135deg, #FFFBEB 0%, #FEF3C7 100%)',
                       borderColor: '#FDE68A',
-                      boxShadow: '0 4px 16px -4px rgba(180,83,9,0.12)',
+                      boxShadow: '0 4px 16px -4px rgba(180, 83, 9, 0.12)',
                     }}
                   >
                     <span
-                      className='inline-flex h-11 w-11 items-center justify-center rounded-2xl shadow-sm'
-                      style={{ backgroundColor: 'rgba(255,255,255,0.7)', color: '#B45309' }}
+                      className='inline-flex h-12 w-12 items-center justify-center rounded-2xl shadow-xs bg-amber-100 text-amber-900'
                     >
-                      <Landmark size={22} />
+                      <Landmark size={24} />
                     </span>
-                    <p className='mt-3 text-xs font-bold' style={{ color: '#92400E' }}>
+                    <p className='mt-3 text-xs font-black uppercase tracking-wide text-[#92400E]'>
                       السحوبات
                     </p>
-                    <p className='mt-1 text-xl font-extrabold' style={{ color: '#B45309', ...NUM }}>
+                    <p className='mt-1 text-[24px] font-black text-[#B45309]' style={{ ...NUM }}>
                       <AnimatedMoney value={month?.withdrawals} />
                     </p>
-                    <span className='mt-2 text-[11px] font-semibold' style={{ color: '#92400E' }}>
+                    <span className='mt-2 text-xs font-bold text-[#92400E]'>
                       سحوبات الشهر الجاري
                     </span>
                   </div>
                 </div>
 
-                <p className='mt-6 text-xs leading-relaxed text-center' style={{ color: C.muted }}>
+                {/* سداد الديون القديمة للشهر */}
+                {Number(month?.old_debt_collections ?? month?.old_debts ?? 0) > 0 && (
+                  <div
+                    className='mt-6 p-4 rounded-2xl border border-amber-200/80 bg-amber-50/70 flex items-center justify-between gap-4 flex-wrap'
+                  >
+                    <div className='flex items-center gap-3'>
+                      <span className='inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-amber-100 text-amber-900'>
+                        <History size={18} />
+                      </span>
+                      <div>
+                        <p className='text-xs font-black text-amber-950'>
+                          سداد ديون قديمة تم تحصيلها هذا الشهر: <span className='font-mono font-black tabular-nums' style={NUM}>{dinar(month?.old_debt_collections ?? month?.old_debts)}</span>
+                        </p>
+                        <p className='text-[11px] font-semibold text-amber-800 mt-0.5'>
+                          نقود دخلت الخزينة فعلياً — مستبعدة من الدخل الصافي لأنها تتبع سنة دراسية سابقة.
+                        </p>
+                      </div>
+                    </div>
+                    <div className='text-left'>
+                      <span className='font-mono text-xl font-black tabular-nums text-amber-950' style={NUM}>
+                        <AnimatedMoney value={month?.old_debt_collections ?? month?.old_debts} />
+                      </span>
+                    </div>
+                  </div>
+                )}
+
+                <p className='mt-6 text-xs leading-relaxed text-center text-slate-400'>
                   أرقام الصندوق تتبع تاريخ القبض الفعلي، لا الشهر المُستخلَص عنه.
                 </p>
               </div>
@@ -1476,6 +1711,7 @@ export default function Dashboard() {
           )}
         </div>
       )}
+      </div>
     </div>
   );
 }

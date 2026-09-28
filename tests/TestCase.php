@@ -16,6 +16,28 @@ abstract class TestCase extends BaseTestCase
 {
     use CreatesApplication;
 
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        if (app()->environment('production')) {
+            throw new \RuntimeException('CRITICAL: Tests must NEVER run in production environment.');
+        }
+
+        $defaultConn = config('database.default');
+        $dbName = config("database.connections.{$defaultConn}.database");
+
+        if ($dbName === 'providence_prod' || str_contains((string) $dbName, 'prod')) {
+            throw new \RuntimeException('CRITICAL: Tests must NEVER run against production database (providence_prod).');
+        }
+
+        if ($defaultConn === 'mysql') {
+            if (! str_ends_with((string) $dbName, '_testing')) {
+                throw new \RuntimeException("CRITICAL: MySQL tests must target a database ending with '_testing'. Current database: {$dbName}");
+            }
+        }
+    }
+
     protected function makeUser(string $roleName = 'admin'): User
     {
         $role = Role::firstOrCreate(

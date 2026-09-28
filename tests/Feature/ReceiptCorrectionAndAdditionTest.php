@@ -194,7 +194,7 @@ class ReceiptCorrectionAndAdditionTest extends TestCase
         $this->assertNotNull($payment->edited_at);
     }
 
-    /** 2. نفس التصحيح في يوم لاحق: قيد اليوم الأصلي = 160، ويوم التعديل بلا حركة. */
+    /** 2. نفس التصحيح في يوم لاحق: تاريخ القيد هو تاريخ القبض الأصلي، ويوم التعديل بلا حركة. */
     public function test_02_same_correction_on_later_day_original_day_160_edit_day_no_movement(): void
     {
         $originalDate = '2026-09-10';
@@ -223,6 +223,11 @@ class ReceiptCorrectionAndAdditionTest extends TestCase
         $res->assertCreated();
         $paymentId = $res->json('id');
 
+        $originalTx = CashTransaction::where('source_type', Payment::class)
+            ->where('source_id', $paymentId)
+            ->first();
+        $originalTxId = $originalTx->id;
+
         // الانتقال إلى يوم لاحق (2026-09-25)
         $editDate = '2026-09-25';
         Carbon::setTestNow($editDate);
@@ -234,14 +239,15 @@ class ReceiptCorrectionAndAdditionTest extends TestCase
         ]);
         $correctRes->assertOk();
 
-        // التحقق: قيد اليوم الأصلي (2026-09-10) أصبح 160
-        $originalTx = CashTransaction::where('source_type', Payment::class)
+        // التحقق: قيد اليوم الأصلي (2026-09-10) أصبح 160 ونفس الـ id لم يتغير
+        $updatedTx = CashTransaction::where('source_type', Payment::class)
             ->where('source_id', $paymentId)
             ->whereDate('transaction_date', $originalDate)
             ->whereNull('cancelled_at')
             ->first();
-        $this->assertNotNull($originalTx);
-        $this->assertEquals(160.00, (float) $originalTx->amount);
+        $this->assertNotNull($updatedTx);
+        $this->assertEquals($originalTxId, $updatedTx->id);
+        $this->assertEquals(160.00, (float) $updatedTx->amount);
 
         // التحقق: يوم التعديل (2026-09-25) بلا أي حركة لهذا الوصل
         $editDayTxs = CashTransaction::where('source_type', Payment::class)
@@ -259,7 +265,6 @@ class ReceiptCorrectionAndAdditionTest extends TestCase
         $this->assertCount(1, $allTxs);
 
         // التحقق من كشف الخزينة اليومي (Daybook):
-        // اليوم الأصلي يعكس 160
         $daybookOriginal = $this->actingAs($this->user)->getJson("/api/reports/treasury-daybook?date={$originalDate}");
         $daybookOriginal->assertOk();
         $days = $daybookOriginal->json('days');
@@ -269,7 +274,7 @@ class ReceiptCorrectionAndAdditionTest extends TestCase
         $this->assertEquals(160.00, (float) ($dayCard['income']['total'] ?? 0));
     }
 
-    /** 3. ترسيم قديم ثم إضافة مستلزمات بتاريخ قديم: قيد ترسيم قديم + قيد مستلزمات جديد. */
+    /** 3. ترسيم قديم ثم إضافة مستلزمات بتاريخ قديم: قيد registration_fee كما كان + قيد product_sale جديد للإضافة فقط. */
     public function test_03_old_registration_then_add_supplies_with_old_date_old_reg_and_new_supplies_entries(): void
     {
         $regDate = '2026-08-15';
@@ -320,7 +325,6 @@ class ReceiptCorrectionAndAdditionTest extends TestCase
         ]);
         $addRes->assertCreated();
 
-        // التحقق: قيد ترسيم قديم + قيد مستلزمات جديد
         // أ) قيد الترسيم لم يتغير تاريخه ولا مبلغه ولا تصنيفه
         $regTxFresh = $regTx->fresh();
         $this->assertEquals(70.00, (float) $regTxFresh->amount);
@@ -342,7 +346,7 @@ class ReceiptCorrectionAndAdditionTest extends TestCase
         $this->assertEquals(90.00, (float) $totalCash);
     }
 
-    /** 4. تكرار نفس التصحيح لا ينشئ قيداً آخر. */
+    /** 4. تكرار نفس التصحيح لا ينشئ قيداً ولا يكتب شيئاً. */
     public function test_04_duplicate_same_correction_creates_no_additional_entry(): void
     {
         $today = '2026-09-25';
@@ -400,8 +404,261 @@ class ReceiptCorrectionAndAdditionTest extends TestCase
         $this->assertEquals(160.00, (float) $tx->amount);
     }
 
-    /** 5. تقرير الدخل يفصل الترسيم عن المستلزمات. */
-    public function test_05_income_report_separates_registration_from_supplies(): void
+    /** 5. وصل مختلط: كل category يُحدَّث وحده، ولا يزيد عدد القيود. */
+    public function test_05_mixed_receipt_each_category_updated_independently_count_does_not_increase(): void
+    {
+        $today = '2026-09-25';
+        Carbon::setTestNow($today);
+
+        // وصل يحتوي على معلوم تمدرس (170) + مستلزمات (20) = 190
+        $tuitionFee = StudentFee::create([
+            'enrollment_id' => $this->enrollment->id,
+            'fee_type_id'   => $this->tuitionFeeType->id,
+            'amount_due'    => 170.00,
+            'due_date'      => $today,
+            'description'   => 'تمدرس',
+            'status'        => 'paid',
+        ]);
+
+        $suppliesFee = StudentFee::create([
+            'enrollment_id' => $this->enrollment->id,
+            'fee_type_id'   => $this->suppliesFeeType->id,
+            'amount_due'    => 20.00,
+            'due_date'      => $today,
+            'description'   => 'مستلزمات',
+            'status'        => 'paid',
+        ]);
+
+        $res = $this->actingAs($this->user)->postJson('/api/payments', [
+            'student_id'    => $this->student->id,
+            'enrollment_id' => $this->enrollment->id,
+            'amount'        => 190.00,
+            'payment_date'  => $today,
+            'method'        => 'cash',
+            'allocations'   => [
+                ['student_fee_id' => $tuitionFee->id, 'amount' => 170.00],
+                ['student_fee_id' => $suppliesFee->id, 'amount' => 20.00],
+            ],
+        ]);
+        $res->assertCreated();
+        $paymentId = $res->json('id');
+
+        // تأكيد وجود قيدين في الخزينة: monthly_fee = 170 و product_sale = 20
+        $txsBefore = CashTransaction::where('source_type', Payment::class)
+            ->where('source_id', $paymentId)
+            ->whereNull('cancelled_at')
+            ->get();
+        $this->assertCount(2, $txsBefore);
+
+        $tuitionTxBefore = $txsBefore->firstWhere('category', CashTransaction::CATEGORY_MONTHLY_FEE);
+        $suppliesTxBefore = $txsBefore->firstWhere('category', CashTransaction::CATEGORY_PRODUCT_SALE);
+        $this->assertEquals(170.00, (float) $tuitionTxBefore->amount);
+        $this->assertEquals(20.00, (float) $suppliesTxBefore->amount);
+
+        // جلب معرفات التخصيصات للتصحيح
+        $allocations = PaymentAllocation::where('payment_id', $paymentId)->get();
+        $tuitionAlloc = $allocations->firstWhere('student_fee_id', $tuitionFee->id);
+        $suppliesAlloc = $allocations->firstWhere('student_fee_id', $suppliesFee->id);
+
+        // تصحيح التمدرس إلى 160 وإبقاء المستلزمات 20 (المجموع الجديد = 180)
+        $correctRes = $this->actingAs($this->user)->postJson("/api/payments/{$paymentId}/correct", [
+            'amount'      => 180.00,
+            'allocations' => [
+                ['id' => $tuitionAlloc->id, 'amount' => 160.00],
+                ['id' => $suppliesAlloc->id, 'amount' => 20.00],
+            ],
+        ]);
+        $correctRes->assertOk();
+
+        // التحقق: عدد القيود يبقى 2 دون أي زيادة
+        $txsAfter = CashTransaction::where('source_type', Payment::class)
+            ->where('source_id', $paymentId)
+            ->whereNull('cancelled_at')
+            ->get();
+        $this->assertCount(2, $txsAfter);
+
+        $tuitionTxAfter = $txsAfter->firstWhere('category', CashTransaction::CATEGORY_MONTHLY_FEE);
+        $suppliesTxAfter = $txsAfter->firstWhere('category', CashTransaction::CATEGORY_PRODUCT_SALE);
+
+        // نفس الـ IDs الأصلية
+        $this->assertEquals($tuitionTxBefore->id, $tuitionTxAfter->id);
+        $this->assertEquals($suppliesTxBefore->id, $suppliesTxAfter->id);
+
+        // المبالغ المحدثة
+        $this->assertEquals(160.00, (float) $tuitionTxAfter->amount);
+        $this->assertEquals(20.00, (float) $suppliesTxAfter->amount);
+    }
+
+    /** 6. 170 إلى 160 بلا leave_difference_as_debt: المتبقي 0. */
+    public function test_06_receipt_170_to_160_without_leave_debt_remaining_is_zero(): void
+    {
+        $today = '2026-09-25';
+        Carbon::setTestNow($today);
+
+        $fee = StudentFee::create([
+            'enrollment_id' => $this->enrollment->id,
+            'fee_type_id'   => $this->tuitionFeeType->id,
+            'amount_due'    => 170.00,
+            'due_date'      => $today,
+            'description'   => 'معلوم التمدرس',
+            'status'        => 'pending',
+        ]);
+
+        $res = $this->actingAs($this->user)->postJson('/api/payments', [
+            'student_id'    => $this->student->id,
+            'enrollment_id' => $this->enrollment->id,
+            'amount'        => 170.00,
+            'payment_date'  => $today,
+            'method'        => 'cash',
+            'allocations'   => [['student_fee_id' => $fee->id, 'amount' => 170.00]],
+        ]);
+        $paymentId = $res->json('id');
+
+        // تصحيح خطأ الصندوق بدون ترك الفرق ديناً
+        $this->actingAs($this->user)->postJson("/api/payments/{$paymentId}/correct", [
+            'amount'                   => 160.00,
+            'leave_difference_as_debt' => false,
+        ])->assertOk();
+
+        // التحقق: الرسم أصبح 160 خالصاً، والمتبقي = 0
+        $feeFresh = $fee->fresh();
+        $this->assertEquals(160.00, (float) $feeFresh->amount_due);
+        $this->assertEquals('paid', $feeFresh->status);
+        $this->assertEquals(0.00, (float) $feeFresh->outstanding());
+    }
+
+    /** 7. 170 إلى 160 مع leave_difference_as_debt=true: المتبقي 10. */
+    public function test_07_receipt_170_to_160_with_leave_debt_remaining_is_10(): void
+    {
+        $today = '2026-09-25';
+        Carbon::setTestNow($today);
+
+        $fee = StudentFee::create([
+            'enrollment_id' => $this->enrollment->id,
+            'fee_type_id'   => $this->tuitionFeeType->id,
+            'amount_due'    => 170.00,
+            'due_date'      => $today,
+            'description'   => 'معلوم التمدرس',
+            'status'        => 'pending',
+        ]);
+
+        $res = $this->actingAs($this->user)->postJson('/api/payments', [
+            'student_id'    => $this->student->id,
+            'enrollment_id' => $this->enrollment->id,
+            'amount'        => 170.00,
+            'payment_date'  => $today,
+            'method'        => 'cash',
+            'allocations'   => [['student_fee_id' => $fee->id, 'amount' => 170.00]],
+        ]);
+        $paymentId = $res->json('id');
+
+        // تصحيح مع ترك الفرق ديناً
+        $this->actingAs($this->user)->postJson("/api/payments/{$paymentId}/correct", [
+            'amount'                   => 160.00,
+            'leave_difference_as_debt' => true,
+        ])->assertOk();
+
+        // التحقق: رسم الطالب بقي 170، والمقبوض 160، والحالة جزئي، والمتبقي = 10
+        $feeFresh = $fee->fresh();
+        $this->assertEquals(170.00, (float) $feeFresh->amount_due);
+        $this->assertEquals('partial', $feeFresh->status);
+        $this->assertEquals(10.00, (float) $feeFresh->outstanding());
+    }
+
+    /** 8. مجموع البنود غير متطابق: 422 بلا أي كتابة. */
+    public function test_08_multi_item_allocations_sum_mismatch_returns_422_without_writing(): void
+    {
+        $today = '2026-09-25';
+        Carbon::setTestNow($today);
+
+        $fee1 = StudentFee::create([
+            'enrollment_id' => $this->enrollment->id,
+            'fee_type_id'   => $this->tuitionFeeType->id,
+            'amount_due'    => 100.00,
+            'due_date'      => $today,
+            'description'   => 'بند 1',
+        ]);
+        $fee2 = StudentFee::create([
+            'enrollment_id' => $this->enrollment->id,
+            'fee_type_id'   => $this->suppliesFeeType->id,
+            'amount_due'    => 50.00,
+            'due_date'      => $today,
+            'description'   => 'بند 2',
+        ]);
+
+        $res = $this->actingAs($this->user)->postJson('/api/payments', [
+            'student_id'    => $this->student->id,
+            'enrollment_id' => $this->enrollment->id,
+            'amount'        => 150.00,
+            'payment_date'  => $today,
+            'method'        => 'cash',
+            'allocations'   => [
+                ['student_fee_id' => $fee1->id, 'amount' => 100.00],
+                ['student_fee_id' => $fee2->id, 'amount' => 50.00],
+            ],
+        ]);
+        $paymentId = $res->json('id');
+        $allocations = PaymentAllocation::where('payment_id', $paymentId)->get();
+
+        // محاولة تصحيح بمجموع بنود (135) لا يساوي المبلغ الجديد (140)
+        $failRes = $this->actingAs($this->user)->postJson("/api/payments/{$paymentId}/correct", [
+            'amount'      => 140.00,
+            'allocations' => [
+                ['id' => $allocations[0]->id, 'amount' => 90.00],
+                ['id' => $allocations[1]->id, 'amount' => 45.00], // 90 + 45 = 135 != 140
+            ],
+        ]);
+
+        $failRes->assertStatus(422);
+        $this->assertStringContainsString('مجموع البنود لا يساوي المبلغ الجديد', $failRes->json('message'));
+
+        // تأكيد عدم كتابة أي تغيير على الوصل
+        $paymentFresh = Payment::find($paymentId);
+        $this->assertEquals(150.00, (float) $paymentFresh->amount);
+    }
+
+    /** 9. وصل ملغى: 422 يمنع أي تعديل أو إضافة. */
+    public function test_09_cancelled_receipt_returns_422(): void
+    {
+        $today = '2026-09-25';
+        $fee = StudentFee::create([
+            'enrollment_id' => $this->enrollment->id,
+            'fee_type_id'   => $this->tuitionFeeType->id,
+            'amount_due'    => 170.00,
+            'due_date'      => $today,
+            'description'   => 'معلوم التمدرس',
+        ]);
+
+        $res = $this->actingAs($this->user)->postJson('/api/payments', [
+            'student_id'    => $this->student->id,
+            'enrollment_id' => $this->enrollment->id,
+            'amount'        => 170.00,
+            'payment_date'  => $today,
+            'method'        => 'cash',
+            'allocations'   => [['student_fee_id' => $fee->id, 'amount' => 170.00]],
+        ]);
+        $paymentId = $res->json('id');
+
+        // إلغاء الوصل
+        $this->actingAs($this->user)->postJson("/api/payments/{$paymentId}/cancel", [
+            'reason' => 'إلغاء لاختبار الحظر',
+        ])->assertOk();
+
+        // محاولة تصحيح الوصل الملغى
+        $correctRes = $this->actingAs($this->user)->postJson("/api/payments/{$paymentId}/correct", [
+            'amount' => 160.00,
+        ]);
+        $correctRes->assertStatus(422);
+
+        // محاولة إضافة بند لوصل ملغى
+        $addRes = $this->actingAs($this->user)->postJson("/api/payments/{$paymentId}/add-item", [
+            'amount' => 20.00,
+        ]);
+        $addRes->assertStatus(422);
+    }
+
+    /** 10. تقرير الدخل يفصل الترسيم عن المستلزمات. */
+    public function test_10_income_report_separates_registration_from_supplies(): void
     {
         $regDate = '2026-08-15';
         $suppliesDate = '2026-08-25';
@@ -435,8 +692,8 @@ class ReceiptCorrectionAndAdditionTest extends TestCase
 
         // 3. طلب تقرير المداخيل حسب التاريخ
         $reportRes = $this->actingAs($this->user)->getJson('/api/reports/income-by-date?' . http_build_query([
-            'date_from' => '2026-08-01',
-            'date_to'   => '2026-08-31',
+            'date_from'   => '2026-08-01',
+            'date_to'     => '2026-08-31',
             'granularity' => 'month',
         ]));
         $reportRes->assertOk();

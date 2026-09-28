@@ -15,6 +15,14 @@ function money(v: number): string {
   return (v || 0).toFixed(2);
 }
 
+function isStudentPreschool(student: any): boolean {
+  if (student.is_preschool !== undefined) return Boolean(student.is_preschool);
+  const code = (student.level_code || '').toUpperCase();
+  if (['PRE1', 'PRE2', 'PRE3'].includes(code)) return true;
+  const name = student.level_name || '';
+  return name.includes('روضة') || name.includes('تمهيدي') || name.includes('تحضيري');
+}
+
 export function FamilyDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -46,6 +54,7 @@ export function FamilyDetailPage() {
     setShowCollectModal(false);
     setActiveReceipt(receipt);
     loadDetails();
+    window.dispatchEvent(new CustomEvent('families:updated'));
   };
 
   if (loading) {
@@ -101,6 +110,7 @@ export function FamilyDetailPage() {
       }
       setActiveReceipt(null);
       await loadDetails();
+      window.dispatchEvent(new CustomEvent('families:updated'));
       alert('تم إلغاء المقبوض بنجاح وتحديث الحساب.');
     } catch (e: unknown) {
       alert((e as Error).message || 'تعذر إلغاء المقبوض');
@@ -235,27 +245,40 @@ export function FamilyDetailPage() {
 
                   <div className="grid grid-cols-2 sm:grid-cols-5 md:grid-cols-10 gap-2">
                     {(st.months_grid || []).map((m) => {
+                      const isPreschool = isStudentPreschool(st);
+                      const isShortCycleMonth = isPreschool && (m.month.endsWith('-09') || m.month.endsWith('-06'));
                       const isPaid = m.status === 'paid';
                       const isWaived = m.status === 'waived';
+
+                      let containerClass = 'bg-white border-slate-200 text-slate-700';
+                      let badgeClass = 'bg-slate-100 text-slate-600';
+                      let badgeText = `${money(m.net_amount)} د.ت`;
+
+                      if (isPaid) {
+                        containerClass = 'bg-emerald-50 border-emerald-200 text-emerald-900 font-bold';
+                        badgeClass = 'bg-emerald-100 text-emerald-800';
+                        badgeText = 'مدفوع ✓';
+                      } else if (isWaived) {
+                        containerClass = 'bg-slate-50 border-slate-200 text-slate-400';
+                        badgeClass = 'bg-slate-200 text-slate-600';
+                        badgeText = 'معفى';
+                      } else if (isShortCycleMonth) {
+                        containerClass = 'bg-amber-50/60 border-amber-200 text-amber-800';
+                        badgeClass = 'bg-amber-100 text-amber-900 font-medium';
+                        badgeText = `${money(m.net_amount)} د.ت (مبلغ يدوي)`;
+                      }
 
                       return (
                         <div
                           key={m.month}
-                          className={`p-2 rounded-xl border text-center text-xs flex flex-col items-center justify-between ${
-                            isPaid
-                              ? 'bg-emerald-50 border-emerald-200 text-emerald-900 font-bold'
-                              : isWaived
-                              ? 'bg-slate-50 border-slate-200 text-slate-400'
-                              : 'bg-white border-slate-200 text-slate-700'
-                          }`}
+                          className={`p-2 rounded-xl border text-center text-xs flex flex-col items-center justify-between ${containerClass}`}
+                          title={isShortCycleMonth ? 'شهرا سبتمبر وجوان لأقسام الروضة والتمهيدي والتحضيري (PRE1, PRE2, PRE3) يُستخلصان فردياً بمبلغ مخصص من شاشة تحصيل التلميذ.' : undefined}
                         >
                           <span className="text-[11px] font-bold">{m.name_ar}</span>
                           <span
-                            className={`text-[10px] mt-1 px-1.5 py-0.5 rounded-md ${
-                              isPaid ? 'bg-emerald-100 text-emerald-800' : isWaived ? 'bg-slate-200 text-slate-600' : 'bg-slate-100 text-slate-600'
-                            }`}
+                            className={`text-[10px] mt-1 px-1.5 py-0.5 rounded-md truncate max-w-full ${badgeClass}`}
                           >
-                            {isPaid ? 'مدفوع ✓' : isWaived ? 'معفى' : `${money(m.net_amount)} د.ت`}
+                            {badgeText}
                           </span>
                         </div>
                       );

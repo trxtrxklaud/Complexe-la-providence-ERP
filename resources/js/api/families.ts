@@ -80,6 +80,8 @@ export interface FamilyStudentDetail {
   name: string;
   full_name: string;
   level_name?: string;
+  level_code?: string;
+  is_preschool?: boolean;
   section_name?: string;
   base_monthly_fee: number;
   remaining_debt: number;
@@ -122,6 +124,7 @@ export interface FamilyCollectionPayload {
   method: string;
   reference?: string | null;
   notes?: string | null;
+  exceptional_discount?: number;
   students_allocations?: StudentAllocationInput[];
   allocations?: any[];
 }

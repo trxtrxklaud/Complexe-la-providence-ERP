@@ -65,14 +65,20 @@ export interface EmployeeAdvance {
   amount: string | number;
   settled_amount: string | number;
   advance_date: string;
+  due_date?: string | null;
+  installment_count?: number | null;
+  repayment_method?: RepaymentMethod | string | null;
+  purpose?: string | null;
   method?: string | null;
   reason?: string | null;
+  notes?: string | null;
   status: string;
   is_opening?: boolean;
   settled_by_salary_id?: number | null;
   cancelled_at?: string | null;
   cancellation_reason?: string | null;
-  employee?: { id: number; first_name: string; last_name: string };
+  employee?: { id: number; first_name: string; last_name: string; job_title?: string | null };
+  academic_year?: { id: number; name: string };
 }
 
 /** طريقة ردّ السلفة، ولكلّ واحدة أثر محاسبي مختلف. */

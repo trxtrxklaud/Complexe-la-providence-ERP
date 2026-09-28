@@ -43,13 +43,15 @@ export class ApiError extends Error {
   readonly status: number;
   readonly errors?: Record<string, string[]>;
   readonly details?: Record<string, number>;
+  readonly data?: any;
 
-  constructor(message: string, status: number, errors?: Record<string, string[]>, details?: Record<string, number>) {
+  constructor(message: string, status: number, errors?: Record<string, string[]>, details?: Record<string, number>, data?: any) {
     super(message);
     this.name = 'ApiError';
     this.status = status;
     this.errors = errors;
     this.details = details;
+    this.data = data;
   }
 
   /** أول رسالة تحقق إن وجدت، وإلا الرسالة العامة. */
@@ -167,7 +169,8 @@ export async function apiFetch<T>(path: string, options: RequestOptions = {}): P
   }
 
   // 2. منع تكرار الطلبات المتزامنة قيد التنفيذ (In-Flight Request Deduplication)
-  if (method === 'GET' && !forceRefresh) {
+  // لا نشارك الطلب المتزامن إذا مرّر المستدعي AbortSignal خاصاً به، لتفادي إيقاف الطلب المشترك
+  if (method === 'GET' && !forceRefresh && !signal) {
     const pending = pendingRequests.get(cacheKey);
     if (pending) {
       return pending as Promise<T>;
@@ -176,12 +179,18 @@ export async function apiFetch<T>(path: string, options: RequestOptions = {}): P
 
   // 3. تنفيذ الطلب عبر الشبكة
   const executeRequest = async (): Promise<T> => {
-    const response = await fetch(url, {
-      method,
-      headers: getHeaders(),
-      signal,
-      ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
-    });
+    let response: Response;
+    try {
+      response = await fetch(url, {
+        method,
+        headers: getHeaders(),
+        signal,
+        ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
+      });
+    } catch (err: unknown) {
+      pendingRequests.delete(cacheKey);
+      throw err;
+    }
 
     if (response.status === 204) {
       return undefined as T;
@@ -212,7 +221,7 @@ export async function apiFetch<T>(path: string, options: RequestOptions = {}): P
           ? ((payload as { details?: Record<string, number> }).details ?? undefined)
           : undefined;
 
-      throw new ApiError(message, response.status, errors, details);
+      throw new ApiError(message, response.status, errors, details, payload);
     }
 
     // 4. تخزين النتيجة في الكاش لطلبات GET
@@ -239,7 +248,7 @@ export async function apiFetch<T>(path: string, options: RequestOptions = {}): P
     pendingRequests.delete(cacheKey);
   });
 
-  if (method === 'GET') {
+  if (method === 'GET' && !signal) {
     pendingRequests.set(cacheKey, requestPromise);
   }
 

@@ -1,4 +1,4 @@
-import { type FormEvent, useEffect, useState } from 'react';
+import { type FormEvent, useEffect, useRef, useState } from 'react';
 import { Search, Printer, GraduationCap, Users, UserRound, HelpCircle } from 'lucide-react';
 import { Link, useSearchParams } from 'react-router-dom';
 import {
@@ -10,6 +10,8 @@ import {
   type StudentSearchResponse,
 } from '../../api/students';
 import { TableRowsSkeleton } from '../../components/DataSkeleton';
+import { EnterpriseHeader } from '../../components/ui/EnterpriseHeader';
+import { EnterpriseStatCard } from '../../components/ui/EnterpriseStatCard';
 
 function filtersFromParams(params: URLSearchParams) {
   return {
@@ -75,6 +77,26 @@ export function StudentSearchPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [submitVersion, setSubmitVersion] = useState(0);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // حقول النص (الاسم/الهاتف/التاريخ/CNTE) تُحدّث الخانة فوراً للكتابة السلسة،
+  // لكن طلب الخادم ينتظر 500ms بعد آخر حرف — بلا ذلك كل حرف = طلب كامل per_page=100
+  function handleTextChange(key: string, value: string) {
+    setFilters((prev) => ({ ...prev, [key]: value }));
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => {
+      const nextFilters = { ...filters, [key]: value };
+      const nextParams = new URLSearchParams();
+      Object.entries(nextFilters).forEach(([name, val]) => {
+        const normalized = String(val).trim();
+        if (normalized && (name !== 'gender' || normalized !== 'all')) {
+          nextParams.set(name, normalized);
+        }
+      });
+      setSearchParams(nextParams);
+      setSubmitVersion((version) => version + 1);
+    }, 500);
+  }
 
   useEffect(() => {
     setFilters(filtersFromParams(new URLSearchParams(queryString)));
@@ -159,7 +181,7 @@ export function StudentSearchPage() {
   const selectedYearLabel = options.years.find((y) => String(y.id) === String(filters.year))?.name || 'السنة الدراسية الحالية';
   const genderFilterLabel = filters.gender === 'male' ? 'ذكور' : filters.gender === 'female' ? 'إناث' : filters.gender === 'unknown' ? 'غير محدد' : 'الكل';
 
-  const inputClass = 'w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none transition focus:border-[#3B4A36] focus:ring-2 focus:ring-[#3B4A36]/10';
+  const inputClass = 'w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-semibold text-slate-800 outline-none transition focus:border-[#3B4A36] focus:ring-2 focus:ring-[#3B4A36]/10';
 
   return (
     <div className="mx-auto max-w-7xl p-6 md:p-8" dir="rtl">
@@ -202,54 +224,52 @@ export function StudentSearchPage() {
         </div>
       </div>
 
-      <div className="no-print mb-6 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-800">البحث عن تلميذ وقائمة الأقسام</h1>
-          <p className="mt-1 text-sm text-slate-500">جرد وقائمة التلاميذ مع التصفية حسب الجنس والأقسام والسنوات الدراسية.</p>
-        </div>
-
-        <button
-          type="button"
-          onClick={handlePrint}
-          className="inline-flex items-center justify-center gap-2 rounded-xl bg-white border border-slate-300 px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 hover:border-slate-400"
-        >
-          <Printer size={17} />
-          <span>طباعة القائمة (A4)</span>
-        </button>
+      {/* Header */}
+      <div className="no-print">
+        <EnterpriseHeader
+          title="البحث المتقدم وجرد الأقسام"
+          subtitle="البحث الدقيق والتصفية الشاملة للتلاميذ حسب الشعب، الفصول، والسنوات الدراسية"
+          icon={Search}
+          actions={
+            <button
+              type="button"
+              onClick={handlePrint}
+              className="inline-flex items-center justify-center gap-2 rounded-xl bg-white border border-slate-200/90 px-4 py-2.5 text-sm font-bold text-slate-700 shadow-2xs transition hover:bg-slate-50 hover:border-slate-300"
+            >
+              <Printer size={17} />
+              <span>طباعة القائمة (A4)</span>
+            </button>
+          }
+        />
       </div>
 
       {/* Summary Cards */}
       <div className="no-print grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-        <StudentCountCard
+        <EnterpriseStatCard
           label="إجمالي التلاميذ"
-          count={counts.total}
+          value={counts.total}
           icon={GraduationCap}
-          tint={C.sage}
-          iconColor={C.forest}
+          variant="blue"
         />
-        <StudentCountCard
+        <EnterpriseStatCard
           label="عدد الذكور"
-          count={counts.males}
-          total={counts.total}
+          value={counts.males}
+          subValue={counts.total > 0 && counts.males > 0 ? `(${((counts.males / counts.total) * 100).toFixed(1)}%)` : null}
           icon={Users}
-          tint={C.beige}
-          iconColor="#8A7C57"
+          variant="emerald"
         />
-        <StudentCountCard
+        <EnterpriseStatCard
           label="عدد الإناث"
-          count={counts.females}
-          total={counts.total}
+          value={counts.females}
+          subValue={counts.total > 0 && counts.females > 0 ? `(${((counts.females / counts.total) * 100).toFixed(1)}%)` : null}
           icon={UserRound}
-          tint={C.rose}
-          iconColor="#A46E67"
+          variant="rose"
         />
-        <StudentCountCard
+        <EnterpriseStatCard
           label="غير محدد"
-          count={counts.unknown}
-          total={counts.total}
+          value={counts.unknown}
           icon={HelpCircle}
-          tint={C.beige}
-          iconColor={C.muted}
+          variant="neutral"
         />
       </div>
 
@@ -257,7 +277,7 @@ export function StudentSearchPage() {
       <div className="no-print mb-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
         <form action="/students/search" method="get" onSubmit={handleSubmit}>
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
-            <label className="space-y-1.5 text-sm font-medium text-slate-700">
+            <label className="space-y-1.5 text-sm font-bold text-slate-800">
               <span>القسم</span>
               <select name="level" value={filters.level} onChange={(event) => handleFilterChange('level', event.target.value)} className={inputClass}>
                 <option value="">جميع الأقسام</option>
@@ -265,7 +285,7 @@ export function StudentSearchPage() {
               </select>
             </label>
 
-            <label className="space-y-1.5 text-sm font-medium text-slate-700">
+            <label className="space-y-1.5 text-sm font-bold text-slate-800">
               <span>تصفية حسب الجنس</span>
               <select name="gender" value={filters.gender} onChange={(event) => handleFilterChange('gender', event.target.value)} className={inputClass}>
                 <option value="all">الكل (جميع الجنسين)</option>
@@ -275,22 +295,22 @@ export function StudentSearchPage() {
               </select>
             </label>
 
-            <label className="space-y-1.5 text-sm font-medium text-slate-700">
+            <label className="space-y-1.5 text-sm font-bold text-slate-800">
               <span>اسم التلميذ</span>
-              <input type="text" name="student_name" value={filters.student_name} onChange={(event) => setFilters({ ...filters, student_name: event.target.value })} className={inputClass} />
+              <input type="text" name="student_name" value={filters.student_name} onChange={(event) => handleTextChange('student_name', event.target.value)} className={inputClass} />
             </label>
 
-            <label className="space-y-1.5 text-sm font-medium text-slate-700">
+            <label className="space-y-1.5 text-sm font-bold text-slate-800">
               <span>رقم هاتف الأب أو الأم</span>
-              <input type="tel" inputMode="numeric" name="phone" value={filters.phone} onChange={(event) => setFilters({ ...filters, phone: event.target.value })} className={inputClass} dir="ltr" />
+              <input type="tel" inputMode="numeric" name="phone" value={filters.phone} onChange={(event) => handleTextChange('phone', event.target.value)} className={inputClass} dir="ltr" />
             </label>
 
-            <label className="space-y-1.5 text-sm font-medium text-slate-700">
+            <label className="space-y-1.5 text-sm font-bold text-slate-800">
               <span>تاريخ الولادة</span>
-              <input type="date" name="birthday" value={filters.birthday} onChange={(event) => setFilters({ ...filters, birthday: event.target.value })} className={inputClass} />
+              <input type="date" name="birthday" value={filters.birthday} onChange={(event) => handleTextChange('birthday', event.target.value)} className={inputClass} />
             </label>
 
-            <label className="space-y-1.5 text-sm font-medium text-slate-700">
+            <label className="space-y-1.5 text-sm font-bold text-slate-800">
               <span>السنة الدراسية</span>
               <select name="year" value={filters.year} onChange={(event) => handleFilterChange('year', event.target.value)} className={inputClass}>
                 <option value="">السنة الدراسية الحالية</option>
@@ -298,9 +318,9 @@ export function StudentSearchPage() {
               </select>
             </label>
 
-            <label className="space-y-1.5 text-sm font-medium text-slate-700">
+            <label className="space-y-1.5 text-sm font-bold text-slate-800">
               <span>CNTE</span>
-              <input type="text" name="cnte" value={filters.cnte} onChange={(event) => setFilters({ ...filters, cnte: event.target.value })} className={inputClass} dir="ltr" />
+              <input type="text" name="cnte" value={filters.cnte} onChange={(event) => handleTextChange('cnte', event.target.value)} className={inputClass} dir="ltr" />
             </label>
 
             <div className="flex items-end gap-2">
@@ -317,25 +337,25 @@ export function StudentSearchPage() {
 
       <div className="print-container overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
         <div className="no-print flex items-center justify-between border-b border-slate-100 px-5 py-4">
-          <h2 className="font-bold text-slate-800">قائمة التلاميذ ({students.length})</h2>
-          {!loading && <span className="text-xs text-slate-500">المعروض: {students.length} من أصل {counts.total} تلميذ</span>}
+          <h2 className="text-base font-bold text-slate-900">قائمة التلاميذ ({students.length})</h2>
+          {!loading && <span className="text-sm font-semibold text-slate-600">المعروض: {students.length} من أصل {counts.total} تلميذ</span>}
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-right text-sm">
-            <thead className="border-b border-slate-200 bg-slate-50 text-slate-600">
-              <tr>
-                <th className="px-5 py-3 font-semibold">CNTE</th>
-                <th className="px-5 py-3 font-semibold">الاسم الكامل</th>
-                <th className="px-5 py-3 font-semibold">الجنس</th>
-                <th className="px-5 py-3 font-semibold">تاريخ الولادة</th>
-                <th className="px-5 py-3 font-semibold">الأب / الولي</th>
-                <th className="px-5 py-3 font-semibold">الأم</th>
-                <th className="px-5 py-3 font-semibold">الاتصال</th>
-                <th className="px-5 py-3 font-semibold">العنوان</th>
-                <th className="px-5 py-3 font-semibold">القسم والسنة</th>
-                <th className="px-5 py-3 font-semibold">الحالة</th>
-                <th className="no-print px-5 py-3 font-semibold">ملاحظات</th>
-                <th className="no-print px-5 py-3 font-semibold">التفاصيل</th>
+            <thead className="border-b border-slate-300 bg-slate-50 text-slate-800">
+              <tr className="text-sm">
+                <th className="px-5 py-3 font-bold">CNTE</th>
+                <th className="px-5 py-3 font-bold">الاسم الكامل</th>
+                <th className="px-5 py-3 font-bold">الجنس</th>
+                <th className="px-5 py-3 font-bold">تاريخ الولادة</th>
+                <th className="px-5 py-3 font-bold">الأب / الولي</th>
+                <th className="px-5 py-3 font-bold">الأم</th>
+                <th className="px-5 py-3 font-bold">الاتصال</th>
+                <th className="px-5 py-3 font-bold">العنوان</th>
+                <th className="px-5 py-3 font-bold">القسم والسنة</th>
+                <th className="px-5 py-3 font-bold">الحالة</th>
+                <th className="no-print px-5 py-3 font-bold">ملاحظات</th>
+                <th className="no-print px-5 py-3 font-bold">التفاصيل</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -351,33 +371,33 @@ export function StudentSearchPage() {
 
                 return (
                   <tr key={student.id} className="hover:bg-slate-50/70">
-                    <td className="px-5 py-3 font-medium text-slate-700" dir="ltr">{student.student_code || '—'}</td>
-                    <td className="px-5 py-3 text-slate-800">
+                    <td className="px-5 py-3 font-bold text-slate-700 text-xs" dir="ltr">{student.student_code || '—'}</td>
+                    <td className="px-5 py-3 font-bold text-slate-900 text-[15px]">
                       <Link
                         to={`/students/search/${student.id}${queryString ? `?${queryString}` : ''}`}
-                        className="font-semibold text-[#3B4A36] hover:underline"
+                        className="font-bold text-[#3B4A36] hover:underline"
                       >
                         {student.first_name} {student.last_name}
                       </Link>
                     </td>
                     <td className="px-5 py-3 font-medium">
-                      <span className={`inline-flex rounded-md px-2 py-0.5 text-xs font-semibold ${
+                      <span className={`inline-flex rounded-md px-2 py-0.5 text-xs font-bold ${
                         genderDisplay === 'أنثى' ? 'bg-[#F1E4E2] text-[#A46E67]' : genderDisplay === 'ذكر' ? 'bg-[#EFEAE0] text-[#8A7C57]' : 'bg-slate-100 text-slate-600'
                       }`}>
                         {genderDisplay}
                       </span>
                     </td>
-                    <td className="px-5 py-3 text-slate-600">{student.dob ? new Date(student.dob).toLocaleDateString('ar-TN') : '—'}</td>
-                    <td className="px-5 py-3 text-slate-600">{[student.guardians?.[0]?.first_name || student.guardian_first_name, student.guardians?.[0]?.last_name || student.guardian_last_name].filter(Boolean).join(' ') || '—'}</td>
-                    <td className="px-5 py-3 text-slate-600">{student.mother_name || '—'}</td>
-                    <td className="px-5 py-3 text-slate-600" dir="ltr">
+                    <td className="px-5 py-3 font-semibold text-slate-700 text-sm">{student.dob ? new Date(student.dob).toLocaleDateString('ar-TN') : '—'}</td>
+                    <td className="px-5 py-3 font-bold text-slate-800 text-sm">{[student.guardians?.[0]?.first_name || student.guardian_first_name, student.guardians?.[0]?.last_name || student.guardian_last_name].filter(Boolean).join(' ') || '—'}</td>
+                    <td className="px-5 py-3 font-semibold text-slate-700 text-sm">{student.mother_name || '—'}</td>
+                    <td className="px-5 py-3 font-semibold text-slate-700 text-sm" dir="ltr">
                       <div>{student.guardians?.[0]?.phone || student.guardian_phone || student.mother_phone || '—'}</div>
-                      <div className="text-xs text-slate-400 no-print">{student.guardian_email || student.mother_email || '—'}</div>
+                      <div className="text-xs font-medium text-slate-500 no-print">{student.guardian_email || student.mother_email || '—'}</div>
                     </td>
-                    <td className="max-w-xs px-5 py-3 text-slate-600">{student.address || '—'}</td>
-                    <td className="px-5 py-3 text-slate-600">{[level, section, enrollment?.academic_year?.name].filter(Boolean).join(' — ') || '—'}</td>
-                    <td className="px-5 py-3 text-slate-600">{student.status || enrollment?.status || '—'}</td>
-                    <td className="no-print max-w-xs px-5 py-3 text-slate-600">{student.notes || '—'}</td>
+                    <td className="max-w-xs px-5 py-3 font-medium text-slate-700 text-sm">{student.address || '—'}</td>
+                    <td className="px-5 py-3 font-semibold text-slate-700 text-sm">{[level, section, enrollment?.academic_year?.name].filter(Boolean).join(' — ') || '—'}</td>
+                    <td className="px-5 py-3 font-semibold text-slate-700 text-sm">{student.status || enrollment?.status || '—'}</td>
+                    <td className="no-print max-w-xs px-5 py-3 font-medium text-slate-600 text-sm">{student.notes || '—'}</td>
                     <td className="no-print px-5 py-3">
                       <Link to={`/students/search/${student.id}${queryString ? `?${queryString}` : ''}`} className="inline-flex rounded-lg bg-[#E3EBDB] px-3 py-1.5 text-xs font-semibold text-[#3B4A36] hover:bg-[#D5E1CC]">
                         عرض التفاصيل

@@ -17,29 +17,23 @@ interface PageShellProps {
  */
 export function PageShell({ title, subtitle, icon: Icon, children, note }: PageShellProps) {
   return (
-    <section>
-      <div className="flex items-center gap-3 mb-4">
+    <section className="space-y-6">
+      <div className="flex items-center gap-3.5 mb-6">
         {Icon ? (
-          <div
-            className="w-10 h-10 rounded-2xl flex items-center justify-center"
-            style={{ backgroundColor: C.sage }}
-          >
-            <Icon size={20} style={{ color: C.forest }} />
+          <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-[#2E3B2A] to-[#1E271B] text-[#C2A24E] shadow-sm ring-1 ring-black/5 flex items-center justify-center shrink-0">
+            <Icon size={24} strokeWidth={2.2} />
           </div>
         ) : null}
         <div>
-          <h2 className="text-lg font-bold" style={{ color: C.ink }}>{title}</h2>
-          {subtitle ? <p className="text-sm" style={{ color: C.muted }}>{subtitle}</p> : null}
+          <h2 className="text-2xl font-extrabold tracking-tight text-slate-900">{title}</h2>
+          {subtitle ? <p className="text-sm font-medium text-slate-500 mt-0.5">{subtitle}</p> : null}
         </div>
       </div>
 
       {children ?? (
-        <div
-          className="rounded-2xl bg-white p-10 text-center"
-          style={{ border: `1px dashed ${C.line}` }}
-        >
-          <p className="text-sm font-medium" style={{ color: C.muted }}>
-            {note ?? 'هذا القسم جاهز هيكلياً — سيُبنى محتواه بالتفصيل في المرحلة الثانية.'}
+        <div className="enterprise-card p-12 text-center">
+          <p className="text-base font-semibold text-slate-500">
+            {note ?? 'هذا القسم جاهز هيكلياً — سيُبنى محتواه بالتفصيل في المرحلة القادمة.'}
           </p>
         </div>
       )}

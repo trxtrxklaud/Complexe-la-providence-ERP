@@ -26,6 +26,14 @@ function money(v: number): string {
   return (v || 0).toFixed(2);
 }
 
+function isStudentPreschool(student: FamilyStudentDetail): boolean {
+  if (student.is_preschool !== undefined) return Boolean(student.is_preschool);
+  const code = (student.level_code || '').toUpperCase();
+  if (['PRE1', 'PRE2', 'PRE3'].includes(code)) return true;
+  const name = student.level_name || '';
+  return name.includes('روضة') || name.includes('تمهيدي') || name.includes('تحضيري');
+}
+
 export function FamilyCollectionModal({ family, onClose, onSuccess }: Props) {
   // تتبع الأشهر المختارة لكل تلميذ: { [studentId]: string[] (e.g. ['2026-09', '2026-10']) }
   const [selectedMonthsByStudent, setSelectedMonthsByStudent] = useState<Record<number, string[]>>({});
@@ -41,6 +49,7 @@ export function FamilyCollectionModal({ family, onClose, onSuccess }: Props) {
   const [method, setMethod] = useState<string>('cash');
   const [reference, setReference] = useState<string>('');
   const [notes, setNotes] = useState<string>('');
+  const [exceptionalDiscount, setExceptionalDiscount] = useState<number>(0);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -70,6 +79,11 @@ export function FamilyCollectionModal({ family, onClose, onSuccess }: Props) {
 
   // تبديل اختيار شهر دراسي لتلميذ
   const toggleStudentMonth = (student: FamilyStudentDetail, monthKey: string) => {
+    if (isStudentPreschool(student) && (monthKey.endsWith('-09') || monthKey.endsWith('-06'))) {
+      alert('شهرا سبتمبر وجوان لأقسام الروضة والتمهيدي والتحضيري (PRE1, PRE2, PRE3) يُستخلصان فردياً بمبلغ مخصص من شاشة تحصيل التلميذ.');
+      return;
+    }
+
     const current = selectedMonthsByStudent[student.id] || [];
     const isSelected = current.includes(monthKey);
 
@@ -191,11 +205,12 @@ export function FamilyCollectionModal({ family, onClose, onSuccess }: Props) {
 
   // إجمالي العملية العائلية
   const grandTotal = family.students.reduce((sum, st) => sum + calculateStudentSubtotal(st), 0);
+  const finalTotal = Math.max(0, roundMoney(grandTotal - exceptionalDiscount));
 
   // إرسال عملية الاستخلاص العائلي
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (grandTotal <= 0) {
+    if (finalTotal <= 0 && grandTotal <= 0) {
       setError('يرجى اختيار شهر أو خدمة أو متخلد واحد على الأقل للاستخلاص');
       return;
     }
@@ -237,9 +252,11 @@ export function FamilyCollectionModal({ family, onClose, onSuccess }: Props) {
         method,
         reference: reference || null,
         notes: notes || null,
+        exceptional_discount: exceptionalDiscount,
         students_allocations: studentsAllocations,
       });
 
+      window.dispatchEvent(new CustomEvent('families:updated'));
       onSuccess(res.receipt);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'فشل تنفيذ الاستخلاص العائلي');
@@ -262,10 +279,10 @@ export function FamilyCollectionModal({ family, onClose, onSuccess }: Props) {
               <Shield size={20} style={{ color: C.forest }} />
             </div>
             <div>
-              <h2 className="text-lg font-bold" style={{ color: C.ink }}>
+              <h2 className="text-xl font-bold" style={{ color: C.ink }}>
                 الاستخلاص العائلي الموحد — {family.guardian_name}
               </h2>
-              <p className="text-xs text-slate-500">
+              <p className="text-sm font-semibold text-slate-700">
                 هاتف الولي: {family.phone} • عدد الأبناء المسجلين: {family.students.length}
               </p>
             </div>
@@ -339,23 +356,23 @@ export function FamilyCollectionModal({ family, onClose, onSuccess }: Props) {
                         {idx + 1}
                       </span>
                       <div>
-                        <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                        <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
                           {student.name || student.full_name}
                           {student.student_code && (
-                            <span className="text-[11px] font-normal px-2 py-0.5 rounded-md bg-slate-100 text-slate-600">
+                            <span className="text-xs font-bold px-2 py-1 rounded-md bg-slate-100 text-slate-700">
                               {student.student_code}
                             </span>
                           )}
                         </h3>
-                        <p className="text-xs text-slate-500">
-                          المستوى: {student.level_name} • القسم: {student.section_name} • المعلوم الأساسي: {money(student.base_monthly_fee)} د.ت
+                        <p className="text-sm font-semibold text-slate-700">
+                          المستوى: <span className="font-bold text-slate-800">{student.level_name}</span> • القسم: <span className="font-bold text-slate-800">{student.section_name}</span> • المعلوم الأساسي: <span className="font-bold text-slate-900">{money(student.base_monthly_fee)} د.ت</span>
                         </p>
                       </div>
                     </div>
 
                     <div className="flex items-center gap-2">
-                      <span className="text-xs text-slate-500 font-medium">مستحقات مختارة:</span>
-                      <span className="text-sm font-bold px-3 py-1 rounded-xl bg-emerald-50 text-emerald-800 border border-emerald-200">
+                      <span className="text-sm font-bold text-slate-700">مستحقات مختارة:</span>
+                      <span className="text-sm font-bold px-3 py-1.5 rounded-xl bg-emerald-50 text-emerald-800 border border-emerald-200">
                         {money(studentSubtotal)} د.ت
                       </span>
                     </div>
@@ -364,14 +381,23 @@ export function FamilyCollectionModal({ family, onClose, onSuccess }: Props) {
                   {/* 1. Tuition Months Grid (September -> June) */}
                   <div className="space-y-2">
                     <div className="flex items-center justify-between">
-                      <span className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
-                        <Calendar size={14} className="text-slate-400" />
+                      <span className="text-sm font-bold text-slate-800 flex items-center gap-1.5">
+                        <Calendar size={16} className="text-slate-600" />
                         معلوم الدراسة الشهري (من سبتمبر إلى جوان):
                       </span>
                     </div>
 
+                    {isStudentPreschool(student) && (
+                      <div className="flex items-center gap-2 p-2.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs">
+                        <AlertTriangle size={15} className="text-amber-600 shrink-0" />
+                        <span>شهرا سبتمبر وجوان لأقسام الروضة والتمهيدي والتحضيري (PRE1, PRE2, PRE3) يُستخلصان فردياً بمبلغ مخصص من شاشة تحصيل التلميذ.</span>
+                      </div>
+                    )}
+
                     <div className="grid grid-cols-2 sm:grid-cols-5 md:grid-cols-10 gap-2">
                       {student.months_grid.map((m) => {
+                        const isPreschool = isStudentPreschool(student);
+                        const isShortCycleMonth = isPreschool && (m.month.endsWith('-09') || m.month.endsWith('-06'));
                         const isPaid = m.status === 'paid';
                         const isWaived = m.status === 'waived';
                         const isSelected = selectedMonths.includes(m.month);
@@ -388,31 +414,41 @@ export function FamilyCollectionModal({ family, onClose, onSuccess }: Props) {
                           cardBg = 'bg-slate-50 border-slate-200 text-slate-400 cursor-not-allowed';
                           badgeBg = 'bg-slate-200 text-slate-600';
                           badgeText = 'معفى';
+                        } else if (isShortCycleMonth) {
+                          cardBg = 'bg-amber-50/60 border-amber-200 text-amber-800 cursor-not-allowed opacity-80';
+                          badgeBg = 'bg-amber-100 text-amber-900';
+                          badgeText = `${money(m.net_amount)} د.ت (مبلغ يدوي)`;
                         } else if (isSelected) {
                           cardBg = 'bg-emerald-50 border-emerald-500 text-emerald-950 shadow-xs ring-1 ring-emerald-500';
                           badgeBg = 'bg-emerald-600 text-white font-bold';
                           badgeText = `${money(m.net_amount)} د.ت`;
                         }
 
+                        const isActionable = !isPaid && !isWaived && !isShortCycleMonth;
+
                         return (
                           <div
                             key={m.month}
-                            onClick={() => !isPaid && !isWaived && toggleStudentMonth(student, m.month)}
+                            onClick={() => isActionable && toggleStudentMonth(student, m.month)}
                             className={`p-2.5 rounded-xl border flex flex-col items-center justify-between text-center transition select-none ${cardBg} ${
-                              !isPaid && !isWaived ? 'cursor-pointer hover:shadow-xs' : ''
+                              isActionable ? 'cursor-pointer hover:shadow-xs' : ''
                             }`}
+                            title={isShortCycleMonth ? 'شهرا سبتمبر وجوان لأقسام الروضة والتمهيدي والتحضيري (PRE1, PRE2, PRE3) يُستخلصان فردياً بمبلغ مخصص من شاشة تحصيل التلميذ.' : undefined}
                           >
                             <div className="flex items-center justify-between w-full mb-1">
-                              <span className="text-xs font-bold">{m.name_ar}</span>
-                              {!isPaid && !isWaived && (
+                              <span className="text-sm font-bold text-slate-800">{m.name_ar}</span>
+                              {isActionable && (
                                 isSelected ? (
                                   <CheckSquare size={14} className="text-emerald-600" />
                                 ) : (
                                   <Square size={14} className="text-slate-300" />
                                 )
                               )}
+                              {isShortCycleMonth && !isPaid && !isWaived && (
+                                <span className="text-[10px] text-amber-700 font-semibold">يدوي</span>
+                              )}
                             </div>
-                            <span className={`text-[10px] px-1.5 py-0.5 rounded-md w-full truncate ${badgeBg}`}>
+                            <span className={`text-xs font-bold px-1.5 py-0.5 rounded-md w-full truncate ${badgeBg}`}>
                               {badgeText}
                             </span>
                           </div>
@@ -424,8 +460,8 @@ export function FamilyCollectionModal({ family, onClose, onSuccess }: Props) {
                   {/* 2. Subscribed Clubs Grid (September -> May) */}
                   {student.clubs && student.clubs.length > 0 && (
                     <div className="space-y-2 pt-2 border-t border-slate-100">
-                      <span className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
-                        <Award size={14} className="text-amber-500" />
+                      <span className="text-sm font-bold text-slate-800 flex items-center gap-1.5">
+                        <Award size={16} className="text-amber-600" />
                         اشتراكات النوادي (من سبتمبر إلى ماي):
                       </span>
 
@@ -433,7 +469,7 @@ export function FamilyCollectionModal({ family, onClose, onSuccess }: Props) {
                         {student.clubs.map((club) => (
                           <div key={club.club_id} className="p-3 rounded-xl bg-amber-50/30 border border-amber-200/60 space-y-2">
                             <div className="flex items-center justify-between">
-                              <span className="text-xs font-bold text-amber-950">
+                              <span className="text-sm font-bold text-amber-950">
                                 {club.club_name} ({money(club.monthly_fee)} د.ت / شهر)
                               </span>
                             </div>
@@ -455,8 +491,8 @@ export function FamilyCollectionModal({ family, onClose, onSuccess }: Props) {
                                         : 'bg-white border-slate-200 hover:border-slate-300 cursor-pointer'
                                     }`}
                                   >
-                                    <div className="text-[11px]">{cm.name_ar}</div>
-                                    <div className="text-[10px] text-slate-500">
+                                    <div className="text-xs font-bold text-slate-800">{cm.name_ar}</div>
+                                    <div className="text-xs font-semibold text-slate-600">
                                       {isClubPaid ? 'مدفوع ✓' : `${money(cm.amount_due)} د.ت`}
                                     </div>
                                   </div>
@@ -472,8 +508,8 @@ export function FamilyCollectionModal({ family, onClose, onSuccess }: Props) {
                   {/* 3. Arrears & Prior Debt Section */}
                   {student.arrears && student.arrears.length > 0 && (
                     <div className="space-y-2 pt-2 border-t border-slate-100">
-                      <span className="text-xs font-bold text-amber-800 flex items-center gap-1.5">
-                        <AlertCircle size={14} />
+                      <span className="text-sm font-bold text-amber-800 flex items-center gap-1.5">
+                        <AlertCircle size={16} className="text-amber-600" />
                         الديون والمتخلدات السابقة (مع إمكانية الدفع الجزئي):
                       </span>
 
@@ -502,8 +538,8 @@ export function FamilyCollectionModal({ family, onClose, onSuccess }: Props) {
                                   )}
                                 </button>
                                 <div>
-                                  <div className="text-xs font-bold text-slate-800">{arr.description}</div>
-                                  <div className="text-[11px] text-slate-500">
+                                  <div className="text-sm font-bold text-slate-800">{arr.description}</div>
+                                  <div className="text-xs font-semibold text-slate-600">
                                     المستحق: {money(arr.amount_due)} د.ت • المقبوض: {money(arr.amount_paid)} د.ت • المتبقي: {money(arr.remaining_amount)} د.ت
                                   </div>
                                 </div>
@@ -511,7 +547,7 @@ export function FamilyCollectionModal({ family, onClose, onSuccess }: Props) {
 
                               {isSelected && (
                                 <div className="flex items-center gap-2">
-                                  <label htmlFor={`family_arr_amount_${arr.student_fee_id}`} className="text-[11px] text-slate-600">المبلغ المدفوع:</label>
+                                  <label htmlFor={`family_arr_amount_${arr.student_fee_id}`} className="text-xs font-bold text-slate-700">المبلغ المدفوع:</label>
                                   <input
                                     id={`family_arr_amount_${arr.student_fee_id}`}
                                     name={`family_arr_amount_${arr.student_fee_id}`}
@@ -521,9 +557,9 @@ export function FamilyCollectionModal({ family, onClose, onSuccess }: Props) {
                                     step="0.01"
                                     value={currentAmount}
                                     onChange={(e) => updateArrearAmount(student.id, arr.student_fee_id, parseFloat(e.target.value) || 0, arr.remaining_amount)}
-                                    className="w-24 px-2 py-1 rounded-lg border border-amber-300 text-xs text-center font-bold bg-white focus:outline-hidden focus:ring-1 focus:ring-amber-500"
+                                    className="w-24 px-2 py-1.5 rounded-lg border border-amber-300 text-sm text-center font-bold bg-white focus:outline-hidden focus:ring-1 focus:ring-amber-500"
                                   />
-                                  <span className="text-xs text-slate-500">د.ت</span>
+                                  <span className="text-xs font-bold text-slate-600">د.ت</span>
                                 </div>
                               )}
                             </div>
@@ -539,14 +575,14 @@ export function FamilyCollectionModal({ family, onClose, onSuccess }: Props) {
 
           {/* Payment Method Details Panel */}
           <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-4 space-y-4">
-            <h4 className="text-xs font-bold text-slate-700 flex items-center gap-2">
-              <DollarSign size={15} style={{ color: C.forest }} />
+            <h4 className="text-sm font-bold text-slate-800 flex items-center gap-2">
+              <DollarSign size={16} style={{ color: C.forest }} />
               بيانات الدفع والتحصيل
             </h4>
 
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
               <div>
-                <label htmlFor="family_payment_date" className="block text-[11px] font-medium text-slate-600 mb-1">تاريخ الاستخلاص *</label>
+                <label htmlFor="family_payment_date" className="block text-xs font-bold text-slate-700 mb-1">تاريخ الاستخلاص *</label>
                 <input
                   id="family_payment_date"
                   name="family_payment_date"
@@ -554,18 +590,18 @@ export function FamilyCollectionModal({ family, onClose, onSuccess }: Props) {
                   required
                   value={paymentDate}
                   onChange={(e) => setPaymentDate(e.target.value)}
-                  className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs bg-white focus:outline-hidden focus:ring-2 focus:ring-slate-300"
+                  className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm font-semibold bg-white focus:outline-hidden focus:ring-2 focus:ring-slate-300"
                 />
               </div>
 
               <div>
-                <label htmlFor="family_payment_method" className="block text-[11px] font-medium text-slate-600 mb-1">طريقة الدفع *</label>
+                <label htmlFor="family_payment_method" className="block text-xs font-bold text-slate-700 mb-1">طريقة الدفع *</label>
                 <select
                   id="family_payment_method"
                   name="family_payment_method"
                   value={method}
                   onChange={(e) => setMethod(e.target.value)}
-                  className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs bg-white focus:outline-hidden focus:ring-2 focus:ring-slate-300"
+                  className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm font-semibold bg-white focus:outline-hidden focus:ring-2 focus:ring-slate-300"
                 >
                   <option value="cash">نقداً (Cash)</option>
                   <option value="check">شيك (Check)</option>
@@ -575,25 +611,48 @@ export function FamilyCollectionModal({ family, onClose, onSuccess }: Props) {
               </div>
 
               <div>
-                <label className="block text-[11px] font-medium text-slate-600 mb-1">رقم المرجع / الشيك (اختياري)</label>
+                <label className="block text-xs font-bold text-slate-700 mb-1">رقم المرجع / الشيك (اختياري)</label>
                 <input
                   type="text"
                   placeholder="مثال: رقم الشيك أو رقم التحويل"
                   value={reference}
                   onChange={(e) => setReference(e.target.value)}
-                  className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs bg-white focus:outline-hidden focus:ring-2 focus:ring-slate-300"
+                  className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm font-medium bg-white focus:outline-hidden focus:ring-2 focus:ring-slate-300"
                 />
+              </div>
+
+              <div>
+                <label htmlFor="exceptional_discount" className="block text-xs font-bold text-amber-800 mb-1">
+                  تخفيض استثنائي (د.ت)
+                </label>
+                <input
+                  id="exceptional_discount"
+                  type="number"
+                  min="0"
+                  max={grandTotal}
+                  step="0.01"
+                  value={exceptionalDiscount || ''}
+                  onChange={(e) => {
+                    const val = parseFloat(e.target.value) || 0;
+                    setExceptionalDiscount(Math.max(0, Math.min(grandTotal, val)));
+                  }}
+                  className="w-full px-3 py-2.5 rounded-xl border border-amber-300 text-sm font-bold bg-white focus:outline-hidden focus:ring-2 focus:ring-amber-500 text-amber-900 placeholder:font-normal placeholder:text-slate-400"
+                  placeholder="0.00"
+                />
+                <p className="text-[10px] text-slate-500 mt-1">
+                  يطرح من المجموع النهائي
+                </p>
               </div>
             </div>
 
             <div>
-              <label className="block text-[11px] font-medium text-slate-600 mb-1">ملاحظات إضافية</label>
+              <label className="block text-xs font-bold text-slate-700 mb-1">ملاحظات إضافية</label>
               <input
                 type="text"
                 placeholder="أي ملاحظات حول العملية العائلية"
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
-                className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs bg-white focus:outline-hidden focus:ring-2 focus:ring-slate-300"
+                className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm font-medium bg-white focus:outline-hidden focus:ring-2 focus:ring-slate-300"
               />
             </div>
           </div>
@@ -601,13 +660,36 @@ export function FamilyCollectionModal({ family, onClose, onSuccess }: Props) {
 
         {/* Sticky Bottom Summary Checkout Bar */}
         <div className="p-4 border-t border-slate-200 bg-white flex items-center justify-between flex-wrap gap-4 shadow-lg">
-          <div className="flex items-center gap-3">
-            <div className="text-right">
-              <span className="block text-[11px] text-slate-500 font-medium">المبلغ الإجمالي للاستخلاص العائلي:</span>
-              <span className="text-xl font-bold text-slate-900" style={{ color: C.forest }}>
-                {money(grandTotal)} <span className="text-sm font-normal text-slate-500">دينار تونسي</span>
-              </span>
-            </div>
+          <div className="flex items-center gap-4 flex-wrap">
+            {exceptionalDiscount > 0 ? (
+              <>
+                <div className="text-right">
+                  <span className="block text-[11px] font-bold text-slate-500">المجموع قبل التخفيض:</span>
+                  <span className="text-base font-bold text-slate-600 line-through">
+                    {money(grandTotal)} د.ت
+                  </span>
+                </div>
+                <div className="text-right">
+                  <span className="block text-[11px] font-bold text-red-600">التخفيض الاستثنائي:</span>
+                  <span className="text-base font-bold text-red-600">
+                    -{money(exceptionalDiscount)} د.ت
+                  </span>
+                </div>
+                <div className="text-right">
+                  <span className="block text-xs font-bold text-slate-700">المبلغ النهائي للاستخلاص:</span>
+                  <span className="text-2xl font-black text-slate-900" style={{ color: C.forest }}>
+                    {money(finalTotal)} <span className="text-base font-semibold text-slate-600">دينار تونسي</span>
+                  </span>
+                </div>
+              </>
+            ) : (
+              <div className="text-right">
+                <span className="block text-xs font-bold text-slate-600">المبلغ الإجمالي للاستخلاص العائلي:</span>
+                <span className="text-2xl font-black text-slate-900" style={{ color: C.forest }}>
+                  {money(grandTotal)} <span className="text-base font-semibold text-slate-600">دينار تونسي</span>
+                </span>
+              </div>
+            )}
           </div>
 
           <div className="flex items-center gap-2">
@@ -615,7 +697,7 @@ export function FamilyCollectionModal({ family, onClose, onSuccess }: Props) {
               type="button"
               onClick={onClose}
               disabled={saving}
-              className="px-4 py-2.5 rounded-xl border border-slate-200 text-xs font-bold text-slate-700 hover:bg-slate-100 transition"
+              className="px-4 py-2.5 rounded-xl border border-slate-200 text-sm font-bold text-slate-800 hover:bg-slate-100 transition"
             >
               إلغاء
             </button>
@@ -624,7 +706,7 @@ export function FamilyCollectionModal({ family, onClose, onSuccess }: Props) {
               type="button"
               onClick={handleSubmit}
               disabled={saving || grandTotal <= 0}
-              className="px-6 py-2.5 rounded-xl text-xs font-bold text-white shadow-md flex items-center gap-2 transition disabled:opacity-50"
+              className="px-6 py-2.5 rounded-xl text-sm font-bold text-white shadow-md flex items-center gap-2 transition disabled:opacity-50"
               style={{ backgroundColor: C.forest }}
             >
               {saving ? (
@@ -635,7 +717,7 @@ export function FamilyCollectionModal({ family, onClose, onSuccess }: Props) {
               ) : (
                 <>
                   <Sparkles size={16} />
-                  <span>تأكيد الاستخلاص وطباعة الوصل ({money(grandTotal)} د.ت)</span>
+                  <span>تأكيد الاستخلاص وطباعة الوصل ({money(finalTotal)} د.ت)</span>
                 </>
               )}
             </button>

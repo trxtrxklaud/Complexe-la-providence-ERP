@@ -31,6 +31,10 @@ class EmployeeAdvance extends Model
         'amount',
         'settled_amount',
         'advance_date',
+        'due_date',
+        'installment_count',
+        'repayment_method',
+        'purpose',
         'method',
         'reason',
         'notes',
@@ -44,11 +48,13 @@ class EmployeeAdvance extends Model
     ];
 
     protected $casts = [
-        'amount'         => 'decimal:2',
-        'settled_amount' => 'decimal:2',
-        'advance_date'   => 'date',
-        'is_opening'     => 'boolean',
-        'cancelled_at'   => 'datetime',
+        'amount'            => 'decimal:2',
+        'settled_amount'    => 'decimal:2',
+        'advance_date'      => 'date',
+        'due_date'          => 'date',
+        'installment_count' => 'integer',
+        'is_opening'        => 'boolean',
+        'cancelled_at'      => 'datetime',
     ];
 
     public function employee(): BelongsTo

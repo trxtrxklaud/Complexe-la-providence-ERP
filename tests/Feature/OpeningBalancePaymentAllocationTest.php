@@ -174,6 +174,32 @@ class OpeningBalancePaymentAllocationTest extends TestCase
         // الوصل يعرض تفصيل التوزيع للمحاسب.
         $this->assertSame(200.0, (float) $receipt['prior_total']);
         $this->assertCount(2, $receipt['allocations']);
+
+        // التحقق من تطابق مجموع مبالغ التوزيعات مع مبلغ الدفعة: Payment.amount = sum(receipt.allocations.amount)
+        $allocationsSum = round(array_sum(array_column($receipt['allocations'], 'amount')), 2);
+        $this->assertSame((float) $payment->amount, $allocationsSum);
+
+        // التحقق من الحقول المعيارية (Canonical Fields) في كل تخصيص
+        foreach ($receipt['allocations'] as $alloc) {
+            $this->assertArrayHasKey('allocation_type', $alloc);
+            $this->assertArrayHasKey('source_id', $alloc);
+            $this->assertArrayHasKey('description', $alloc);
+            $this->assertArrayHasKey('amount', $alloc);
+            $this->assertArrayHasKey('is_prior_debt', $alloc);
+            $this->assertIsBool($alloc['is_prior_debt']);
+            $this->assertGreaterThan(0, $alloc['amount']);
+        }
+
+        // التخصيص الأول: دين قديم
+        $this->assertTrue($receipt['allocations'][0]['is_prior_debt']);
+        $this->assertSame(200.0, (float) $receipt['allocations'][0]['amount']);
+        $this->assertSame('student_fee', $receipt['allocations'][0]['allocation_type']);
+        $this->assertSame($oldFee->id, $receipt['allocations'][0]['source_id']);
+
+        // التخصيص الثاني: معلوم السنة الحالية
+        $this->assertFalse($receipt['allocations'][1]['is_prior_debt']);
+        $this->assertSame(300.0, (float) $receipt['allocations'][1]['amount']);
+        $this->assertSame('student_fee', $receipt['allocations'][1]['allocation_type']);
     }
 
     public function test_auto_allocation_suggestion_goes_oldest_outstanding_first(): void
@@ -474,5 +500,75 @@ class OpeningBalancePaymentAllocationTest extends TestCase
             'method' => 'cash',
             'prior_allocations' => [['opening_balance_id' => $ob->id, 'amount' => 250]],
         ], $user->id);
+    }
+
+    public function test_mixed_payment_preserves_allocations_contract_and_ledger_revenue_isolation(): void
+    {
+        [$student, $old, $new, $oldEnrollment, $newEnrollment] = $this->makeTwoYearSetup();
+        $user = $this->makeUser();
+        $this->actingAs($user);
+
+        // 1. دين قديم 150 د.ت
+        $oldFee = $this->oldDebtFee($oldEnrollment, 150.0);
+        $this->opening->closeYear($old, $new, $user->id);
+        $ob = OpeningBalance::firstOrFail();
+
+        // 2. معلوم السنة الحالية: معلوم التمدرس 250 د.ت
+        $feeType = $this->makeFeeType('معلوم التمدرس', 250.0);
+
+        // 3. استخلاص دفعة مختلطة: 150 دين قديم + 250 معلوم دراسي جديد = 400 د.ت
+        $receipt = $this->collection->collect([
+            'student_id' => $student->id,
+            'enrollment_id' => $newEnrollment->id,
+            'months' => ['2026-09'],
+            'payment_date' => '2026-09-20',
+            'method' => 'cash',
+            'items' => [['fee_type_id' => $feeType->id, 'amount' => 250.0]],
+            'prior_allocations' => [['opening_balance_id' => $ob->id, 'amount' => 150.0]],
+        ], $user->id);
+
+        $payment = Payment::latest('id')->firstOrFail();
+
+        // الشرط الجوهري الأول: Payment.amount = sum(receipt.allocations.amount)
+        $this->assertSame(400.0, (float) $payment->amount);
+        $allocSum = round(array_sum(array_column($receipt['allocations'], 'amount')), 2);
+        $this->assertSame(400.0, $allocSum);
+        $this->assertSame((float) $payment->amount, $allocSum);
+
+        // الشرط الجوهري الثاني: فحص الحقول المعيارية Canonical Fields
+        $this->assertCount(2, $receipt['allocations']);
+        foreach ($receipt['allocations'] as $alloc) {
+            $this->assertArrayHasKey('allocation_type', $alloc);
+            $this->assertArrayHasKey('source_id', $alloc);
+            $this->assertArrayHasKey('description', $alloc);
+            $this->assertArrayHasKey('amount', $alloc);
+            $this->assertArrayHasKey('is_prior_debt', $alloc);
+            $this->assertIsBool($alloc['is_prior_debt']);
+            $this->assertGreaterThan(0.0, $alloc['amount']);
+        }
+
+        // تفصيل بنود التوزيع
+        $priorAlloc = collect($receipt['allocations'])->firstWhere('is_prior_debt', true);
+        $currentAlloc = collect($receipt['allocations'])->firstWhere('is_prior_debt', false);
+
+        $this->assertNotNull($priorAlloc);
+        $this->assertSame('opening_balance', $priorAlloc['allocation_type']);
+        $this->assertSame($ob->id, $priorAlloc['source_id']);
+        $this->assertSame(150.0, (float) $priorAlloc['amount']);
+
+        $this->assertNotNull($currentAlloc);
+        $this->assertSame('student_fee', $currentAlloc['allocation_type']);
+        $this->assertSame(250.0, (float) $currentAlloc['amount']);
+
+        // الشرط الجوهري الثالث: عزل الإيراد التشغيلي — الدين القديم لا يدخل في مدخول السنة الحالية إطلاقاً
+        $operatingRevenue = (float) CashTransaction::query()->active()->income()->sum('amount');
+        $this->assertSame(250.0, $operatingRevenue, 'مدخول السنة الحالية يجب أن يعادل معلوم التمدرس فقط (250 د.ت)');
+
+        $priorYearDebtCollected = (float) CashTransaction::query()->active()->priorYearDebt()->sum('amount');
+        $this->assertSame(150.0, $priorYearDebtCollected, 'تحصيل الدين القديم يجب أن يُسجّل تحت prior_year_debt');
+
+        // إجمالي النقد الفعلي في الخزينة يعادل كامل المبلغ المدفوع
+        $totalTreasuryCash = (float) CashTransaction::query()->active()->sum('amount');
+        $this->assertSame(400.0, $totalTreasuryCash);
     }
 }

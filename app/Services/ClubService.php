@@ -1200,8 +1200,26 @@ class ClubService
         ];
 
         $currentMonth = now()->format('Y-m');
+        $excludedMonths = config('clubs.excluded_months', []);
+        $configStart = config('clubs.start_month');
+        $configEnd = config('clubs.end_month');
 
-        $filtered = array_filter($schoolMonths, function ($m) use ($fromMonth, $toMonth, $onlyDue, $currentMonth, $year) {
+        $filtered = array_filter($schoolMonths, function ($m) use ($fromMonth, $toMonth, $onlyDue, $currentMonth, $year, $startYear, $excludedMonths, $configStart, $configEnd) {
+            if (in_array($m, $excludedMonths, true)) {
+                return false;
+            }
+            if ($configStart !== null) {
+                $configStartYear = (int) substr($configStart, 0, 4);
+                if ($startYear === $configStartYear && $m < $configStart) {
+                    return false;
+                }
+            }
+            if ($configEnd !== null) {
+                $configEndYear = (int) substr($configEnd, 0, 4);
+                if (($startYear === $configEndYear || $startYear + 1 === $configEndYear) && $m > $configEnd) {
+                    return false;
+                }
+            }
             if ($fromMonth !== null && $m < $fromMonth) {
                 return false;
             }

@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { HeartHandshake, ShieldAlert, CheckCircle2, XCircle, AlertCircle, Info, Calendar, DollarSign } from 'lucide-react';
+import { HeartHandshake, ShieldAlert, CheckCircle2, XCircle, AlertCircle, Info, Calendar, DollarSign, Layers } from 'lucide-react';
 import { apiFetch, ApiError } from '../../api/http';
 import {
   fetchTuitionMonthlyDiscounts,
@@ -260,6 +260,17 @@ export function MonthlyDiscountsPage() {
           <p className="text-slate-500 text-sm mt-1">
             تسري التخفيضات آلياً من شهر سبتمبر إلى نهاية السنة الدراسية المختارة.
           </p>
+        </div>
+
+        <div className="flex items-center gap-3">
+          <Link
+            to="/discounts/roster"
+            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-sm text-white shadow-sm hover:opacity-90 transition"
+            style={{ backgroundColor: C.forest }}
+          >
+            <Layers size={18} />
+            <span>جرد التخفيضات (حسب القسم)</span>
+          </Link>
         </div>
       </div>
 

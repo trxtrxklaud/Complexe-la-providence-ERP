@@ -246,4 +246,40 @@ class FamilyCollectiveCollectionTest extends TestCase
         $response->assertStatus(404);
         $response->assertJson(['message' => 'العائلة غير موجودة']);
     }
+
+    public function test_family_collective_collection_supports_exceptional_discount(): void
+    {
+        $response = $this->postJson("/api/families/{$this->guardian->id}/collect", [
+            'students_allocations' => [
+                ['student_id' => $this->student1->id, 'enrollment_id' => $this->enrollment1->id, 'months' => ['2026-09']],
+                ['student_id' => $this->student2->id, 'enrollment_id' => $this->enrollment2->id, 'months' => ['2026-09']],
+            ],
+            'payment_date' => '2026-10-05',
+            'method' => 'cash',
+            'exceptional_discount' => 30.00,
+            'notes' => 'دفع مع تخفيض استثنائي',
+        ]);
+
+        $response->assertStatus(201);
+        $data = $response->json();
+
+        $this->assertTrue($data['receipt']['is_family_receipt']);
+        $this->assertEquals(380.00, $data['receipt']['subtotal']);
+        $this->assertEquals(380.00, $data['receipt']['total_before_discount']);
+        $this->assertEquals(30.00, $data['receipt']['discount']);
+        $this->assertEquals(350.00, $data['receipt']['total']);
+        $this->assertStringContainsString('تخفيض استثنائي: 30.00 د.ت', $data['receipt']['notes']);
+
+        // التحقق من احتساب التخفيض في الدفعات والخزينة (الكروت)
+        $payment1 = Payment::where('enrollment_id', $this->enrollment1->id)->first();
+        $payment2 = Payment::where('enrollment_id', $this->enrollment2->id)->first();
+        $this->assertEquals(160.00, (float) $payment1->amount);
+        $this->assertEquals(190.00, (float) $payment2->amount);
+        $this->assertEquals(30.00, $payment1->exceptional_discount_amount);
+
+        // التحقق من تسجيل المبلغ الصافي في الدفتر النقدي (الخزينة)
+        $cashTotal = \App\Models\CashTransaction::whereIn('source_id', [$payment1->id, $payment2->id])->sum('amount');
+        $this->assertEquals(350.00, (float) $cashTotal);
+    }
 }
+

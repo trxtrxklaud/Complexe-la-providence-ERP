@@ -37,6 +37,16 @@ class Employee extends Model
         'hire_date' => 'date:Y-m-d',
     ];
 
+    public function user(): \Illuminate\Database\Eloquent\Relations\BelongsTo
+    {
+        return $this->belongsTo(User::class);
+    }
+
+    public function sectionTeachers(): HasMany
+    {
+        return $this->hasMany(SectionTeacher::class);
+    }
+
     public function salaries(): HasMany
     {
         return $this->hasMany(Salary::class);
