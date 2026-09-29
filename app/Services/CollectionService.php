@@ -357,15 +357,41 @@ class CollectionService
                             $mDueDate = $this->resolveMonthDueDate($enrollment, $m, $data['payment_date']);
                             $mLabel = (self::MONTH_NAMES_AR[substr($m, 5)] ?? $m).' '.substr($m, 0, 4);
 
-                            $studentFee = StudentFee::create([
-                                'enrollment_id' => $enrollment->id,
-                                'fee_plan_id' => $monthlyFeePlan?->id,
-                                'fee_type_id' => $feeType->id,
-                                'description' => $feeType->name_ar.' — '.$mLabel,
-                                'amount_due' => $mAmount,
-                                'due_date' => $mDueDate,
-                                'status' => 'pending',
-                            ]);
+                            // البحث عن رسم قائم لنفس التسجيل والشهر لتجنب تكرار القيد (Unique Constraint Violation) بعد الإلغاء
+                            $existingFee = StudentFee::where('enrollment_id', $enrollment->id)
+                                ->whereNull('club_monthly_fee_id')
+                                ->whereDate('due_date', $mDueDate)
+                                ->when($monthlyFeePlan, function ($q) use ($monthlyFeePlan, $feeType) {
+                                    $q->where(function ($sub) use ($monthlyFeePlan, $feeType) {
+                                        $sub->where('fee_plan_id', $monthlyFeePlan->id)
+                                            ->orWhere('fee_type_id', $feeType->id);
+                                    });
+                                }, function ($q) use ($feeType) {
+                                    $q->where('fee_type_id', $feeType->id);
+                                })
+                                ->lockForUpdate()
+                                ->first();
+
+                            if ($existingFee) {
+                                $existingFee->update([
+                                    'fee_plan_id' => $monthlyFeePlan?->id,
+                                    'fee_type_id' => $feeType->id,
+                                    'description' => $feeType->name_ar.' — '.$mLabel,
+                                    'amount_due' => $mAmount,
+                                    'status' => 'pending',
+                                ]);
+                                $studentFee = $existingFee;
+                            } else {
+                                $studentFee = StudentFee::create([
+                                    'enrollment_id' => $enrollment->id,
+                                    'fee_plan_id' => $monthlyFeePlan?->id,
+                                    'fee_type_id' => $feeType->id,
+                                    'description' => $feeType->name_ar.' — '.$mLabel,
+                                    'amount_due' => $mAmount,
+                                    'due_date' => $mDueDate,
+                                    'status' => 'pending',
+                                ]);
+                            }
 
                             PaymentAllocation::create([
                                 'payment_id' => $payment->id,
@@ -396,15 +422,39 @@ class CollectionService
                     } else {
                         $amount = round((float) $item['amount'], 2);
 
-                        $studentFee = StudentFee::create([
-                            'enrollment_id' => $enrollment->id,
-                            'fee_plan_id' => null,
-                            'fee_type_id' => $feeType->id,
-                            'description' => $feeType->name_ar.' — '.$monthsLabel,
-                            'amount_due' => $amount,
-                            'due_date' => $data['payment_date'],
-                            'status' => 'pending',
-                        ]);
+                        // التحقق من وجود رسم قائم إذا كان المعلوم مرتبطاً بخطة وتاريخ محدد
+                        $existingFee = null;
+                        if ($monthlyFeePlan?->id && $isTuition) {
+                            $existingFee = StudentFee::where('enrollment_id', $enrollment->id)
+                                ->whereNull('club_monthly_fee_id')
+                                ->whereDate('due_date', $data['payment_date'])
+                                ->where(function ($q) use ($monthlyFeePlan, $feeType) {
+                                    $q->where('fee_plan_id', $monthlyFeePlan->id)
+                                      ->orWhere('fee_type_id', $feeType->id);
+                                })
+                                ->lockForUpdate()
+                                ->first();
+                        }
+
+                        if ($existingFee) {
+                            $existingFee->update([
+                                'fee_type_id' => $feeType->id,
+                                'description' => $feeType->name_ar.' — '.$monthsLabel,
+                                'amount_due' => $amount,
+                                'status' => 'pending',
+                            ]);
+                            $studentFee = $existingFee;
+                        } else {
+                            $studentFee = StudentFee::create([
+                                'enrollment_id' => $enrollment->id,
+                                'fee_plan_id' => null,
+                                'fee_type_id' => $feeType->id,
+                                'description' => $feeType->name_ar.' — '.$monthsLabel,
+                                'amount_due' => $amount,
+                                'due_date' => $data['payment_date'],
+                                'status' => 'pending',
+                            ]);
+                        }
 
                         PaymentAllocation::create([
                             'payment_id' => $payment->id,
