@@ -37,4 +37,9 @@ return [
         ],
     ],
 
+    'cloudflare' => [
+        'turnstile_sitekey' => env('CLOUDFLARE_TURNSTILE_SITEKEY'),
+        'turnstile_secret'  => env('CLOUDFLARE_TURNSTILE_SECRET'),
+    ],
+
 ];

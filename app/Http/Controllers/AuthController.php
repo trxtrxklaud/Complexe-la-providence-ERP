@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Http;
 use App\Models\User;
 use App\Services\AuditService;
 
@@ -12,6 +13,34 @@ class AuthController extends Controller
 {
     public function login(Request $request)
     {
+        // 1. التحقق من Turnstile أولاً
+        $turnstileSecret = config('services.cloudflare.turnstile_secret');
+        if ($turnstileSecret && !app()->environment('testing')) {
+            $turnstileToken = $request->input('cf-turnstile-response') ?? $request->input('turnstile_token');
+            if ($turnstileToken) {
+                $turnstileResponse = Http::asForm()->post(
+                    'https://challenges.cloudflare.com/turnstile/v0/siteverify',
+                    [
+                        'secret'   => $turnstileSecret,
+                        'response' => $turnstileToken,
+                        'remoteip' => $request->ip(),
+                    ]
+                );
+
+                $turnstileData = $turnstileResponse->json();
+
+                if (!($turnstileData['success'] ?? false)) {
+                    return response()->json([
+                        'message' => 'فشل التحقق الأمني. حاول مرة أخرى.'
+                    ], 422);
+                }
+            } else {
+                return response()->json([
+                    'message' => 'يرجى إكمال التحقق الأمني.'
+                ], 422);
+            }
+        }
+
         $request->validate([
             'email'    => 'required|string|email',
             'password' => 'required|string',

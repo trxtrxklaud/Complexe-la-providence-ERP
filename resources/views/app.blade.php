@@ -16,6 +16,9 @@
     <!-- Vite -->
     @viteReactRefresh
     @vite(['resources/js/main.tsx', 'resources/css/app.css'])
+
+    <!-- Cloudflare Turnstile -->
+    <script src="https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit" async defer></script>
 </head>
 <body>
     <div id="root"></div>

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { login as apiLogin } from '../api/auth';
@@ -237,8 +237,83 @@ export function Login() {
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [turnstileReady, setTurnstileReady] = useState(false);
+  const [turnstileToken, setTurnstileToken] = useState('');
   const navigate = useNavigate();
   const { login } = useAuth();
+
+  const turnstileContainerRef = React.useRef<HTMLDivElement>(null);
+  const widgetIdRef = React.useRef<string | null>(null);
+
+  useEffect(() => {
+    (window as any).onTurnstileSuccess = (token: string) => {
+      setTurnstileToken(token);
+      setTurnstileReady(true);
+      const btn = document.getElementById('submit-button');
+      if (btn) btn.removeAttribute('disabled');
+    };
+
+    // Ensure Turnstile script is present in the DOM
+    if (!document.querySelector('script[src*="challenges.cloudflare.com/turnstile"]')) {
+      const script = document.createElement('script');
+      script.src = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit';
+      script.async = true;
+      script.defer = true;
+      document.head.appendChild(script);
+    }
+
+    const renderWidget = () => {
+      if ((window as any).turnstile && turnstileContainerRef.current && !widgetIdRef.current) {
+        try {
+          widgetIdRef.current = (window as any).turnstile.render(turnstileContainerRef.current, {
+            sitekey: import.meta.env.VITE_CLOUDFLARE_TURNSTILE_SITEKEY || '1x00000000000000000000AA',
+            callback: (token: string) => {
+              setTurnstileToken(token);
+              setTurnstileReady(true);
+              const btn = document.getElementById('submit-button');
+              if (btn) btn.removeAttribute('disabled');
+            },
+            'error-callback': () => {
+              setTurnstileReady(false);
+            },
+            'expired-callback': () => {
+              setTurnstileToken('');
+              setTurnstileReady(false);
+            },
+            theme: 'light',
+            size: 'normal',
+          });
+        } catch {
+          // ignore if already rendered
+        }
+      }
+    };
+
+    if ((window as any).turnstile) {
+      if (typeof (window as any).turnstile.ready === 'function') {
+        (window as any).turnstile.ready(renderWidget);
+      } else {
+        renderWidget();
+      }
+    }
+
+    const interval = setInterval(renderWidget, 300);
+    const timeout = setTimeout(() => clearInterval(interval), 5000);
+
+    return () => {
+      clearInterval(interval);
+      clearTimeout(timeout);
+      delete (window as any).onTurnstileSuccess;
+      if (widgetIdRef.current && (window as any).turnstile) {
+        try {
+          (window as any).turnstile.remove(widgetIdRef.current);
+        } catch {
+          // ignore
+        }
+        widgetIdRef.current = null;
+      }
+    };
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -246,7 +321,11 @@ export function Login() {
     setIsLoading(true);
 
     try {
-      const response = await apiLogin({ email, password });
+      const response = await apiLogin({
+        email,
+        password,
+        'cf-turnstile-response': turnstileToken,
+      });
       login(response.access_token, response.user);
       navigate('/');
     } catch (err: any) {
@@ -433,9 +512,22 @@ export function Login() {
               </div>
             </div>
 
+            {/* Cloudflare Turnstile */}
+            <div
+              ref={turnstileContainerRef}
+              className="cf-turnstile"
+              data-sitekey={import.meta.env.VITE_CLOUDFLARE_TURNSTILE_SITEKEY || '1x00000000000000000000AA'}
+              data-callback="onTurnstileSuccess"
+              data-theme="light"
+              data-size="normal"
+              style={{ marginTop: '1rem', minHeight: '65px' }}
+            />
+            <input type="hidden" name="cf-turnstile-response" value={turnstileToken} />
+
             <button
+              id="submit-button"
               type="submit"
-              disabled={isLoading}
+              disabled={isLoading || !turnstileReady}
               className="flex w-full items-center justify-center gap-2 rounded-xl px-4 py-3 text-sm font-semibold text-white shadow-lg transition focus:outline-none focus-visible:ring-4 focus-visible:ring-[#c8a96e]/40 disabled:cursor-not-allowed disabled:opacity-70"
               style={{ background: 'linear-gradient(135deg, #0f1e3a 0%, #1a3a5c 55%, #c8a96e 100%)', boxShadow: '0 8px 24px rgba(15,30,58,0.35)' }}
             >
