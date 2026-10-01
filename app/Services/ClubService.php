@@ -794,6 +794,8 @@ class ClubService
 
         $this->applyClubEligibilityScope($query, $academicYearId);
 
+        $currentMonth = now()->format('Y-m');
+
         $records = $query
             ->when($clubId, fn ($q) => $q->where('club_id', $clubId))
             ->when($sectionId, fn ($q) => $q->whereHas('enrollment', fn ($eq) => $eq->where('section_id', $sectionId)))
@@ -804,11 +806,32 @@ class ClubService
                 ->orWhere('student_code', 'like', $search)))
             ->orderBy('month')
             ->get()
-            ->filter(function (ClubMonthlyFee $fee) {
+            ->filter(function (ClubMonthlyFee $fee) use ($toMonth, $currentMonth) {
                 $sub = $fee->subscription;
-                if ($sub && $sub->start_date) {
-                    $subStartMonth = substr($sub->start_date->toDateString(), 0, 7);
+                if ($sub) {
+                    $startDate = $sub->start_date
+                        ? $sub->start_date->toDateString()
+                        : config('clubs.default_start_date', '2026-09-01');
+
+                    $subStartMonth = substr(\Carbon\Carbon::parse($startDate)->toDateString(), 0, 7);
                     if ($fee->month < $subStartMonth && (float) $fee->amount_paid <= 0) {
+                        return false;
+                    }
+
+                    // المتخلد يبدأ من الشهر التالي لتاريخ انطلاق تدريس النادي
+                    $firstArrearsMonth = \Carbon\Carbon::parse($startDate)
+                        ->addMonth()
+                        ->startOfMonth()
+                        ->format('Y-m');
+
+                    // إذا لم يكن النادي قد بلغ شهر انطلاق متخلداته بالنسبة للشهر الجاري، يُستبعد
+                    if ($toMonth === null && $currentMonth < $firstArrearsMonth && (float) $fee->amount_paid <= 0) {
+                        return false;
+                    }
+
+                    // في العرض الافتراضي للمتخلد، لا يُعتبر الشهر الجاري متخلداً إلا بعد انقضائه (في الشهر التالي له)
+                    $feeDueMonth = \Carbon\Carbon::parse($fee->month . '-01')->addMonth()->format('Y-m');
+                    if ($toMonth === null && $currentMonth < $feeDueMonth && (float) $fee->amount_paid <= 0) {
                         return false;
                     }
                 }

@@ -742,4 +742,44 @@ class ClubFeesTest extends TestCase
         $this->assertEquals(0, $dash['summary']['students_count']);
         $this->assertEquals(0.00, $dash['summary']['total_remaining']);
     }
+
+    /** 27. المتخلد يبدأ من الشهر التالي لتاريخ انطلاق النادي، والأشهر اللاحقة لا تظهر كمتخلد قبل انقضائها. */
+    public function test_club_arrears_starts_from_month_following_start_date(): void
+    {
+        $year = $this->makeAcademicYear();
+        $enrollment = $this->makeEnrollment($year);
+        $club = $this->makeClub(['monthly_fee' => 30.00]);
+
+        // اشتراك يبدأ في 1 أكتوبر
+        $this->clubService->subscribeStudent(
+            $enrollment->student_id,
+            $club->id,
+            $year->id,
+            '2025-10-01'
+        );
+
+        $this->clubService->generateMonthFees($year->id, '2025-10', $club->id);
+
+        // في شهر أكتوبر، النادي بدأ للتو ولم ينقضِ الشهر بعد → لا متخلد
+        \Carbon\Carbon::setTestNow('2025-10-15');
+        $dashOct = $this->clubService->getArrearsDashboard([
+            'academic_year_id' => $year->id,
+            'club_id' => $club->id,
+        ]);
+        $this->assertEquals(0, $dashOct['summary']['fees_count']);
+        $this->assertEquals(0.00, (float) $dashOct['summary']['total_remaining']);
+
+        // في شهر نوفمبر (الشهر التالي)، يصبح شهر أكتوبر متخلداً
+        \Carbon\Carbon::setTestNow('2025-11-05');
+        $dashNov = $this->clubService->getArrearsDashboard([
+            'academic_year_id' => $year->id,
+            'club_id' => $club->id,
+        ]);
+        $this->assertEquals(1, $dashNov['summary']['fees_count']);
+        $this->assertEquals(30.00, (float) $dashNov['summary']['total_remaining']);
+        $this->assertEquals('2025-10', $dashNov['students'][0]['details'][0]['month']);
+
+        \Carbon\Carbon::setTestNow(); // Reset test time
+    }
 }
+
